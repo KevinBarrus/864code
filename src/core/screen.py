@@ -1,0 +1,356 @@
+"""构造 864code 的全屏终端界面。"""
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
+
+from prompt_toolkit.application import Application
+from prompt_toolkit.cursor_shapes import CursorShape
+from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
+from prompt_toolkit.filters import has_focus
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.containers import (
+    ConditionalContainer,
+    VerticalAlign,
+)
+from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.styles import Style
+from prompt_toolkit.widgets import TextArea
+
+from .status import StatusInfo
+from .theme import create_ui_style
+from .logo import EmptyLogoProvider, LogoProvider
+from .conversation_view import ConversationView
+from .ui_config import InputLayoutConfig
+
+
+SubmitHandler = Callable[[str], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class ConversationEntry:
+    """对话区中的一条展示内容。"""
+
+    speaker: str
+    content: str
+
+
+@dataclass(frozen=True)
+class DraftState:
+    """发送前输入框中的文字和光标位置。"""
+
+    text: str
+    cursor_position: int
+
+
+class ChatScreen:
+    """管理全屏界面的静态布局和可展示内容。"""
+
+    def __init__(
+        self,
+        status: StatusInfo,
+        style: Style | None = None,
+        on_submit: SubmitHandler | None = None,
+        logo_provider: LogoProvider | None = None,
+        input_layout: InputLayoutConfig | None = None,
+    ) -> None:
+        """创建对话区、输入区和状态栏。"""
+
+        self._status = status
+        self._on_submit = on_submit
+        self._logo_provider = logo_provider or EmptyLogoProvider()
+        self._input_layout = input_layout or InputLayoutConfig()
+        self._request_active = False
+        self._request_task: asyncio.Task[None] | None = None
+        self._submitted_draft: DraftState | None = None
+        self._conversation: list[ConversationEntry] = []
+        self.input_area = TextArea(
+            prompt="",
+            multiline=True,
+            wrap_lines=True,
+            scrollbar=False,
+            height=Dimension(min=1, max=self._input_layout.max_lines),
+            dont_extend_height=True,
+            focus_on_click=True,
+            style="class:input-area",
+            get_line_prefix=self._get_input_line_prefix,
+        )
+        self._conversation_content = HSplit(
+            [],
+            # 不添加顶部对齐的隐式填充行，消息内容只占实际需要的高度。
+            align=VerticalAlign.JUSTIFY,
+            padding=1,
+        )
+        self.conversation_view = ConversationView(
+            self._conversation_content,
+            reserved_height=self._get_reserved_height,
+        )
+        self._logo_control = FormattedTextControl(self._render_logo, focusable=False)
+        self._status_control = FormattedTextControl(
+            self._render_status,
+            focusable=False,
+        )
+        self._layout = Layout(
+            self._create_layout(),
+            focused_element=self.input_area,
+        )
+        self._key_bindings = self._create_key_bindings()
+        self.application = Application(
+            layout=self._layout,
+            key_bindings=self._key_bindings,
+            style=style or create_ui_style(),
+            full_screen=True,
+            mouse_support=True,
+            cursor=CursorShape.BLINKING_BEAM,
+        )
+
+    def add_entry(self, speaker: str, content: str) -> int:
+        """向对话区追加一条展示内容，并返回它的索引。"""
+
+        self._conversation.append(ConversationEntry(speaker, content))
+        self._sync_conversation_view()
+        if speaker == "你":
+            self.conversation_view.scroll_to_bottom()
+        self.application.invalidate()
+        return len(self._conversation) - 1
+
+    def append_to_entry(self, index: int, content: str) -> None:
+        """向指定的对话条目追加流式文本。"""
+
+        entry = self._conversation[index]
+        self._conversation[index] = replace(entry, content=entry.content + content)
+        self._sync_conversation_view()
+        self.application.invalidate()
+
+    def set_request_active(self, active: bool) -> None:
+        """更新请求状态，避免模型响应期间重复提交。"""
+
+        self._request_active = active
+
+    def copy_input_selection(self) -> None:
+        """复制输入框中选中的文本，没有选区时不执行操作。"""
+
+        buffer = self.input_area.buffer
+        if buffer.selection_state is None:
+            return
+        self.application.clipboard.set_data(buffer.copy_selection())
+
+    def paste_to_input(self) -> None:
+        """将剪贴板内容粘贴到输入框当前位置。"""
+
+        self.input_area.buffer.paste_clipboard_data(
+            self.application.clipboard.get_data()
+        )
+
+    def _create_layout(self) -> HSplit:
+        """创建对话区、输入区和状态栏的垂直布局。"""
+
+        logo_window = Window(
+            content=self._logo_control,
+            height=Dimension(min=0),
+            wrap_lines=True,
+            dont_extend_height=True,
+        )
+        self._logo_container = ConditionalContainer(
+            logo_window,
+            filter=Condition(self._has_logo),
+        )
+        self._conversation_container = ConditionalContainer(
+            self.conversation_view,
+            filter=Condition(lambda: bool(self._conversation)),
+        )
+        status_window = Window(
+            content=self._status_control,
+            height=1,
+        )
+        input_container = HSplit(
+            [
+                Window(
+                    height=self._input_layout.vertical_padding,
+                    style="class:input-area",
+                ),
+                self.input_area,
+                Window(
+                    height=self._input_layout.vertical_padding,
+                    style="class:input-area",
+                ),
+            ],
+            # TOP 会为剩余空间添加一个继承灰色背景的填充窗口；
+            # 输入区必须只占上下留白和文字实际需要的高度。
+            align=VerticalAlign.JUSTIFY,
+            style="class:input-area",
+            width=Dimension(weight=1),
+        )
+        self._input_container = input_container
+        # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
+        # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
+        self._input_window = self.input_area.window
+        return HSplit(
+            [
+                self._logo_container,
+                self._conversation_container,
+                input_container,
+                status_window,
+            ],
+            # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
+            # 填充窗口；剩余空间应当只交给有消息时的对话视口。
+            align=VerticalAlign.JUSTIFY,
+        )
+
+    def _get_reserved_height(self, width: int, max_height: int) -> int:
+        """计算对话视口下方的输入区和状态栏所需高度。"""
+
+        return self._input_container.preferred_height(width, max_height).preferred + 1
+
+    def _has_logo(self) -> bool:
+        """判断 Logo 是否有实际内容，空 Logo 不占用布局空间。"""
+
+        return bool(to_plain_text(self._logo_provider.render()).strip())
+
+    def _get_input_line_prefix(self, lineno: int, wrap_count: int):
+        """为输入文字提供可配置的左右内边距和 > 前缀。"""
+
+        padding = " " * self._input_layout.horizontal_padding
+        if lineno == 0 and wrap_count == 0:
+            return [("", f"{padding}> ")]
+        return [("", f"{padding}  ")]
+
+    def _create_key_bindings(self) -> KeyBindings:
+        """创建提交、换行和退出快捷键。"""
+
+        key_bindings = KeyBindings()
+        input_focused = has_focus(self.input_area.buffer)
+
+        @key_bindings.add("enter", eager=True)
+        def submit(event) -> None:
+            """提交输入框中的内容。"""
+
+            prompt = self.input_area.text.strip()
+            if not prompt or self._request_active or self._on_submit is None:
+                return
+            self._submitted_draft = DraftState(
+                text=self.input_area.text,
+                cursor_position=self.input_area.buffer.cursor_position,
+            )
+            self.input_area.text = ""
+            self._request_task = event.app.create_background_task(
+                self._submit(prompt)
+            )
+
+        @key_bindings.add("c-j")
+        def insert_newline(event) -> None:
+            """使用兼容快捷键在输入框中插入换行。"""
+
+            # 普通终端通常无法区分 Ctrl+Enter 和 Enter，因此使用 Ctrl+J 作为可靠备用键。
+            event.current_buffer.insert_text("\n")
+
+        @key_bindings.add("c-d")
+        def exit_application(event) -> None:
+            """使用 Ctrl+D 退出全屏界面。"""
+
+            event.app.exit()
+
+        @key_bindings.add("c-c", filter=input_focused)
+        def copy_selection(event) -> None:
+            """复制输入框中的选中文本。"""
+
+            self.copy_input_selection()
+
+        @key_bindings.add("c-v", filter=input_focused)
+        @key_bindings.add("s-insert", filter=input_focused)
+        def paste_clipboard(event) -> None:
+            """将剪贴板内容粘贴到输入框。"""
+
+            self.paste_to_input()
+
+        @key_bindings.add("escape")
+        def cancel_request(event) -> None:
+            """取消当前请求，输入恢复由请求任务负责。"""
+
+            self.cancel_request()
+
+        return key_bindings
+
+    def cancel_request(self) -> None:
+        """取消正在运行的模型请求。"""
+
+        if self._request_task is not None and not self._request_task.done():
+            self._request_task.cancel()
+
+    async def _submit(self, prompt: str) -> None:
+        """标记请求状态并调用应用层提交处理器。"""
+
+        if self._on_submit is None:
+            return
+        self._request_active = True
+        try:
+            await self._on_submit(prompt)
+        except asyncio.CancelledError:
+            self._restore_submitted_draft()
+        finally:
+            self._request_active = False
+            self._request_task = None
+            self._submitted_draft = None
+
+    def _restore_submitted_draft(self) -> None:
+        """恢复请求发送前的输入文本和光标位置。"""
+
+        if self._submitted_draft is None:
+            return
+
+        draft = self._submitted_draft
+        self.input_area.buffer.text = draft.text
+        self.input_area.buffer.cursor_position = min(
+            draft.cursor_position,
+            len(draft.text),
+        )
+        self.application.invalidate()
+
+    def _render_entry(self, index: int) -> str:
+        """返回对话条目的纯文本，不添加角色前缀。"""
+
+        return self._conversation[index].content
+
+    def _render_logo(self) -> AnyFormattedText:
+        """调用 Logo 接口，预留未来的个人 Logo。"""
+
+        return self._logo_provider.render()
+
+    def _sync_conversation_view(self) -> None:
+        """将对话数据同步到带样式的可滚动视图。"""
+
+        children: list[Window] = []
+        for index, entry in enumerate(self._conversation):
+            style = "class:conversation-user" if entry.speaker == "你" else ""
+            children.append(
+                Window(
+                    content=FormattedTextControl(
+                        lambda index=index: self._render_entry(index),
+                        focusable=False,
+                    ),
+                    style=style,
+                    wrap_lines=True,
+                    dont_extend_height=True,
+                )
+            )
+        self._conversation_content.children = children
+
+        for child in children:
+            child.content.mouse_handler = self.conversation_view.handle_mouse_event
+
+    def _render_status(self) -> list[tuple[str, str]]:
+        """将状态信息转换为带独立颜色的底部状态栏。"""
+
+        return [
+            ("class:status-model", f"模型：{self._status.model_name}"),
+            ("", "    "),
+            ("class:status-balance", f"余额：{self._status.balance}"),
+            ("", "    "),
+            (
+                "class:status-working-directory",
+                f"工作目录：{self._status.working_directory}",
+            ),
+        ]

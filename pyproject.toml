@@ -1,0 +1,27 @@
+[project]
+name = "864code"
+version = "0.1.0"
+description = "一个简洁、可扩展的 Coding Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0.0,<2.0.0",
+    "prompt-toolkit>=3.0.0,<4.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0,<2.0.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/core"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

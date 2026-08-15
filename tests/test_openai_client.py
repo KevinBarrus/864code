@@ -1,0 +1,134 @@
+from collections.abc import AsyncIterator
+from types import SimpleNamespace
+
+import pytest
+
+from core.config import Settings
+from core.model import Message, ModelClientError
+from core.openai_client import OpenAICompatibleClient
+
+
+class FakeCompletions:
+    def __init__(self, chunks: list[object]) -> None:
+        """保存假的模型响应片段。"""
+
+        self.chunks = chunks
+        self.received: dict[str, object] | None = None
+
+    async def create(self, **kwargs: object) -> AsyncIterator[object]:
+        """记录请求参数，并返回假的异步响应流。"""
+
+        self.received = kwargs
+        return FakeStream(self.chunks)
+
+
+class FakeStream:
+    def __init__(self, chunks: list[object]) -> None:
+        """初始化异步响应流。"""
+
+        self._chunks = iter(chunks)
+
+    def __aiter__(self) -> "FakeStream":
+        """返回异步迭代器本身。"""
+
+        return self
+
+    async def __anext__(self) -> object:
+        """逐个返回预先准备好的响应片段。"""
+
+        try:
+            return next(self._chunks)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class FakeClient:
+    def __init__(self, chunks: list[object]) -> None:
+        """组装与 OpenAI SDK 结构相似的测试客户端。"""
+
+        self.completions = FakeCompletions(chunks)
+        self.chat = SimpleNamespace(completions=self.completions)
+
+
+def _settings() -> Settings:
+    """构造测试用模型配置。"""
+
+    return Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+    )
+
+
+async def _collect(client: OpenAICompatibleClient) -> str:
+    """收集客户端产生的全部文本片段。"""
+
+    result = ""
+    async for chunk in client.stream_chat([Message(role="user", content="你好")]):
+        result += chunk
+    return result
+
+
+@pytest.mark.asyncio
+async def test_client_sends_openai_compatible_request_and_streams_response() -> None:
+    """测试客户端发送正确请求并返回流式文本。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="你"))]
+            ),
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="好"))]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    answer = await _collect(client)
+
+    assert answer == "你好"
+    assert fake_sdk.completions.received == {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "你好"}],
+        "stream": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_client_skips_empty_stream_chunks() -> None:
+    """测试客户端会跳过没有文本内容的响应片段。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(choices=[]),
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=None))]
+            ),
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="完成"))]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    assert await _collect(client) == "完成"
+
+
+@pytest.mark.asyncio
+async def test_client_wraps_request_error() -> None:
+    """测试底层请求异常会被转换为统一的模型异常。"""
+
+    class FailingCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            """模拟底层网络请求失败。"""
+
+            raise ConnectionError("test failure")
+
+    failing_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=FailingCompletions())
+    )
+    client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError, match="模型请求失败"):
+        await _collect(client)
