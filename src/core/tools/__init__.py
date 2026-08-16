@@ -23,7 +23,7 @@ from .permissions import (
     PermissionManager,
 )
 from .registry import LocalToolRegistry
-from .types import ToolDefinition, ToolExecutor
+from .types import ToolDefinition, ToolExecutor, ToolRoute
 from .validation import ToolArgumentError, validate_tool_arguments
 
 __all__ = [
@@ -35,6 +35,7 @@ __all__ = [
     "PermissionManager",
     "ToolDefinition",
     "ToolExecutor",
+    "ToolRoute",
     "ToolArgumentError",
     "ToolManager",
     "McpToolProvider",

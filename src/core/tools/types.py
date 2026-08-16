@@ -12,6 +12,14 @@ ToolPermission = Literal["read", "write", "command"]
 
 
 @dataclass(frozen=True)
+class ToolRoute:
+    """标识工具所属来源和具体提供者。"""
+
+    source: ToolSource
+    provider_id: str
+
+
+@dataclass(frozen=True)
 class ToolDefinition:
     """描述一个可以提供给模型的工具。"""
 
@@ -21,6 +29,13 @@ class ToolDefinition:
     source: ToolSource
     permission: ToolPermission
     idempotent: bool
+    provider_id: str = "builtin"
+
+    @property
+    def route(self) -> ToolRoute:
+        """返回当前工具的完整路由身份。"""
+
+        return ToolRoute(self.source, self.provider_id)
 
 
 class ToolExecutor(Protocol):

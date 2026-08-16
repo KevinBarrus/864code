@@ -7,6 +7,7 @@ from core.tools import (
     McpToolRegistrationError,
     McpToolRegistry,
     ToolDefinition,
+    ToolRoute,
 )
 
 
@@ -42,13 +43,22 @@ def test_mcp_registry_registers_and_lists_tools() -> None:
 
     provider = FakeMcpProvider()
     registry = McpToolRegistry()
-    definition = _definition()
+    definition = ToolDefinition(
+        name="remote_tool",
+        description="远程工具",
+        parameters={"type": "object"},
+        source="mcp",
+        permission="read",
+        idempotent=True,
+        provider_id="filesystem_server",
+    )
 
     registry.register(definition, provider)
 
     assert registry.get(definition.name) is not None
     assert registry.get(definition.name).provider is provider
     assert registry.definitions() == [definition]
+    assert definition.route == ToolRoute("mcp", "filesystem_server")
 
 
 def test_mcp_registry_rejects_invalid_source_and_duplicates() -> None:
