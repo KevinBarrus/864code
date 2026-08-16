@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .model import Message
+from .model import Message, ToolCall
 
 
 class SessionStoreError(ValueError):
@@ -40,6 +40,17 @@ class SessionStore:
             "role": message.role,
             "content": message.content,
         }
+        if message.tool_calls:
+            record["tool_calls"] = [
+                {
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                }
+                for tool_call in message.tool_calls
+            ]
+        if message.tool_call_id is not None:
+            record["tool_call_id"] = message.tool_call_id
         with session_path.open("a", encoding="utf-8") as file:
             json.dump(record, file, ensure_ascii=False)
             file.write("\n")
@@ -111,11 +122,40 @@ class SessionStore:
 
         role = record.get("role")
         content = record.get("content")
-        if role not in {"user", "assistant"}:
+        if role not in {"user", "assistant", "tool"}:
             raise SessionStoreError(f"第 {line_number} 行的角色无效")
         if not isinstance(content, str):
             raise SessionStoreError(f"第 {line_number} 行的内容无效")
-        return Message(role=role, content=content)
+
+        raw_tool_calls = record.get("tool_calls", [])
+        if not isinstance(raw_tool_calls, list):
+            raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+        tool_calls: list[ToolCall] = []
+        for raw_tool_call in raw_tool_calls:
+            if not isinstance(raw_tool_call, dict):
+                raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+            call_id = raw_tool_call.get("call_id")
+            name = raw_tool_call.get("name")
+            arguments = raw_tool_call.get("arguments")
+            if (
+                not isinstance(call_id, str)
+                or not isinstance(name, str)
+                or not isinstance(arguments, dict)
+            ):
+                raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+            tool_calls.append(ToolCall(call_id, name, arguments))
+
+        tool_call_id = record.get("tool_call_id")
+        if tool_call_id is not None and not isinstance(tool_call_id, str):
+            raise SessionStoreError(f"第 {line_number} 行的工具调用 ID 无效")
+        if role == "tool" and not tool_call_id:
+            raise SessionStoreError(f"第 {line_number} 行缺少工具调用 ID")
+        return Message(
+            role=role,
+            content=content,
+            tool_calls=tuple(tool_calls),
+            tool_call_id=tool_call_id,
+        )
 
     @staticmethod
     def _create_title(messages: list[Message], session_id: str) -> str:

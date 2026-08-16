@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.model import Message
+from core.model import Message, ToolCall
 from core.session_store import SessionStore, SessionStoreError
 
 
@@ -48,6 +48,26 @@ def test_load_messages_restores_history_in_order(tmp_path: Path) -> None:
         Message(role="user", content="你好"),
         Message(role="assistant", content="你好！"),
     ]
+    for message in expected:
+        store.append_message(session_id, message)
+
+    assert store.load_messages(session_id) == expected
+
+
+def test_jsonl_persists_tool_calls_and_results(tmp_path: Path) -> None:
+    """测试 JSONL 可以保存和恢复工具调用及结果。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    expected = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+        ),
+        Message(role="tool", content="文件内容", tool_call_id="call-1"),
+    ]
+
     for message in expected:
         store.append_message(session_id, message)
 

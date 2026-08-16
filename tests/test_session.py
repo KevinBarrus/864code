@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 
-from core.model import Message
+from core.model import Message, ToolCall
 from core.session import Session
 from core.session_store import SessionStore
 
@@ -61,3 +61,23 @@ def test_restored_session_can_continue_writing(tmp_path: Path) -> None:
         Message(role="user", content="之前的问题"),
         Message(role="assistant", content="之前的回答"),
     ]
+
+
+def test_session_restores_tool_messages(tmp_path: Path) -> None:
+    """测试 Session 恢复后保留工具调用和工具结果。"""
+
+    original = Session(tmp_path)
+    messages = [
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+        ),
+        Message(role="tool", content="文件内容", tool_call_id="call-1"),
+    ]
+    for message in messages:
+        original.add_message(message)
+
+    restored = Session.restore(tmp_path, original.session_id)
+
+    assert restored.get_messages() == messages

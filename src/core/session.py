@@ -38,6 +38,11 @@ class Session:
 
         self._append_message(Message(role="assistant", content=content))
 
+    def add_message(self, message: Message) -> None:
+        """持久化并追加一条完整消息"""
+
+        self._append_message(message)
+
     def get_messages(self) -> list[Message]:
         """返回当前会话的消息历史"""
 
@@ -52,7 +57,4 @@ class Session:
     def _add_to_memory(self, message: Message) -> None:
         """将已有消息按角色追加到运行时记忆"""
 
-        if message.role == "user":
-            self._memory.add_user_message(message.content)
-        else:
-            self._memory.add_assistant_message(message.content)
+        self._memory.add_message(message)
