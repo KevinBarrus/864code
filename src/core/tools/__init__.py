@@ -7,6 +7,12 @@ from .file_tools import (
 )
 from .command_tool import create_run_command_tool
 from .manager import ToolManager
+from .mcp import (
+    McpToolProvider,
+    McpToolRegistrationError,
+    McpToolRegistry,
+    RegisteredMcpTool,
+)
 from .mutation_tools import create_edit_file_tool, create_write_file_tool
 from .path_utils import WorkspacePathError, resolve_workspace_path
 from .permissions import (
@@ -31,6 +37,10 @@ __all__ = [
     "ToolExecutor",
     "ToolArgumentError",
     "ToolManager",
+    "McpToolProvider",
+    "McpToolRegistrationError",
+    "McpToolRegistry",
+    "RegisteredMcpTool",
     "WorkspacePathError",
     "create_list_files_tool",
     "create_edit_file_tool",
