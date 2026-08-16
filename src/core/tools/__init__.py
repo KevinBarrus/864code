@@ -13,6 +13,7 @@ from .mcp import (
     McpToolRegistry,
     RegisteredMcpTool,
 )
+from .mcp_stdio import McpProtocolError, StdioMcpProvider
 from .mutation_tools import create_edit_file_tool, create_write_file_tool
 from .path_utils import WorkspacePathError, resolve_workspace_path
 from .permissions import (
@@ -44,6 +45,8 @@ __all__ = [
     "McpToolRegistrationError",
     "McpToolRegistry",
     "RegisteredMcpTool",
+    "McpProtocolError",
+    "StdioMcpProvider",
     "WorkspacePathError",
     "create_list_files_tool",
     "create_edit_file_tool",
