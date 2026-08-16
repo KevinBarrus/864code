@@ -6,6 +6,7 @@ import pytest
 
 from core.model import ToolCall
 from core.tools import (
+    PermissionManager,
     ToolManager,
     create_edit_file_tool,
     create_run_command_tool,
@@ -22,7 +23,10 @@ def _call(name: str, arguments: dict[str, object]) -> ToolCall:
 def _manager(*tools: tuple) -> ToolManager:
     """注册指定的本地工具。"""
 
-    manager = ToolManager()
+    async def approve(definition, tool_call) -> bool:
+        return True
+
+    manager = ToolManager(permission_manager=PermissionManager(approve))
     for definition, handler in tools:
         manager.register_local(definition, handler)
     return manager

@@ -3,7 +3,12 @@ from collections.abc import Awaitable, Callable
 import pytest
 
 from core.model import ToolCall, ToolResult
-from core.tools import LocalToolRegistry, ToolDefinition, ToolManager
+from core.tools import (
+    LocalToolRegistry,
+    PermissionManager,
+    ToolDefinition,
+    ToolManager,
+)
 from core.tools.registry import ToolRegistrationError
 
 
@@ -101,3 +106,60 @@ async def test_tool_manager_converts_handler_error() -> None:
         content="工具执行失败：读取失败",
         is_error=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_denies_write_without_confirmation() -> None:
+    """测试工具管理器不会执行未经确认的写工具。"""
+
+    executed = False
+
+    async def handler(tool_call: ToolCall) -> ToolResult:
+        nonlocal executed
+        executed = True
+        return ToolResult(call_id=tool_call.call_id, content="不应执行")
+
+    definition = _definition()
+    definition = ToolDefinition(
+        name=definition.name,
+        description=definition.description,
+        parameters=definition.parameters,
+        source=definition.source,
+        permission="write",
+        idempotent=False,
+    )
+    manager = ToolManager()
+    manager.register_local(definition, handler)
+
+    result = await manager.execute(
+        ToolCall(call_id="call-1", name="read_file", arguments={})
+    )
+
+    assert result.is_error is True
+    assert "被拒绝" in result.content
+    assert executed is False
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_uses_injected_approval() -> None:
+    """测试工具管理器可以使用应用层注入的确认回调。"""
+
+    async def approve(definition, tool_call) -> bool:
+        return True
+
+    manager = ToolManager(permission_manager=PermissionManager(approve))
+    definition = ToolDefinition(
+        name="write_file",
+        description="写入文件",
+        parameters={"type": "object"},
+        source="local",
+        permission="write",
+        idempotent=True,
+    )
+    manager.register_local(definition, _handler("已写入"))
+
+    result = await manager.execute(
+        ToolCall(call_id="call-1", name="write_file", arguments={})
+    )
+
+    assert result == ToolResult(call_id="call-1", content="已写入")
