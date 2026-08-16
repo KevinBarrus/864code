@@ -1,0 +1,30 @@
+"""提供工具参数读取辅助函数。"""
+
+from ..model import ToolCall
+
+
+def string_argument(tool_call: ToolCall, name: str) -> str:
+    """读取必填的非空字符串参数。"""
+
+    value = tool_call.arguments.get(name)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{name} 参数必须是非空字符串")
+    return value
+
+
+def text_argument(tool_call: ToolCall, name: str) -> str:
+    """读取允许为空的文本参数。"""
+
+    value = tool_call.arguments.get(name)
+    if not isinstance(value, str):
+        raise ValueError(f"{name} 参数必须是字符串")
+    return value
+
+
+def optional_path(tool_call: ToolCall) -> str:
+    """读取可选路径参数，未提供时使用工作区根目录。"""
+
+    value = tool_call.arguments.get("path", ".")
+    if not isinstance(value, str) or not value:
+        raise ValueError("path 参数必须是非空字符串")
+    return value

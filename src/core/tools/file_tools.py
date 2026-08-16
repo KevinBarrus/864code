@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from ..model import ToolCall, ToolResult
+from .args import optional_path, string_argument
 from .path_utils import resolve_workspace_path
 from .types import ToolDefinition, ToolHandler
 
@@ -11,7 +12,7 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
     """创建读取单个文件的工具。"""
 
     async def read_file(tool_call: ToolCall) -> ToolResult:
-        path = resolve_workspace_path(workspace, _path_argument(tool_call))
+        path = resolve_workspace_path(workspace, string_argument(tool_call, "path"))
         if not path.is_file():
             raise ValueError("目标不是文件")
         return ToolResult(
@@ -40,7 +41,7 @@ def create_list_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
     """创建列出目录内容的工具。"""
 
     async def list_files(tool_call: ToolCall) -> ToolResult:
-        path = resolve_workspace_path(workspace, _optional_path(tool_call))
+        path = resolve_workspace_path(workspace, optional_path(tool_call))
         if not path.is_dir():
             raise ValueError("目标不是目录")
 
@@ -75,8 +76,8 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
     """创建在工作区内按文本查找内容的工具。"""
 
     async def search_files(tool_call: ToolCall) -> ToolResult:
-        pattern = _string_argument(tool_call, "pattern")
-        root = resolve_workspace_path(workspace, _optional_path(tool_call))
+        pattern = string_argument(tool_call, "pattern")
+        root = resolve_workspace_path(workspace, optional_path(tool_call))
         if not root.is_dir():
             raise ValueError("搜索范围不是目录")
 
@@ -116,27 +117,3 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
         ),
         search_files,
     )
-
-
-def _path_argument(tool_call: ToolCall) -> str:
-    """读取必填的路径参数。"""
-
-    return _string_argument(tool_call, "path")
-
-
-def _optional_path(tool_call: ToolCall) -> str:
-    """读取可选路径参数，未提供时使用工作区根目录。"""
-
-    value = tool_call.arguments.get("path", ".")
-    if not isinstance(value, str) or not value:
-        raise ValueError("path 参数必须是非空字符串")
-    return value
-
-
-def _string_argument(tool_call: ToolCall, name: str) -> str:
-    """读取必填的非空字符串参数。"""
-
-    value = tool_call.arguments.get(name)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{name} 参数必须是非空字符串")
-    return value
