@@ -2,6 +2,8 @@
 
 import json
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .model import Message
@@ -9,6 +11,15 @@ from .model import Message
 
 class SessionStoreError(ValueError):
     """会话文件格式或会话标识无效时抛出的异常。"""
+
+
+@dataclass(frozen=True)
+class SessionSummary:
+    """用于会话选择器展示的最小摘要"""
+
+    session_id: str
+    title: str
+    updated_at: datetime
 
 
 class SessionStore:
@@ -54,6 +65,34 @@ class SessionStore:
                 messages.append(self._message_from_record(record, line_number))
         return messages
 
+    def list_sessions(self) -> list[SessionSummary]:
+        """读取工作区中的会话摘要并按更新时间倒序排列"""
+
+        if not self._sessions_dir.is_dir():
+            return []
+
+        summaries: list[SessionSummary] = []
+        for session_path in self._sessions_dir.glob("*.jsonl"):
+            session_id = session_path.stem
+            try:
+                messages = self.load_messages(session_id)
+            except SessionStoreError as exc:
+                raise SessionStoreError(
+                    f"无法读取会话 {session_id}: {exc}"
+                ) from exc
+
+            summaries.append(
+                SessionSummary(
+                    session_id=session_id,
+                    title=self._create_title(messages, session_id),
+                    updated_at=datetime.fromtimestamp(
+                        session_path.stat().st_mtime,
+                        tz=timezone.utc,
+                    ),
+                )
+            )
+        return sorted(summaries, key=lambda item: item.updated_at, reverse=True)
+
     def _session_path(self, session_id: str) -> Path:
         """校验 Session ID 后生成对应文件路径。"""
 
@@ -77,3 +116,18 @@ class SessionStore:
         if not isinstance(content, str):
             raise SessionStoreError(f"第 {line_number} 行的内容无效")
         return Message(role=role, content=content)
+
+    @staticmethod
+    def _create_title(messages: list[Message], session_id: str) -> str:
+        """从第一条用户消息生成会话标题"""
+
+        first_user_message = next(
+            (message.content for message in messages if message.role == "user"),
+            "",
+        )
+        title = " ".join(first_user_message.split())
+        if not title:
+            return session_id[:8]
+        if len(title) <= 40:
+            return title
+        return f"{title[:37]}..."

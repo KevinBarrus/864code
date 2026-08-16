@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -109,3 +110,62 @@ def test_invalid_session_id_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(SessionStoreError, match="无效的 Session ID"):
         store.load_messages("../../outside")
+
+
+def test_list_sessions_returns_titles_and_recent_first(tmp_path: Path) -> None:
+    """测试会话摘要包含标题并按更新时间倒序排列"""
+
+    store = SessionStore(tmp_path)
+    older_id = str(uuid.uuid4())
+    newer_id = str(uuid.uuid4())
+    store.append_message(older_id, Message(role="user", content="旧会话"))
+    store.append_message(newer_id, Message(role="user", content="新会话"))
+
+    older_path = tmp_path / ".864code" / "sessions" / f"{older_id}.jsonl"
+    newer_path = tmp_path / ".864code" / "sessions" / f"{newer_id}.jsonl"
+    older_time = newer_path.stat().st_mtime - 10
+    older_path.touch()
+    newer_path.touch()
+    os.utime(older_path, (older_time, older_time))
+
+    summaries = store.list_sessions()
+
+    assert [summary.session_id for summary in summaries] == [newer_id, older_id]
+    assert summaries[0].title == "新会话"
+    assert summaries[1].title == "旧会话"
+    assert summaries[0].updated_at > summaries[1].updated_at
+
+
+def test_list_sessions_truncates_title_and_uses_id_for_empty_session(
+    tmp_path: Path,
+) -> None:
+    """测试标题会清理换行并限制长度，空会话使用 Session ID"""
+
+    store = SessionStore(tmp_path)
+    long_id = str(uuid.uuid4())
+    empty_id = str(uuid.uuid4())
+    long_title = "这是一个很长的会话标题\n" + "内容" * 30
+    store.append_message(long_id, Message(role="user", content=long_title))
+    empty_path = tmp_path / ".864code" / "sessions" / f"{empty_id}.jsonl"
+    empty_path.touch()
+
+    summaries = {
+        summary.session_id: summary for summary in store.list_sessions()
+    }
+
+    assert len(summaries[long_id].title) == 40
+    assert "\n" not in summaries[long_id].title
+    assert summaries[empty_id].title == empty_id[:8]
+
+
+def test_list_sessions_rejects_corrupted_file(tmp_path: Path) -> None:
+    """测试损坏的会话文件会返回明确错误"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json\n", encoding="utf-8")
+
+    with pytest.raises(SessionStoreError, match=f"无法读取会话 {session_id}"):
+        store.list_sessions()
