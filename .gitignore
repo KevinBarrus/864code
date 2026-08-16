@@ -9,10 +9,11 @@ __pycache__/
 .ruff_cache/
 .coverage
 /design
-
 AGENTS.md
 CLAUDE.md
-
-.env
-/.idea
-/.864code
+.idea/
+/.864code/
+/build/
+/dist/
+*.egg-info/
+.DS_Store
