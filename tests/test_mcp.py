@@ -6,9 +6,12 @@ from core.model import ToolCall, ToolResult
 from core.tools import (
     McpToolRegistrationError,
     McpToolRegistry,
+    RegisteredMcpTool,
+    ToolRegistry,
     ToolDefinition,
     ToolRoute,
 )
+from core.tools.registry import LocalToolRegistry, ToolRegistrationError
 
 
 class FakeMcpProvider:
@@ -72,3 +75,26 @@ def test_mcp_registry_rejects_invalid_source_and_duplicates() -> None:
         registry.register(_definition("local", "local_tool"), provider)
     with pytest.raises(McpToolRegistrationError, match="工具已注册"):
         registry.register(_definition(), provider)
+
+
+def test_unified_registry_rejects_duplicate_names_across_sources() -> None:
+    """测试统一注册表拒绝不同来源的同名工具。"""
+
+    provider = FakeMcpProvider()
+    mcp_definition = _definition("mcp", "search_log")
+    local_definition = _definition("local", "search_log")
+    unified = ToolRegistry()
+    local = LocalToolRegistry()
+
+    async def local_handler(tool_call: ToolCall) -> ToolResult:
+        """返回本地测试结果。"""
+
+        return ToolResult(tool_call.call_id, "本地完成")
+
+    local.register(local_definition, local_handler)
+    local_binding = local.get("search_log")
+    assert local_binding is not None
+    unified.register(local_binding)
+
+    with pytest.raises(ToolRegistrationError, match="工具已注册"):
+        unified.register(RegisteredMcpTool(mcp_definition, provider))

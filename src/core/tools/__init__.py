@@ -22,12 +22,14 @@ from .permissions import (
     PermissionDenied,
     PermissionManager,
 )
-from .registry import LocalToolRegistry
+from .registry import LocalToolRegistry, ToolBinding, ToolRegistry
 from .types import ToolDefinition, ToolExecutor, ToolRoute
 from .validation import ToolArgumentError, validate_tool_arguments
 
 __all__ = [
     "LocalToolRegistry",
+    "ToolBinding",
+    "ToolRegistry",
     "ApprovalDecision",
     "ApprovalHandler",
     "ApprovalResult",

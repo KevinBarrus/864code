@@ -29,6 +29,11 @@ class RegisteredMcpTool:
     definition: ToolDefinition
     provider: McpToolProvider
 
+    async def execute(self, tool_call: ToolCall) -> ToolResult:
+        """调用 MCP 提供者并返回统一工具结果。"""
+
+        return await self.provider.call_tool(tool_call)
+
 
 class McpToolRegistry:
     """保存 MCP 工具，不负责通信、权限判断和工具执行。"""
