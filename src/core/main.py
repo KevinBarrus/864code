@@ -9,15 +9,24 @@ from pathlib import Path
 from .config import ConfigError, load_settings
 from .balance import UnavailableBalanceProvider
 from .openai_client import OpenAICompatibleClient
+from .session_picker import SessionPicker
+from .session_store import SessionStore
 from .session_store import SessionStoreError
 from .status import create_status_info
 from .ui import run_chat
 
 
-async def run(session_id: str | None = None) -> None:
+async def run(session_id: str | None = None, resume: bool = False) -> None:
     """加载配置、创建模型客户端并启动终端界面"""
 
     workspace = Path.cwd().resolve()
+    if resume and session_id is None:
+        summaries = SessionStore(workspace).list_sessions()
+        session_id = await SessionPicker(summaries).pick()
+        if session_id is None:
+            print("没有选择会话，已退出")
+            return
+
     settings = load_settings()
     client = OpenAICompatibleClient(settings)
     balance = await UnavailableBalanceProvider().get_balance()
@@ -29,13 +38,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     """处理启动阶段的错误并返回进程退出码"""
 
     parser = argparse.ArgumentParser(description="启动 864code")
-    parser.add_argument("--session-id", help="恢复指定的会话")
+    subparsers = parser.add_subparsers(dest="command")
+    resume_parser = subparsers.add_parser("resume", help="恢复已有会话")
+    resume_parser.add_argument("session_id", nargs="?", help="要恢复的会话 ID")
     args = parser.parse_args(argv)
 
     try:
-        asyncio.run(run(args.session_id))
-    except (ConfigError, SessionStoreError) as exc:
+        asyncio.run(
+            run(
+                getattr(args, "session_id", None),
+                resume=args.command == "resume",
+            )
+        )
+    except ConfigError as exc:
         print(f"配置错误：{exc}", file=sys.stderr)
+        return 1
+    except SessionStoreError as exc:
+        print(f"会话错误：{exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("\n已退出。")

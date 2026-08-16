@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.cursor_shapes import CursorShape
@@ -28,13 +29,14 @@ from .ui_config import InputLayoutConfig
 
 
 SubmitHandler = Callable[[str], Awaitable[None]]
+ConversationRole = Literal["user", "assistant"]
 
 
 @dataclass(frozen=True)
 class ConversationEntry:
     """对话区中的一条展示内容。"""
 
-    speaker: str
+    role: ConversationRole
     content: str
 
 
@@ -107,12 +109,12 @@ class ChatScreen:
             cursor=CursorShape.BLINKING_BEAM,
         )
 
-    def add_entry(self, speaker: str, content: str) -> int:
+    def add_entry(self, role: ConversationRole, content: str) -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
 
-        self._conversation.append(ConversationEntry(speaker, content))
+        self._conversation.append(ConversationEntry(role, content))
         self._sync_conversation_view()
-        if speaker == "你":
+        if role == "user":
             self.conversation_view.scroll_to_bottom()
         self.application.invalidate()
         return len(self._conversation) - 1
@@ -324,7 +326,7 @@ class ChatScreen:
 
         children: list[Window] = []
         for index, entry in enumerate(self._conversation):
-            style = "class:conversation-user" if entry.speaker == "你" else ""
+            style = "class:conversation-user" if entry.role == "user" else ""
             children.append(
                 Window(
                     content=FormattedTextControl(

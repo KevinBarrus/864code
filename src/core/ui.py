@@ -29,8 +29,8 @@ async def run_chat(
         """发送请求，并同步当前会话的消息历史"""
 
         # 先更新界面，让用户立即看到本轮输入和待生成的回复区域
-        screen.add_entry("你", prompt)
-        response_index = screen.add_entry("模型", "")
+        screen.add_entry("user", prompt)
+        response_index = screen.add_entry("assistant", "")
         response_parts: list[str] = []
 
         # 用户消息必须先进入会话，模型才能在本轮请求中看到它
@@ -58,4 +58,9 @@ async def run_chat(
                 session.add_assistant_message(response)
 
     screen = ChatScreen(status, on_submit=handle_submit)
+    history = session.get_messages()
+    for message in history:
+        screen.add_entry(message.role, message.content)
+    if history:
+        screen.conversation_view.scroll_to_bottom()
     await screen.application.run_async()

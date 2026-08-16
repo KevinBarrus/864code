@@ -52,7 +52,7 @@ def test_chat_screen_appends_conversation_entries(tmp_path: Path) -> None:
     """测试对话区可以追加并渲染模型内容。"""
 
     screen = _create_screen(tmp_path)
-    index = screen.add_entry("模型", "测试回复")
+    index = screen.add_entry("assistant", "测试回复")
 
     assert screen._render_entry(index) == "测试回复"
 
@@ -63,7 +63,7 @@ def test_chat_screen_uses_scrollable_conversation_view(
     """测试对话区使用支持滚动的内容视图。"""
 
     screen = _create_screen(tmp_path)
-    screen.add_entry("模型", "第一段回复")
+    screen.add_entry("assistant", "第一段回复")
     screen.append_to_entry(0, "\n第二段回复")
 
     assert screen.conversation_view.show_scrollbar() is False
@@ -124,8 +124,8 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         # 根布局的第 5、7 项分别是输入区和状态栏，中间的 0 是布局间隔。
         assert empty_sizes[4:7] == [3, 0, 1]
 
-        screen.add_entry("你", "用户输入")
-        screen.add_entry("模型", "")
+        screen.add_entry("user", "用户输入")
+        screen.add_entry("assistant", "")
         conversation_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
         assert conversation_sizes[2] == 3
@@ -184,7 +184,7 @@ def test_user_entry_uses_full_width_gray_style_without_prefix(
     """测试用户消息使用整行灰色背景且不显示角色前缀。"""
 
     screen = _create_screen(tmp_path)
-    screen.add_entry("你", "用户输入")
+    screen.add_entry("user", "用户输入")
 
     assert (
         screen.application.style.get_attrs_for_style_str(

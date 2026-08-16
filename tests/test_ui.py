@@ -38,8 +38,8 @@ async def test_submit_handler_sends_conversation_history(tmp_path: Path) -> None
     async def handle_submit(prompt: str) -> None:
         """模拟应用层同步记忆和界面的请求流程"""
 
-        screen.add_entry("你", prompt)
-        response_index = screen.add_entry("模型", "")
+        screen.add_entry("user", prompt)
+        response_index = screen.add_entry("assistant", "")
         session.add_user_message(prompt)
         response = ""
         async for chunk in client.stream_chat(session.get_messages()):
@@ -99,8 +99,8 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
     async def handle_submit(prompt: str) -> None:
         """模拟带取消处理的应用层请求流程"""
 
-        screen.add_entry("你", prompt)
-        response_index = screen.add_entry("模型", "")
+        screen.add_entry("user", prompt)
+        response_index = screen.add_entry("assistant", "")
         session.add_user_message(prompt)
         response = ""
         try:
@@ -146,8 +146,8 @@ async def test_model_error_is_not_saved_in_session(tmp_path: Path) -> None:
     async def handle_submit(prompt: str) -> None:
         """模拟模型错误处理流程"""
 
-        screen.add_entry("你", prompt)
-        response_index = screen.add_entry("模型", "")
+        screen.add_entry("user", prompt)
+        response_index = screen.add_entry("assistant", "")
         session.add_user_message(prompt)
         try:
             async for chunk in client.stream_chat(session.get_messages()):
