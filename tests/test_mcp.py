@@ -9,6 +9,7 @@ from core.tools import (
     RegisteredMcpTool,
     ToolRegistry,
     ToolDefinition,
+    ToolManager,
     ToolRoute,
 )
 from core.tools.registry import LocalToolRegistry, ToolRegistrationError
@@ -98,3 +99,19 @@ def test_unified_registry_rejects_duplicate_names_across_sources() -> None:
 
     with pytest.raises(ToolRegistrationError, match="工具已注册"):
         unified.register(RegisteredMcpTool(mcp_definition, provider))
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_executes_mcp_binding_from_unified_registry() -> None:
+    """测试工具管理器可以执行统一注册表中的 MCP 工具。"""
+
+    provider = FakeMcpProvider()
+    definition = _definition()
+    registry = ToolRegistry()
+    registry.register(RegisteredMcpTool(definition, provider))
+
+    result = await ToolManager(registry=registry).execute(
+        ToolCall("call-1", definition.name, {})
+    )
+
+    assert result == ToolResult("call-1", "完成")

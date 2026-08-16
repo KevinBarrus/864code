@@ -73,6 +73,8 @@ class ToolRegistry:
         """注册一个工具绑定，模型可见名称必须全局唯一。"""
 
         name = binding.definition.name
+        if binding.definition.source not in {"local", "mcp"}:
+            raise ToolRegistrationError("工具来源不受支持")
         if name in self._tools:
             raise ToolRegistrationError(f"工具已注册：{name}")
         self._tools[name] = binding
