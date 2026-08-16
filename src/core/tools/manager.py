@@ -3,6 +3,8 @@
 import asyncio
 
 from ..model import ToolCall, ToolResult
+from .mcp import McpToolProvider, McpToolRegistry
+from .mcp import RegisteredMcpTool
 from .registry import RegisteredTool, ToolRegistry
 from .permissions import ApprovalDecision, PermissionDenied, PermissionManager
 from .types import ToolDefinition, ToolHandler
@@ -35,6 +37,17 @@ class ToolManager:
         """返回当前已注册的工具定义。"""
 
         return self._registry.definitions()
+
+    async def register_mcp_provider(self, provider: McpToolProvider) -> None:
+        """发现 MCP 工具并注册到统一工具注册表。"""
+
+        mcp_registry = McpToolRegistry()
+        for definition in await provider.list_tools():
+            mcp_registry.register(definition, provider)
+        for definition in mcp_registry.definitions():
+            binding = mcp_registry.get(definition.name)
+            assert isinstance(binding, RegisteredMcpTool)
+            self._registry.register(binding)
 
     def model_tools(self) -> list[dict[str, object]]:
         """将已注册工具转换为模型工具定义。"""

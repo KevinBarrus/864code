@@ -21,7 +21,7 @@ class FakeMcpProvider:
     async def list_tools(self) -> Sequence[ToolDefinition]:
         """返回一个测试工具定义。"""
 
-        return []
+        return [_definition()]
 
     async def call_tool(self, tool_call: ToolCall) -> ToolResult:
         """返回一个测试工具结果。"""
@@ -115,3 +115,15 @@ async def test_tool_manager_executes_mcp_binding_from_unified_registry() -> None
     )
 
     assert result == ToolResult("call-1", "完成")
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_discovers_mcp_provider_tools() -> None:
+    """测试工具管理器可以发现并注册 MCP 工具。"""
+
+    manager = ToolManager()
+    await manager.register_mcp_provider(FakeMcpProvider())
+
+    assert [definition.name for definition in manager.list_definitions()] == [
+        "remote_tool"
+    ]
