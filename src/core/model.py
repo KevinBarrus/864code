@@ -1,6 +1,6 @@
 """定义模型客户端与应用之间的最小接口。"""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -27,6 +27,23 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class TextDelta:
+    """模型流式返回的一段文本。"""
+
+    content: str
+
+
+@dataclass(frozen=True)
+class ToolCallEvent:
+    """模型流式响应中完成的一次工具调用。"""
+
+    tool_call: ToolCall
+
+
+ModelEvent = TextDelta | ToolCallEvent
+
+
+@dataclass(frozen=True)
 class Message:
     """一次模型对话中的消息。"""
 
@@ -48,3 +65,10 @@ class ModelClient(Protocol):
         messages: Sequence[Message],
     ) -> AsyncIterator[str]:
         """根据消息列表生成文本片段。"""
+
+    async def stream_response(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[Mapping[str, object]] = (),
+    ) -> AsyncIterator[ModelEvent]:
+        """根据消息列表生成文本和工具调用事件。"""

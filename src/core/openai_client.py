@@ -1,12 +1,30 @@
 """OpenAI-compatible 模型客户端实现。"""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+import json
+from collections.abc import AsyncIterator, Mapping, Sequence
+from dataclasses import dataclass
 
 from openai import AsyncOpenAI
 
 from .config import Settings
-from .model import Message, ModelClientError
+from .model import (
+    Message,
+    ModelEvent,
+    ModelClientError,
+    TextDelta,
+    ToolCall,
+    ToolCallEvent,
+)
+
+
+@dataclass
+class _ToolCallBuffer:
+    """暂存流式工具调用的分片内容。"""
+
+    call_id: str = ""
+    name: str = ""
+    arguments: str = ""
 
 
 class OpenAICompatibleClient:
@@ -31,24 +49,113 @@ class OpenAICompatibleClient:
     ) -> AsyncIterator[str]:
         """发送消息并逐段返回模型生成的文本。"""
 
-        request_messages = [
-            {"role": message.role, "content": message.content}
-            for message in messages
-        ]
+        async for event in self.stream_response(messages):
+            if isinstance(event, TextDelta):
+                yield event.content
+
+    async def stream_response(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[Mapping[str, object]] = (),
+    ) -> AsyncIterator[ModelEvent]:
+        """发送消息并解析文本和工具调用事件。"""
+
+        request_messages = [_serialize_message(message) for message in messages]
+        request: dict[str, object] = {
+            "model": self._model_name,
+            "messages": request_messages,
+            "stream": True,
+        }
+        if tools:
+            request["tools"] = list(tools)
 
         try:
             stream = await self._client.chat.completions.create(
-                model=self._model_name,
-                messages=request_messages,
-                stream=True,
+                **request,
             )
+            tool_calls: dict[int, _ToolCallBuffer] = {}
             async for chunk in stream:
                 if not chunk.choices:
                     continue
-                content = chunk.choices[0].delta.content
+                delta = chunk.choices[0].delta
+                content = delta.content
                 if content:
-                    yield content
+                    yield TextDelta(content)
+                for tool_call_delta in getattr(delta, "tool_calls", None) or ():
+                    _append_tool_call_delta(tool_calls, tool_call_delta)
+
+            for index in sorted(tool_calls):
+                yield ToolCallEvent(_build_tool_call(tool_calls[index], index))
         except asyncio.CancelledError:
+            raise
+        except ModelClientError:
             raise
         except Exception as exc:
             raise ModelClientError("模型请求失败，请检查配置和网络连接") from exc
+
+
+def _serialize_message(message: Message) -> dict[str, object]:
+    """将内部消息转换为 OpenAI-compatible 消息。"""
+
+    request: dict[str, object] = {
+        "role": message.role,
+        "content": message.content,
+    }
+    if message.tool_calls:
+        request["tool_calls"] = [
+            {
+                "id": tool_call.call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.name,
+                    "arguments": json.dumps(
+                        tool_call.arguments,
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+            for tool_call in message.tool_calls
+        ]
+    if message.tool_call_id is not None:
+        request["tool_call_id"] = message.tool_call_id
+    return request
+
+
+def _append_tool_call_delta(
+    buffers: dict[int, _ToolCallBuffer],
+    delta: object,
+) -> None:
+    """将一个 OpenAI 工具调用分片追加到对应缓冲区。"""
+
+    index = getattr(delta, "index", 0)
+    buffer = buffers.setdefault(index, _ToolCallBuffer())
+    call_id = getattr(delta, "id", None)
+    if call_id:
+        buffer.call_id = call_id
+    function = getattr(delta, "function", None)
+    if function is None:
+        return
+    name = getattr(function, "name", None)
+    if name:
+        buffer.name = name
+    arguments = getattr(function, "arguments", None)
+    if arguments:
+        buffer.arguments += arguments
+
+
+def _build_tool_call(buffer: _ToolCallBuffer, index: int) -> ToolCall:
+    """将工具调用缓冲区转换为已校验的内部对象。"""
+
+    if not buffer.call_id or not buffer.name:
+        raise ModelClientError(f"模型返回了不完整的工具调用：{index}")
+    try:
+        arguments = json.loads(buffer.arguments or "{}")
+    except json.JSONDecodeError as exc:
+        raise ModelClientError("模型返回的工具参数不是有效 JSON") from exc
+    if not isinstance(arguments, dict):
+        raise ModelClientError("模型返回的工具参数必须是 JSON 对象")
+    return ToolCall(
+        call_id=buffer.call_id,
+        name=buffer.name,
+        arguments=arguments,
+    )

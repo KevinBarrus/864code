@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.config import Settings
-from core.model import Message, ModelClientError
+from core.model import Message, ModelClientError, TextDelta, ToolCall, ToolCallEvent
 from core.openai_client import OpenAICompatibleClient
 
 
@@ -132,3 +132,124 @@ async def test_client_wraps_request_error() -> None:
 
     with pytest.raises(ModelClientError, match="模型请求失败"):
         await _collect(client)
+
+
+async def _collect_events(client: OpenAICompatibleClient) -> list[object]:
+    """收集客户端产生的模型事件。"""
+
+    events: list[object] = []
+    async for event in client.stream_response(
+        [Message(role="user", content="读取文件")],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "读取文件",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+    ):
+        events.append(event)
+    return events
+
+
+@pytest.mark.asyncio
+async def test_client_parses_text_and_streaming_tool_call() -> None:
+    """测试客户端解析文本片段和分片工具调用。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="开始"))]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call-1",
+                                    function=SimpleNamespace(
+                                        name="read_file",
+                                        arguments='{"path":',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    function=SimpleNamespace(
+                                        name=None,
+                                        arguments='"README.md"}',
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    events = await _collect_events(client)
+
+    assert events == [
+        TextDelta("开始"),
+        ToolCallEvent(
+            tool_call=ToolCall(
+                call_id="call-1",
+                name="read_file",
+                arguments={"path": "README.md"},
+            )
+        ),
+    ]
+    assert fake_sdk.completions.received is not None
+    assert fake_sdk.completions.received["tools"]
+
+
+@pytest.mark.asyncio
+async def test_client_rejects_invalid_tool_arguments() -> None:
+    """测试客户端拒绝无效的工具参数 JSON。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call-1",
+                                    function=SimpleNamespace(
+                                        name="read_file",
+                                        arguments="{invalid",
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            )
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError, match="工具参数不是有效 JSON"):
+        await _collect_events(client)
