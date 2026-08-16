@@ -29,5 +29,6 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "conversation-user": "bg:#303030",
             "approval-area": "bg:#303030",
             "approval-selected": "fg:ansiblue",
+            "tool-activity": "fg:#808080",
         }
     )

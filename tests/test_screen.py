@@ -98,6 +98,16 @@ def test_chat_screen_appends_conversation_entries(tmp_path: Path) -> None:
     assert screen._render_entry(index) == "测试回复"
 
 
+def test_chat_screen_supports_tool_activity_style(tmp_path: Path) -> None:
+    """测试工具活动条目使用独立样式。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("tool", "✓ read_file  已读取")
+
+    assert screen._conversation[index].role == "tool"
+    assert screen._conversation_content.children[index].style == "class:tool-activity"
+
+
 def test_chat_screen_uses_scrollable_conversation_view(
     tmp_path: Path,
 ) -> None:

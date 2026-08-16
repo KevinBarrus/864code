@@ -33,7 +33,7 @@ from .ui_config import InputLayoutConfig
 
 
 SubmitHandler = Callable[[str], Awaitable[None]]
-ConversationRole = Literal["user", "assistant"]
+ConversationRole = Literal["user", "assistant", "tool"]
 
 
 @dataclass(frozen=True)
@@ -129,6 +129,14 @@ class ChatScreen:
 
         entry = self._conversation[index]
         self._conversation[index] = replace(entry, content=entry.content + content)
+        self._sync_conversation_view()
+        self.application.invalidate()
+
+    def set_entry_content(self, index: int, content: str) -> None:
+        """替换指定对话条目的展示内容。"""
+
+        entry = self._conversation[index]
+        self._conversation[index] = replace(entry, content=content)
         self._sync_conversation_view()
         self.application.invalidate()
 
@@ -383,7 +391,12 @@ class ChatScreen:
 
         children: list[Window] = []
         for index, entry in enumerate(self._conversation):
-            style = "class:conversation-user" if entry.role == "user" else ""
+            if entry.role == "user":
+                style = "class:conversation-user"
+            elif entry.role == "tool":
+                style = "class:tool-activity"
+            else:
+                style = ""
             children.append(
                 Window(
                     content=FormattedTextControl(

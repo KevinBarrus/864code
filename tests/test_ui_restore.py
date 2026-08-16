@@ -7,6 +7,7 @@ from core import ui
 from core.model import Message
 from core.session import Session
 from core.status import create_status_info
+from core.tools import ApprovalDecision, ApprovalResult
 
 
 class FakeApplication:
@@ -48,6 +49,11 @@ class FakeScreen:
 
         self.entries.append((role, content))
         return len(self.entries) - 1
+
+    async def request_approval(self, definition, tool_call) -> ApprovalResult:
+        """模拟界面审批回调"""
+
+        return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
 
 class EmptyClient:
