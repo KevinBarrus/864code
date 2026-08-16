@@ -4,6 +4,8 @@ import pytest
 
 from core.context import (
     ContextBudget,
+    ContextCompactionRequired,
+    ContextManager,
     estimate_context_tokens,
     estimate_message_tokens,
 )
@@ -54,3 +56,20 @@ def test_estimate_context_tokens_sums_messages() -> None:
     ]
 
     assert estimate_context_tokens(messages) == 3
+
+
+def test_context_manager_returns_copy_when_context_is_within_budget() -> None:
+    messages = [Message(role="user", content="你好")]
+    manager = ContextManager(ContextBudget(100, 10, 50))
+
+    result = manager.build(messages)
+
+    assert result == messages
+    assert result is not messages
+
+
+def test_context_manager_requires_compaction_when_context_exceeds_budget() -> None:
+    manager = ContextManager(ContextBudget(10, 2, 5))
+
+    with pytest.raises(ContextCompactionRequired):
+        manager.build([Message(role="user", content="a" * 40)])

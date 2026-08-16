@@ -33,6 +33,27 @@ class ContextBudget:
         return self.context_window - self.reserve_tokens
 
 
+class ContextCompactionRequired(RuntimeError):
+    """表示当前消息超出预算，需要先执行上下文压缩。"""
+
+
+class ContextManager:
+    """根据上下文预算生成模型请求消息。"""
+
+    def __init__(self, budget: ContextBudget) -> None:
+        """创建上下文管理器。"""
+
+        self._budget = budget
+
+    def build(self, messages: Sequence[Message]) -> list[Message]:
+        """返回未超出预算的消息副本，超出预算时要求先压缩。"""
+
+        message_list = list(messages)
+        if estimate_context_tokens(message_list) > self._budget.compaction_threshold:
+            raise ContextCompactionRequired("上下文超出预算，需要先执行压缩")
+        return message_list
+
+
 def estimate_message_tokens(message: Message) -> int:
     """使用字符数估算单条消息的 Token 数。"""
 
