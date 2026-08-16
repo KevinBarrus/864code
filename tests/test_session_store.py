@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from core.model import Message, ToolCall
-from core.session_store import SessionStore, SessionStoreError
+from core.session_store import CompactionRecord, SessionStore, SessionStoreError
 
 
 def test_append_creates_session_file_and_directory(tmp_path: Path) -> None:
@@ -52,6 +52,56 @@ def test_load_messages_restores_history_in_order(tmp_path: Path) -> None:
         store.append_message(session_id, message)
 
     assert store.load_messages(session_id) == expected
+
+
+def test_compaction_record_is_persisted_and_loaded_separately(tmp_path: Path) -> None:
+    """测试压缩记录与消息记录共存但分开读取。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    expected = CompactionRecord("早期历史摘要", 3, 1200)
+
+    store.append_message(session_id, Message(role="user", content="最新消息"))
+    store.append_compaction(session_id, expected)
+
+    assert store.load_messages(session_id) == [
+        Message(role="user", content="最新消息")
+    ]
+    assert store.load_compactions(session_id) == [expected]
+
+
+@pytest.mark.parametrize(
+    ("record", "expected_message"),
+    [
+        (
+            '{"type":"compaction","summary":1,"first_kept_message_index":0,"tokens_before":1}',
+            "压缩摘要无效",
+        ),
+        (
+            '{"type":"compaction","summary":"摘要","first_kept_message_index":-1,"tokens_before":1}',
+            "保留边界无效",
+        ),
+        (
+            '{"type":"compaction","summary":"摘要","first_kept_message_index":0,"tokens_before":-1}',
+            "压缩 Token 数无效",
+        ),
+    ],
+)
+def test_invalid_compaction_record_raises_clear_error(
+    tmp_path: Path,
+    record: str,
+    expected_message: str,
+) -> None:
+    """测试损坏的压缩记录不会被静默忽略。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(record + "\n", encoding="utf-8")
+
+    with pytest.raises(SessionStoreError, match=expected_message):
+        store.load_compactions(session_id)
 
 
 def test_jsonl_persists_tool_calls_and_results(tmp_path: Path) -> None:

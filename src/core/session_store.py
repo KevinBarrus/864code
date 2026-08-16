@@ -22,6 +22,15 @@ class SessionSummary:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class CompactionRecord:
+    """记录一次上下文压缩及其原始消息保留边界。"""
+
+    summary: str
+    first_kept_message_index: int
+    tokens_before: int
+
+
 class SessionStore:
     """将一个工作区中的会话消息追加或读取为 JSONL。"""
 
@@ -55,6 +64,25 @@ class SessionStore:
             json.dump(record, file, ensure_ascii=False)
             file.write("\n")
 
+    def append_compaction(
+        self,
+        session_id: str,
+        compaction: CompactionRecord,
+    ) -> None:
+        """将一次上下文压缩记录追加到指定会话的 JSONL 文件。"""
+
+        session_path = self._session_path(session_id)
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "type": "compaction",
+            "summary": compaction.summary,
+            "first_kept_message_index": compaction.first_kept_message_index,
+            "tokens_before": compaction.tokens_before,
+        }
+        with session_path.open("a", encoding="utf-8") as file:
+            json.dump(record, file, ensure_ascii=False)
+            file.write("\n")
+
     def load_messages(self, session_id: str) -> list[Message]:
         """按文件顺序读取指定会话的全部消息。"""
 
@@ -73,8 +101,32 @@ class SessionStore:
                     raise SessionStoreError(
                         f"第 {line_number} 行不是有效 JSON"
                     ) from exc
+                if isinstance(record, dict) and record.get("type") == "compaction":
+                    continue
                 messages.append(self._message_from_record(record, line_number))
         return messages
+
+    def load_compactions(self, session_id: str) -> list[CompactionRecord]:
+        """按文件顺序读取指定会话的上下文压缩记录。"""
+
+        session_path = self._session_path(session_id)
+        if not session_path.exists():
+            return []
+
+        compactions: list[CompactionRecord] = []
+        with session_path.open(encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise SessionStoreError(
+                        f"第 {line_number} 行不是有效 JSON"
+                    ) from exc
+                if isinstance(record, dict) and record.get("type") == "compaction":
+                    compactions.append(self._compaction_from_record(record, line_number))
+        return compactions
 
     def list_sessions(self) -> list[SessionSummary]:
         """读取工作区中的会话摘要并按更新时间倒序排列"""
@@ -155,6 +207,31 @@ class SessionStore:
             content=content,
             tool_calls=tuple(tool_calls),
             tool_call_id=tool_call_id,
+        )
+
+    @staticmethod
+    def _compaction_from_record(
+        record: object,
+        line_number: int,
+    ) -> CompactionRecord:
+        """校验压缩记录并转换为 CompactionRecord。"""
+
+        if not isinstance(record, dict) or record.get("type") != "compaction":
+            raise SessionStoreError(f"第 {line_number} 行不是压缩记录")
+
+        summary = record.get("summary")
+        first_kept_message_index = record.get("first_kept_message_index")
+        tokens_before = record.get("tokens_before")
+        if not isinstance(summary, str):
+            raise SessionStoreError(f"第 {line_number} 行的压缩摘要无效")
+        if not isinstance(first_kept_message_index, int) or first_kept_message_index < 0:
+            raise SessionStoreError(f"第 {line_number} 行的保留边界无效")
+        if not isinstance(tokens_before, int) or tokens_before < 0:
+            raise SessionStoreError(f"第 {line_number} 行的压缩 Token 数无效")
+        return CompactionRecord(
+            summary=summary,
+            first_kept_message_index=first_kept_message_index,
+            tokens_before=tokens_before,
         )
 
     @staticmethod
