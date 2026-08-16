@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Sequence
 
 import pytest
 
-from core.model import Message, ModelClient
+from core.model import Message, ModelClient, ToolCall, ToolResult
 
 
 class FakeModelClient:
@@ -41,3 +41,36 @@ async def test_model_client_streams_text_chunks() -> None:
     )
 
     assert answer == "你好"
+
+
+def test_message_supports_assistant_tool_calls() -> None:
+    """测试 assistant 消息可以保存工具调用。"""
+
+    tool_call = ToolCall(
+        call_id="call-1",
+        name="read_file",
+        arguments={"path": "README.md"},
+    )
+
+    message = Message(
+        role="assistant",
+        content="",
+        tool_calls=(tool_call,),
+    )
+
+    assert message.tool_calls == (tool_call,)
+
+
+def test_tool_message_supports_tool_result_reference() -> None:
+    """测试 tool 消息可以关联对应的工具调用。"""
+
+    result = ToolResult(call_id="call-1", content="文件内容")
+    message = Message(
+        role="tool",
+        content=result.content,
+        tool_call_id=result.call_id,
+    )
+
+    assert message.role == "tool"
+    assert message.tool_call_id == "call-1"
+    assert result.is_error is False

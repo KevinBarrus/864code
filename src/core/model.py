@@ -5,7 +5,25 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 
-MessageRole = Literal["system", "user", "assistant"]
+MessageRole = Literal["system", "user", "assistant", "tool"]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """模型请求执行的一次工具调用。"""
+
+    call_id: str
+    name: str
+    arguments: dict[str, object]
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """工具执行后返回给模型的结果。"""
+
+    call_id: str
+    content: str
+    is_error: bool = False
 
 
 @dataclass(frozen=True)
@@ -14,6 +32,8 @@ class Message:
 
     role: MessageRole
     content: str
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_call_id: str | None = None
 
 
 class ModelClientError(RuntimeError):

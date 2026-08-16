@@ -17,3 +17,4 @@ CLAUDE.md
 /dist/
 *.egg-info/
 .DS_Store
+/src/.864code/
