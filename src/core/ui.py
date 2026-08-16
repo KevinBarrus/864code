@@ -8,7 +8,6 @@ from .screen import ChatScreen
 from .status import StatusInfo
 from .model import ModelClient, ModelClientError, TextDelta
 from .session import Session
-from .tool_approval import confirm_tool_call
 from .tools import (
     PermissionManager,
     ToolManager,
@@ -36,8 +35,9 @@ async def run_chat(
         if session_id
         else Session(session_workspace)
     )
+    screen = ChatScreen(status, on_submit=handle_submit)
     tool_manager = ToolManager(
-        permission_manager=PermissionManager(confirm_tool_call),
+        permission_manager=PermissionManager(screen.request_approval),
     )
     for create_tool in (
         create_read_file_tool,
@@ -87,7 +87,6 @@ async def run_chat(
             if response:
                 session.add_assistant_message(response)
 
-    screen = ChatScreen(status, on_submit=handle_submit)
     history = session.get_messages()
     for message in history:
         screen.add_entry(message.role, message.content)

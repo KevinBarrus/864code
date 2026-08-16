@@ -1,7 +1,13 @@
 import pytest
 
 from core.model import ToolCall
-from core.tools import PermissionDenied, PermissionManager, ToolDefinition
+from core.tools import (
+    ApprovalDecision,
+    ApprovalResult,
+    PermissionDenied,
+    PermissionManager,
+    ToolDefinition,
+)
 
 
 def _definition(permission: str) -> ToolDefinition:
@@ -44,21 +50,55 @@ async def test_confirmation_callback_receives_tool_context() -> None:
 
     received: list[tuple[str, str]] = []
 
-    async def approve(definition: ToolDefinition, tool_call: ToolCall) -> bool:
+    async def approve(
+        definition: ToolDefinition,
+        tool_call: ToolCall,
+    ) -> ApprovalResult:
         received.append((definition.name, tool_call.call_id))
-        return True
+        return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
-    await PermissionManager(approve).authorize(_definition("command"), _call())
+    result = await PermissionManager(approve).authorize(_definition("command"), _call())
 
     assert received == [("test_tool", "call-1")]
+    assert result.decision == ApprovalDecision.ALLOW_ONCE
 
 
 @pytest.mark.asyncio
-async def test_rejected_confirmation_raises_permission_error() -> None:
-    """测试确认回调拒绝时阻止工具执行。"""
+async def test_rejected_confirmation_returns_denial() -> None:
+    """测试确认回调拒绝时返回拒绝结果。"""
 
-    async def reject(definition: ToolDefinition, tool_call: ToolCall) -> bool:
-        return False
+    async def reject(
+        definition: ToolDefinition,
+        tool_call: ToolCall,
+    ) -> ApprovalResult:
+        return ApprovalResult(
+            ApprovalDecision.DENY,
+            feedback="先只读取文件",
+        )
 
-    with pytest.raises(PermissionDenied, match="用户拒绝"):
-        await PermissionManager(reject).authorize(_definition("write"), _call())
+    result = await PermissionManager(reject).authorize(_definition("write"), _call())
+
+    assert result == ApprovalResult(ApprovalDecision.DENY, "先只读取文件")
+
+
+@pytest.mark.asyncio
+async def test_session_grant_skips_future_confirmation() -> None:
+    """测试当前 Session 授权后不再重复确认同一个工具。"""
+
+    calls = 0
+
+    async def approve(
+        definition: ToolDefinition,
+        tool_call: ToolCall,
+    ) -> ApprovalResult:
+        nonlocal calls
+        calls += 1
+        return ApprovalResult(ApprovalDecision.ALLOW_SESSION)
+
+    manager = PermissionManager(approve)
+    first = await manager.authorize(_definition("write"), _call())
+    second = await manager.authorize(_definition("write"), _call())
+
+    assert first.decision == ApprovalDecision.ALLOW_SESSION
+    assert second.decision == ApprovalDecision.ALLOW_SESSION
+    assert calls == 1

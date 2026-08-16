@@ -27,5 +27,7 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "status-working-directory": f"fg:{theme.working_directory}",
             "input-area": "bg:#303030",
             "conversation-user": "bg:#303030",
+            "approval-area": "bg:#303030",
+            "approval-selected": "fg:ansiblue",
         }
     )

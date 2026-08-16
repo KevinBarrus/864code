@@ -25,6 +25,10 @@ from .status import StatusInfo
 from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
 from .conversation_view import ConversationView
+from .model import ToolCall
+from .tool_approval import ApprovalPrompt
+from .tools.permissions import ApprovalResult
+from .tools.types import ToolDefinition
 from .ui_config import InputLayoutConfig
 
 
@@ -68,6 +72,7 @@ class ChatScreen:
         self._request_active = False
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
+        self._approval_prompt: ApprovalPrompt | None = None
         self._conversation: list[ConversationEntry] = []
         self.input_area = TextArea(
             prompt="",
@@ -187,6 +192,7 @@ class ChatScreen:
             width=Dimension(weight=1),
         )
         self._input_container = input_container
+        self._normal_input_children = list(input_container.children)
         # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
         # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
         self._input_window = self.input_area.window
@@ -201,6 +207,26 @@ class ChatScreen:
             # 填充窗口；剩余空间应当只交给有消息时的对话视口。
             align=VerticalAlign.JUSTIFY,
         )
+
+    async def request_approval(
+        self,
+        definition: ToolDefinition,
+        tool_call: ToolCall,
+    ) -> ApprovalResult:
+        """在输入区域显示审批选项并等待用户选择。"""
+
+        prompt = ApprovalPrompt(definition, tool_call)
+        self._approval_prompt = prompt
+        self._input_container.children = [prompt.window]
+        self._layout.focus(prompt.window)
+        self.application.invalidate()
+        try:
+            return await prompt.wait()
+        finally:
+            self._input_container.children = list(self._normal_input_children)
+            self._approval_prompt = None
+            self._layout.focus(self.input_area)
+            self.application.invalidate()
 
     def _get_reserved_height(self, width: int, max_height: int) -> int:
         """计算对话视口下方的输入区和状态栏所需高度。"""
@@ -225,8 +251,39 @@ class ChatScreen:
 
         key_bindings = KeyBindings()
         input_focused = has_focus(self.input_area.buffer)
+        approval_active = Condition(lambda: self._approval_prompt is not None)
 
-        @key_bindings.add("enter", eager=True)
+        @key_bindings.add("up", filter=approval_active)
+        def move_approval_up(event) -> None:
+            """向上移动审批选项。"""
+
+            if self._approval_prompt is not None:
+                self._approval_prompt.move(-1)
+                self.application.invalidate()
+
+        @key_bindings.add("down", filter=approval_active)
+        def move_approval_down(event) -> None:
+            """向下移动审批选项。"""
+
+            if self._approval_prompt is not None:
+                self._approval_prompt.move(1)
+                self.application.invalidate()
+
+        @key_bindings.add("enter", filter=approval_active, eager=True)
+        def confirm_approval(event) -> None:
+            """确认当前审批选项。"""
+
+            if self._approval_prompt is not None:
+                self._approval_prompt.confirm()
+
+        @key_bindings.add("escape", filter=approval_active)
+        def reject_approval(event) -> None:
+            """取消审批并拒绝工具调用。"""
+
+            if self._approval_prompt is not None:
+                self._approval_prompt.reject()
+
+        @key_bindings.add("enter", filter=~approval_active, eager=True)
         def submit(event) -> None:
             """提交输入框中的内容。"""
 
@@ -242,7 +299,7 @@ class ChatScreen:
                 self._submit(prompt)
             )
 
-        @key_bindings.add("c-j")
+        @key_bindings.add("c-j", filter=input_focused)
         def insert_newline(event) -> None:
             """使用兼容快捷键在输入框中插入换行。"""
 
@@ -268,7 +325,7 @@ class ChatScreen:
 
             self.paste_to_input()
 
-        @key_bindings.add("escape")
+        @key_bindings.add("escape", filter=~approval_active)
         def cancel_request(event) -> None:
             """取消当前请求，输入恢复由请求任务负责。"""
 

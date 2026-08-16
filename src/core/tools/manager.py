@@ -4,7 +4,7 @@ import asyncio
 
 from ..model import ToolCall, ToolResult
 from .registry import LocalToolRegistry
-from .permissions import PermissionDenied, PermissionManager
+from .permissions import ApprovalDecision, PermissionDenied, PermissionManager
 from .types import ToolDefinition, ToolHandler
 from .validation import validate_tool_arguments
 
@@ -64,10 +64,17 @@ class ToolManager:
 
         try:
             validate_tool_arguments(registered.definition, tool_call)
-            await self._permission_manager.authorize(
+            approval = await self._permission_manager.authorize(
                 registered.definition,
                 tool_call,
             )
+            if approval.decision == ApprovalDecision.DENY:
+                feedback = f" 用户反馈：{approval.feedback}" if approval.feedback else ""
+                return ToolResult(
+                    call_id=tool_call.call_id,
+                    content=f"工具调用被拒绝。{feedback}".strip(),
+                    is_error=True,
+                )
             return await registered.handler(tool_call)
         except asyncio.CancelledError:
             raise

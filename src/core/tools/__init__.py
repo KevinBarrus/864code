@@ -9,14 +9,22 @@ from .command_tool import create_run_command_tool
 from .manager import ToolManager
 from .mutation_tools import create_edit_file_tool, create_write_file_tool
 from .path_utils import WorkspacePathError, resolve_workspace_path
-from .permissions import ApprovalHandler, PermissionDenied, PermissionManager
+from .permissions import (
+    ApprovalDecision,
+    ApprovalHandler,
+    ApprovalResult,
+    PermissionDenied,
+    PermissionManager,
+)
 from .registry import LocalToolRegistry
 from .types import ToolDefinition, ToolExecutor
 from .validation import ToolArgumentError, validate_tool_arguments
 
 __all__ = [
     "LocalToolRegistry",
+    "ApprovalDecision",
     "ApprovalHandler",
+    "ApprovalResult",
     "PermissionDenied",
     "PermissionManager",
     "ToolDefinition",

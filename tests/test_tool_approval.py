@@ -1,7 +1,8 @@
-from core.model import ToolCall
-from core.tool_approval import confirm_tool_call
-from core.tools import ToolDefinition
 import pytest
+
+from core.model import ToolCall
+from core.tool_approval import APPROVAL_OPTIONS, ApprovalPrompt
+from core.tools import ApprovalDecision, ToolDefinition
 
 
 def _definition() -> ToolDefinition:
@@ -17,35 +18,61 @@ def _definition() -> ToolDefinition:
     )
 
 
-@pytest.mark.asyncio
-async def test_confirm_tool_call_accepts_yes(monkeypatch) -> None:
-    """测试终端确认回调可以接受用户确认。"""
+def _prompt() -> ApprovalPrompt:
+    """构造测试用审批面板。"""
 
-    async def fake_run_in_terminal(function, **kwargs):
-        return "y"
-
-    monkeypatch.setattr("core.tool_approval.run_in_terminal", fake_run_in_terminal)
-
-    result = await confirm_tool_call(
+    return ApprovalPrompt(
         _definition(),
         ToolCall("call-1", "write_file", {"path": "a.txt"}),
     )
 
-    assert result is True
+
+@pytest.mark.asyncio
+async def test_approval_prompt_moves_and_clamps_selection() -> None:
+    """测试审批选项支持上下移动并限制边界。"""
+
+    prompt = _prompt()
+
+    prompt.move(-1)
+    assert prompt.selected_index == 0
+
+    prompt.move(10)
+    assert prompt.selected_index == len(APPROVAL_OPTIONS) - 1
+
+    prompt.move(-1)
+    assert prompt.selected_index == len(APPROVAL_OPTIONS) - 2
 
 
 @pytest.mark.asyncio
-async def test_confirm_tool_call_rejects_other_input(monkeypatch) -> None:
-    """测试终端确认回调默认拒绝其它输入。"""
+async def test_approval_prompt_marks_only_selected_option_blue() -> None:
+    """测试渲染结果只给选中项使用蓝色样式。"""
 
-    async def fake_run_in_terminal(function, **kwargs):
-        return "n"
+    prompt = _prompt()
+    fragments = prompt._render()
 
-    monkeypatch.setattr("core.tool_approval.run_in_terminal", fake_run_in_terminal)
+    selected = [text for style, text in fragments if style == "class:approval-selected"]
 
-    result = await confirm_tool_call(
-        _definition(),
-        ToolCall("call-1", "write_file", {"path": "a.txt"}),
-    )
+    assert selected == [f"> {APPROVAL_OPTIONS[0]}"]
 
-    assert result is False
+
+@pytest.mark.asyncio
+async def test_approval_prompt_confirms_session_permission() -> None:
+    """测试审批面板可以返回当前 Session 授权结果。"""
+
+    prompt = _prompt()
+    prompt.selected_index = 1
+    prompt.confirm()
+
+    result = prompt._result.result()
+
+    assert result.decision == ApprovalDecision.ALLOW_SESSION
+
+
+@pytest.mark.asyncio
+async def test_approval_prompt_escape_returns_denial() -> None:
+    """测试取消审批返回拒绝结果。"""
+
+    prompt = _prompt()
+    prompt.reject()
+
+    assert prompt._result.result().decision == ApprovalDecision.DENY

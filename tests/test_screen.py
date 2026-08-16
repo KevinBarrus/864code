@@ -10,6 +10,8 @@ from prompt_toolkit.output import DummyOutput
 
 from core.screen import ChatScreen, DraftState
 from core.status import create_status_info
+from core.model import ToolCall
+from core.tools import ApprovalDecision, ToolDefinition
 from core.ui_config import InputLayoutConfig
 
 
@@ -20,6 +22,19 @@ def _create_screen(tmp_path: Path) -> ChatScreen:
     return ChatScreen(status)
 
 
+def _approval_definition() -> ToolDefinition:
+    """构造测试用写工具定义。"""
+
+    return ToolDefinition(
+        name="write_file",
+        description="写入文件",
+        parameters={"type": "object"},
+        source="local",
+        permission="write",
+        idempotent=True,
+    )
+
+
 def test_chat_screen_uses_full_screen_and_mouse_support(tmp_path: Path) -> None:
     """测试界面启用全屏模式和鼠标支持。"""
 
@@ -27,6 +42,32 @@ def test_chat_screen_uses_full_screen_and_mouse_support(tmp_path: Path) -> None:
 
     assert screen.application.full_screen is True
     assert screen.application.mouse_support() is True
+
+
+@pytest.mark.asyncio
+async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> None:
+    """测试审批期间只替换输入区并在完成后恢复布局。"""
+
+    with create_app_session(output=DummyOutput()):
+        screen = _create_screen(tmp_path)
+        task = asyncio.create_task(
+            screen.request_approval(
+                _approval_definition(),
+                ToolCall("call-1", "write_file", {"path": "a.txt"}),
+            )
+        )
+        await asyncio.sleep(0)
+
+        assert screen._approval_prompt is not None
+        assert screen._input_container.children == [screen._approval_prompt.window]
+        assert screen._layout.container.children[-1].content is screen._status_control
+
+        screen._approval_prompt.confirm()
+        result = await task
+
+        assert result.decision == ApprovalDecision.ALLOW_ONCE
+        assert screen._approval_prompt is None
+        assert screen._input_window in screen._input_container.children
 
 
 def test_chat_screen_renders_status_with_separate_style_classes(
