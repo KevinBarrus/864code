@@ -12,6 +12,7 @@ from .path_utils import WorkspacePathError, resolve_workspace_path
 from .permissions import ApprovalHandler, PermissionDenied, PermissionManager
 from .registry import LocalToolRegistry
 from .types import ToolDefinition, ToolExecutor
+from .validation import ToolArgumentError, validate_tool_arguments
 
 __all__ = [
     "LocalToolRegistry",
@@ -20,6 +21,7 @@ __all__ = [
     "PermissionManager",
     "ToolDefinition",
     "ToolExecutor",
+    "ToolArgumentError",
     "ToolManager",
     "WorkspacePathError",
     "create_list_files_tool",
@@ -29,4 +31,5 @@ __all__ = [
     "create_search_files_tool",
     "create_write_file_tool",
     "resolve_workspace_path",
+    "validate_tool_arguments",
 ]

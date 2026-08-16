@@ -6,6 +6,7 @@ from ..model import ToolCall, ToolResult
 from .registry import LocalToolRegistry
 from .permissions import PermissionDenied, PermissionManager
 from .types import ToolDefinition, ToolHandler
+from .validation import validate_tool_arguments
 
 
 class ToolManager:
@@ -35,6 +36,21 @@ class ToolManager:
 
         return self._local_registry.definitions()
 
+    def model_tools(self) -> list[dict[str, object]]:
+        """将已注册工具转换为模型工具定义。"""
+
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": definition.name,
+                    "description": definition.description,
+                    "parameters": definition.parameters,
+                },
+            }
+            for definition in self.list_definitions()
+        ]
+
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """查找并执行工具，将普通异常转换为工具错误结果。"""
 
@@ -47,6 +63,7 @@ class ToolManager:
             )
 
         try:
+            validate_tool_arguments(registered.definition, tool_call)
             await self._permission_manager.authorize(
                 registered.definition,
                 tool_call,
