@@ -117,6 +117,12 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
     with pytest.raises(asyncio.CancelledError):
         await handle_submit("第一次输入")
 
+    restored = Session.restore(tmp_path, session.session_id)
+    assert restored.get_messages() == [
+        Message(role="user", content="第一次输入"),
+        Message(role="assistant", content="部分回复"),
+    ]
+
     # 第二次请求仍然取消，但断言的是它收到的历史
     with pytest.raises(asyncio.CancelledError):
         await handle_submit("第二次输入")
