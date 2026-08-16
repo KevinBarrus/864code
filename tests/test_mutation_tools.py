@@ -6,6 +6,8 @@ import pytest
 
 from core.model import ToolCall
 from core.tools import (
+    ApprovalDecision,
+    ApprovalResult,
     PermissionManager,
     ToolManager,
     create_edit_file_tool,
@@ -23,8 +25,8 @@ def _call(name: str, arguments: dict[str, object]) -> ToolCall:
 def _manager(*tools: tuple) -> ToolManager:
     """注册指定的本地工具。"""
 
-    async def approve(definition, tool_call) -> bool:
-        return True
+    async def approve(definition, tool_call) -> ApprovalResult:
+        return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
     manager = ToolManager(permission_manager=PermissionManager(approve))
     for definition, handler in tools:
