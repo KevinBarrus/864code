@@ -8,7 +8,7 @@ from .screen import ChatScreen
 from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
 from .model import Message, ModelClient, ModelClientError, TextDelta, ToolCallEvent
-from .context import ContextBudget, ContextManager
+from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .session import Session
 from .tools import (
     PermissionManager,
@@ -27,6 +27,7 @@ async def run_chat(
     status: StatusInfo,
     workspace: Path | None = None,
     session_id: str | None = None,
+    context_budget: ContextBudget | None = None,
 ) -> None:
     """启动全屏界面，并处理模型的流式回复"""
 
@@ -37,13 +38,7 @@ async def run_chat(
         if session_id
         else Session(session_workspace)
     )
-    context_manager = ContextManager(
-        ContextBudget(
-            context_window=100_000,
-            reserve_tokens=16_000,
-            keep_recent_tokens=20_000,
-        )
-    )
+    context_manager = ContextManager(context_budget or DEFAULT_CONTEXT_BUDGET)
 
     async def handle_submit(prompt: str) -> None:
         """发送请求，并同步当前会话的消息历史"""

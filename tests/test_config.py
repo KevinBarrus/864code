@@ -30,6 +30,25 @@ def test_load_settings_reads_required_values(tmp_path: Path) -> None:
     assert settings.api_key == "test-key"
 
 
+def test_load_settings_reads_optional_context_budget(tmp_path: Path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MODEL_CONTEXT_WINDOW=50000\n"
+        "MODEL_RESERVE_TOKENS=8000\n"
+        "MODEL_KEEP_RECENT_TOKENS=12000\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(env_path)
+
+    assert settings.context_window == 50000
+    assert settings.reserve_tokens == 8000
+    assert settings.keep_recent_tokens == 12000
+
+
 def test_load_settings_rejects_missing_value(tmp_path: Path) -> None:
     """测试缺少 API Key 时会抛出明确的配置异常。"""
 

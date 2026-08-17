@@ -36,6 +36,9 @@ class ContextBudget:
         return self.context_window - self.reserve_tokens
 
 
+DEFAULT_CONTEXT_BUDGET = ContextBudget(100_000, 16_000, 20_000)
+
+
 class ContextCompactionRequired(RuntimeError):
     """表示当前消息超出预算，需要先执行上下文压缩。"""
 

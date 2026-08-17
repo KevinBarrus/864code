@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .config import ConfigError, load_settings
+from .context import ContextBudget
 from .balance import UnavailableBalanceProvider
 from .openai_client import OpenAICompatibleClient
 from .session_picker import SessionPicker
@@ -31,7 +32,17 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
     client = OpenAICompatibleClient(settings)
     balance = await UnavailableBalanceProvider().get_balance()
     status = create_status_info(settings.model_name, balance)
-    await run_chat(client, status, workspace, session_id)
+    await run_chat(
+        client,
+        status,
+        workspace,
+        session_id,
+        ContextBudget(
+            settings.context_window,
+            settings.reserve_tokens,
+            settings.keep_recent_tokens,
+        ),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

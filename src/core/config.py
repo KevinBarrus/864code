@@ -18,6 +18,9 @@ class Settings:
     base_url: str
     model_name: str
     api_key: str
+    context_window: int = 100_000
+    reserve_tokens: int = 16_000
+    keep_recent_tokens: int = 20_000
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
@@ -31,12 +34,24 @@ def load_settings(env_path: Path | None = None) -> Settings:
     base_url = _required_value(values.get("MODEL_BASE_URL"), "MODEL_BASE_URL")
     model_name = _required_value(values.get("MODEL_NAME"), "MODEL_NAME")
     api_key = _required_value(values.get("MODEL_API_KEY"), "MODEL_API_KEY")
+    context_window = _optional_int(values.get("MODEL_CONTEXT_WINDOW"), 100_000)
+    reserve_tokens = _optional_int(values.get("MODEL_RESERVE_TOKENS"), 16_000)
+    keep_recent_tokens = _optional_int(values.get("MODEL_KEEP_RECENT_TOKENS"), 20_000)
+    if context_window <= 0:
+        raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
+    if reserve_tokens < 0 or reserve_tokens >= context_window:
+        raise ConfigError("MODEL_RESERVE_TOKENS 必须小于 MODEL_CONTEXT_WINDOW")
+    if keep_recent_tokens <= 0:
+        raise ConfigError("MODEL_KEEP_RECENT_TOKENS 必须大于 0")
     _validate_base_url(base_url)
 
     return Settings(
         base_url=base_url,
         model_name=model_name,
         api_key=api_key,
+        context_window=context_window,
+        reserve_tokens=reserve_tokens,
+        keep_recent_tokens=keep_recent_tokens,
     )
 
 
@@ -46,6 +61,17 @@ def _required_value(value: str | None, name: str) -> str:
     if value is None or not value.strip():
         raise ConfigError(f"缺少必填配置项: {name}")
     return value.strip()
+
+
+def _optional_int(value: str | None, default: int) -> int:
+    """读取可选整数配置，未设置时使用默认值。"""
+
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value.strip())
+    except ValueError as exc:
+        raise ConfigError("上下文预算配置必须是整数") from exc
 
 
 def _find_env_file() -> Path:

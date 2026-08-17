@@ -4,6 +4,7 @@ import pytest
 
 from core import main
 from core.config import Settings
+from core.context import ContextBudget
 from core.model import Message
 from core.session_store import SessionStore
 
@@ -38,11 +39,12 @@ async def test_run_resume_without_id_uses_picker(
     FakePicker.selected_id = session_id
     captured: dict[str, object] = {}
 
-    async def fake_run_chat(client, status, workspace, restored_id) -> None:
+    async def fake_run_chat(client, status, workspace, restored_id, context_budget) -> None:
         """记录应用启动参数"""
 
         captured["workspace"] = workspace
         captured["session_id"] = restored_id
+        captured["context_budget"] = context_budget
 
     monkeypatch.setattr(main, "SessionPicker", FakePicker)
     monkeypatch.setattr(
@@ -54,7 +56,11 @@ async def test_run_resume_without_id_uses_picker(
 
     await main.run(resume=True)
 
-    assert captured == {"workspace": tmp_path.resolve(), "session_id": session_id}
+    assert captured == {
+        "workspace": tmp_path.resolve(),
+        "session_id": session_id,
+        "context_budget": ContextBudget(100_000, 16_000, 20_000),
+    }
 
 
 @pytest.mark.asyncio
@@ -83,10 +89,11 @@ async def test_run_resume_with_id_skips_picker(
 
             return None
 
-    async def fake_run_chat(client, status, workspace, restored_id) -> None:
+    async def fake_run_chat(client, status, workspace, restored_id, context_budget) -> None:
         """记录应用启动参数"""
 
         captured["session_id"] = restored_id
+        captured["context_budget"] = context_budget
 
     monkeypatch.setattr(main, "SessionPicker", UnexpectedPicker)
     monkeypatch.setattr(
@@ -99,4 +106,7 @@ async def test_run_resume_with_id_skips_picker(
     await main.run(session_id, resume=True)
 
     assert not picker_called
-    assert captured == {"session_id": session_id}
+    assert captured == {
+        "session_id": session_id,
+        "context_budget": ContextBudget(100_000, 16_000, 20_000),
+    }
