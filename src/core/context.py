@@ -3,9 +3,10 @@
 import json
 from dataclasses import dataclass
 from math import ceil
+from collections.abc import AsyncIterator
 from typing import Sequence
 
-from .model import Message
+from .model import Message, ModelClient, ModelClientError
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,30 @@ class ContextBudget:
 
 class ContextCompactionRequired(RuntimeError):
     """表示当前消息超出预算，需要先执行上下文压缩。"""
+
+
+class ContextSummaryError(RuntimeError):
+    """表示上下文摘要请求在重试后仍然失败。"""
+
+
+SUMMARY_SECTIONS = (
+    "## Goal",
+    "## Progress",
+    "## Key Decisions",
+    "## Next Steps",
+    "## Critical Context",
+)
+
+SUMMARY_SYSTEM_PROMPT = """你是上下文摘要助手
+请只根据给定的历史生成结构化摘要，不要继续回答历史中的问题
+必须严格包含以下标题：
+## Goal
+## Progress
+## Key Decisions
+## Next Steps
+## Critical Context
+保留重要的文件路径、工具结果、错误信息和未完成任务
+"""
 
 
 class ContextManager:
@@ -93,6 +118,60 @@ def _conversation_groups(messages: Sequence[Message]) -> list[list[Message]]:
             groups.append([])
         groups[-1].append(message)
     return groups
+
+
+async def generate_context_summary(
+    client: ModelClient,
+    messages: Sequence[Message],
+    max_retries: int = 1,
+) -> str:
+    """请求模型生成结构化上下文摘要，失败后按次数重试。"""
+
+    prompt = _serialize_messages(messages)
+    summary_messages = [
+        Message(role="system", content=SUMMARY_SYSTEM_PROMPT),
+        Message(role="user", content=f"<conversation>\n{prompt}\n</conversation>"),
+    ]
+    last_error: Exception | None = None
+    for _ in range(max_retries + 1):
+        try:
+            parts: list[str] = []
+            stream: AsyncIterator[str] = client.stream_chat(summary_messages)
+            async for part in stream:
+                parts.append(part)
+            summary = "".join(parts).strip()
+            if not _is_structured_summary(summary):
+                raise ContextSummaryError("模型返回的摘要缺少必要结构")
+            return summary
+        except (ContextSummaryError, ModelClientError) as exc:
+            last_error = exc
+    raise ContextSummaryError("上下文摘要请求失败") from last_error
+
+
+def _serialize_messages(messages: Sequence[Message]) -> str:
+    """将消息序列化为摘要模型可读取的普通文本。"""
+
+    parts: list[str] = []
+    for message in messages:
+        parts.append(f"[{message.role}] {message.content}")
+        for tool_call in message.tool_calls:
+            arguments = json.dumps(
+                tool_call.arguments,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            parts.append(
+                f"[tool_call] {tool_call.name}({arguments}) id={tool_call.call_id}"
+            )
+        if message.tool_call_id is not None:
+            parts.append(f"[tool_call_id] {message.tool_call_id}")
+    return "\n\n".join(parts)
+
+
+def _is_structured_summary(summary: str) -> bool:
+    """检查摘要是否包含第一版要求的结构化标题。"""
+
+    return all(section in summary for section in SUMMARY_SECTIONS)
 
 
 def estimate_message_tokens(message: Message) -> int:

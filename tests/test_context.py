@@ -6,11 +6,13 @@ from core.context import (
     ContextBudget,
     ContextCompactionRequired,
     ContextManager,
+    ContextSummaryError,
     estimate_context_tokens,
     estimate_message_tokens,
+    generate_context_summary,
     select_recent_messages,
 )
-from core.model import Message, ToolCall
+from core.model import Message, ModelClientError, ToolCall
 
 
 def test_context_budget_exposes_compaction_threshold() -> None:
@@ -114,3 +116,73 @@ def test_select_recent_messages_keeps_tool_call_and_results_together() -> None:
 def test_select_recent_messages_rejects_non_positive_budget() -> None:
     with pytest.raises(ValueError):
         select_recent_messages([], max_tokens=0)
+
+
+class FakeSummaryClient:
+    def __init__(self, responses: list[str | Exception]) -> None:
+        self.responses = responses
+        self.calls = 0
+
+    async def stream_chat(self, messages):
+        response = self.responses[self.calls]
+        self.calls += 1
+        if isinstance(response, Exception):
+            raise response
+        yield response
+
+    async def stream_response(self, messages, tools=()):
+        raise AssertionError("摘要测试不应调用 stream_response")
+
+
+SUMMARY = """## Goal
+目标
+## Progress
+进展
+## Key Decisions
+决策
+## Next Steps
+下一步
+## Critical Context
+上下文
+"""
+
+
+@pytest.mark.asyncio
+async def test_generate_context_summary_returns_structured_summary() -> None:
+    client = FakeSummaryClient([SUMMARY])
+
+    result = await generate_context_summary(
+        client,
+        [Message(role="user", content="完成任务")],
+    )
+
+    assert result == SUMMARY.strip()
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_context_summary_retries_after_model_error() -> None:
+    client = FakeSummaryClient([ModelClientError("网络错误"), SUMMARY])
+
+    result = await generate_context_summary(
+        client,
+        [Message(role="user", content="完成任务")],
+    )
+
+    assert result == SUMMARY.strip()
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_context_summary_raises_after_retries() -> None:
+    client = FakeSummaryClient(
+        [ModelClientError("网络错误"), SUMMARY.replace("## Critical Context", "")]
+    )
+
+    with pytest.raises(ContextSummaryError):
+        await generate_context_summary(
+            client,
+            [Message(role="user", content="完成任务")],
+        )
+
+    assert client.calls == 2
