@@ -125,6 +125,48 @@ class ContextManager:
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
             recent = select_recent_messages(messages, self._budget.keep_recent_tokens)
+            oversized_prefix, oversized_suffix = _split_oversized_latest_turn(
+                messages,
+                self._budget.keep_recent_tokens,
+            )
+            if oversized_prefix:
+                system_messages = [
+                    message for message in messages if message.role == "system"
+                ]
+                latest_group_ids = {id(message) for message in oversized_prefix + oversized_suffix}
+                old_messages = [
+                    message
+                    for message in messages
+                    if message.role != "system" and id(message) not in latest_group_ids
+                ]
+                try:
+                    summaries = []
+                    if old_messages:
+                        summaries.append(await generate_context_summary(client, old_messages))
+                    summaries.append(await generate_context_summary(client, oversized_prefix))
+                except ContextSummaryError:
+                    return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
+
+                summary = "\n\n".join(summaries)
+                summary_message = Message(
+                    role="system",
+                    content=f"Conversation summary:\n{summary}",
+                )
+                compacted_messages = system_messages + [summary_message] + oversized_suffix
+                try:
+                    self.build(compacted_messages)
+                except ContextCompactionRequired:
+                    return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
+                compaction = CompactionRecord(
+                    summary=summary,
+                    first_kept_message_index=_first_message_index(
+                        original_messages,
+                        oversized_suffix,
+                    ),
+                    tokens_before=estimate_context_tokens(messages),
+                )
+                return ContextBuildResult(compacted_messages, compaction)
+
             recent_conversation = [
                 message for message in recent if message.role != "system"
             ]
@@ -229,6 +271,50 @@ def select_recent_messages(
     return system_messages + [
         message for group in selected_groups for message in group
     ]
+
+
+def _split_oversized_latest_turn(
+    messages: Sequence[Message],
+    max_tokens: int,
+) -> tuple[list[Message], list[Message]]:
+    """将超出最近预算的最新轮次拆为前缀和后缀。"""
+
+    conversation_messages = [
+        message for message in messages if message.role != "system"
+    ]
+    groups = _conversation_groups(conversation_messages)
+    if not groups:
+        return [], []
+
+    latest_group = groups[-1]
+    if estimate_context_tokens(latest_group) <= max_tokens:
+        return [], latest_group
+
+    for start in range(len(latest_group) - 1, -1, -1):
+        suffix = latest_group[start:]
+        if (
+            estimate_context_tokens(suffix) <= max_tokens
+            and _has_valid_tool_chain(suffix)
+        ):
+            return latest_group[:start], suffix
+    return latest_group[:-1], latest_group[-1:]
+
+
+def _has_valid_tool_chain(messages: Sequence[Message]) -> bool:
+    """检查保留后缀中的工具调用链是否完整。"""
+
+    call_ids = {
+        tool_call.call_id
+        for message in messages
+        if message.role == "assistant"
+        for tool_call in message.tool_calls
+    }
+    result_ids = {
+        message.tool_call_id
+        for message in messages
+        if message.role == "tool" and message.tool_call_id is not None
+    }
+    return result_ids <= call_ids and call_ids <= result_ids
 
 
 def _conversation_groups(messages: Sequence[Message]) -> list[list[Message]]:

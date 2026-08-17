@@ -267,6 +267,25 @@ async def test_context_manager_build_for_model_uses_summary_when_over_budget() -
 
 
 @pytest.mark.asyncio
+async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
+    client = FakeSummaryClient([SUMMARY, SUMMARY])
+    manager = ContextManager(ContextBudget(100, 20, 10))
+    messages = [
+        Message(role="user", content="旧问题" + "x" * 160),
+        Message(role="assistant", content="旧回答" + "x" * 160),
+        Message(role="user", content="新问题" + "x" * 80),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    result = await manager.build_for_model_result(client, messages)
+
+    assert result.compaction is not None
+    assert result.messages[-1] == messages[-1]
+    assert result.messages[-1] != messages[-2]
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_context_manager_build_for_model_uses_fallback_after_summary_failure() -> None:
     client = FakeSummaryClient(
         [ModelClientError("网络错误"), ModelClientError("网络错误")]
@@ -308,7 +327,7 @@ async def test_context_manager_marks_fallback_result() -> None:
 @pytest.mark.asyncio
 async def test_second_compaction_boundary_uses_full_session_history() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(50, 10, 2))
+    manager = ContextManager(ContextBudget(50, 10, 10))
     messages = [
         Message(role="user", content="第一轮" + "x" * 64),
         Message(role="assistant", content="第一轮回复" + "x" * 64),
