@@ -1,6 +1,9 @@
 import uuid
 from pathlib import Path
 
+import pytest
+
+from core.context import ContextBudget, ContextManager
 from core.model import Message, ToolCall
 from core.session import Session
 from core.session_store import CompactionRecord, SessionStore
@@ -105,3 +108,47 @@ def test_session_add_compaction_updates_runtime_and_store(tmp_path: Path) -> Non
 
     assert session.get_compactions() == [compaction]
     assert SessionStore(tmp_path).load_compactions(session.session_id) == [compaction]
+
+
+class SummaryClient:
+    """为恢复测试提供固定的结构化摘要。"""
+
+    async def stream_chat(self, messages):
+        yield """## Goal
+目标
+## Progress
+进展
+## Key Decisions
+决策
+## Next Steps
+下一步
+## Critical Context
+上下文
+"""
+
+
+@pytest.mark.asyncio
+async def test_restore_rebuilds_context_after_compaction(tmp_path: Path) -> None:
+    """测试压缩记录持久化后，恢复会话可以重建相同模型上下文。"""
+
+    session = Session(tmp_path)
+    session.add_user_message("旧问题" + "x" * 160)
+    session.add_assistant_message("旧回答" + "x" * 160)
+    session.add_user_message("新问题")
+    session.add_assistant_message("新回答")
+    budget = ContextBudget(100, 20, 20)
+    manager = ContextManager(budget)
+
+    first_result = await manager.build_for_model_result(
+        SummaryClient(), session.get_messages()
+    )
+    assert first_result.compaction is not None
+    session.add_compaction(first_result.compaction)
+
+    restored = Session.restore(tmp_path, session.session_id)
+    restored_result = await manager.build_for_model_result(
+        SummaryClient(), restored.get_messages(), restored.get_compactions()
+    )
+
+    assert restored_result.messages == first_result.messages
+    assert restored_result.compaction is None
