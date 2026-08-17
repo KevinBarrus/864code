@@ -43,6 +43,14 @@ class ContextSummaryError(RuntimeError):
     """表示上下文摘要请求在重试后仍然失败。"""
 
 
+@dataclass(frozen=True)
+class ContextBuildResult:
+    """保存模型上下文及本次新生成的压缩记录。"""
+
+    messages: list[Message]
+    compaction: CompactionRecord | None = None
+
+
 SUMMARY_SECTIONS = (
     "## Goal",
     "## Progress",
@@ -103,9 +111,20 @@ class ContextManager:
     ) -> list[Message]:
         """为模型构建上下文，超预算时优先摘要并回退到规则裁剪。"""
 
+        result = await self.build_for_model_result(client, messages, compactions)
+        return result.messages
+
+    async def build_for_model_result(
+        self,
+        client: ModelClient,
+        messages: Sequence[Message],
+        compactions: Sequence[CompactionRecord] = (),
+    ) -> ContextBuildResult:
+        """构建模型上下文，并返回成功生成的压缩记录。"""
+
         messages = _apply_latest_compaction(messages, compactions)
         try:
-            return self.build(messages)
+            return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
             recent = select_recent_messages(messages, self._budget.keep_recent_tokens)
             recent_conversation = [
@@ -116,13 +135,13 @@ class ContextManager:
             ]
             omitted_count = len(all_conversation) - len(recent_conversation)
             if omitted_count <= 0:
-                return self.build_fallback(messages)
+                return ContextBuildResult(self.build_fallback(messages))
 
             omitted = all_conversation[:omitted_count]
             try:
                 summary = await generate_context_summary(client, omitted)
             except ContextSummaryError:
-                return self.build_fallback(messages)
+                return ContextBuildResult(self.build_fallback(messages))
 
             system_messages = [
                 message for message in messages if message.role == "system"
@@ -131,7 +150,16 @@ class ContextManager:
                 role="system",
                 content=f"Conversation summary:\n{summary}",
             )
-            return system_messages + [summary_message] + recent_conversation
+            first_kept_message_index = _first_message_index(messages, recent_conversation)
+            compaction = CompactionRecord(
+                summary=summary,
+                first_kept_message_index=first_kept_message_index,
+                tokens_before=estimate_context_tokens(messages),
+            )
+            return ContextBuildResult(
+                system_messages + [summary_message] + recent_conversation,
+                compaction,
+            )
 
 
 def _apply_latest_compaction(
@@ -153,6 +181,21 @@ def _apply_latest_compaction(
     return system_messages + [
         Message(role="system", content=f"Conversation summary:\n{latest.summary}")
     ] + kept_messages
+
+
+def _first_message_index(
+    messages: Sequence[Message],
+    selected_messages: Sequence[Message],
+) -> int:
+    """查找最近原始消息在完整历史中的起始序号。"""
+
+    if not selected_messages:
+        return len(messages)
+    selected_ids = {id(message) for message in selected_messages}
+    for index, message in enumerate(messages):
+        if id(message) in selected_ids:
+            return index
+    return len(messages)
 
 
 def select_recent_messages(

@@ -83,12 +83,14 @@ async def run_chat(
 
         try:
             # 由 Agent Loop 负责模型与工具循环，界面只消费文本事件
-            context_messages = await context_manager.build_for_model(
+            context_result = await context_manager.build_for_model_result(
                 client,
                 session.get_messages(),
                 session.get_compactions(),
             )
-            result = await agent_loop.run(context_messages, on_event=handle_event)
+            if context_result.compaction is not None:
+                session.add_compaction(context_result.compaction)
+            result = await agent_loop.run(context_result.messages, on_event=handle_event)
         except asyncio.CancelledError:
             # 取消时保留已生成的部分回复，供下一轮继续参考
             response = "".join(response_parts)

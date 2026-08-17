@@ -4,6 +4,7 @@ import pytest
 
 from core.context import (
     ContextBudget,
+    ContextBuildResult,
     ContextCompactionRequired,
     ContextManager,
     ContextSummaryError,
@@ -288,3 +289,22 @@ async def test_context_manager_uses_latest_restored_compaction() -> None:
         Message(role="assistant", content="保留的回答"),
     ]
     assert client.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_context_manager_returns_compaction_record_after_summary() -> None:
+    client = FakeSummaryClient([SUMMARY])
+    manager = ContextManager(ContextBudget(4, 1, 2))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    result = await manager.build_for_model_result(client, messages)
+
+    assert isinstance(result, ContextBuildResult)
+    assert result.compaction is not None
+    assert result.compaction.first_kept_message_index == 2
+    assert result.compaction.tokens_before == 4
