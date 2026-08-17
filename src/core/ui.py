@@ -86,6 +86,7 @@ async def run_chat(
             context_messages = await context_manager.build_for_model(
                 client,
                 session.get_messages(),
+                session.get_compactions(),
             )
             result = await agent_loop.run(context_messages, on_event=handle_event)
         except asyncio.CancelledError:

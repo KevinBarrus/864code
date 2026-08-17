@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Sequence
 
 from .model import Message, ModelClient, ModelClientError
+from .session_store import CompactionRecord
 
 
 @dataclass(frozen=True)
@@ -98,9 +99,11 @@ class ContextManager:
         self,
         client: ModelClient,
         messages: Sequence[Message],
+        compactions: Sequence[CompactionRecord] = (),
     ) -> list[Message]:
         """为模型构建上下文，超预算时优先摘要并回退到规则裁剪。"""
 
+        messages = _apply_latest_compaction(messages, compactions)
         try:
             return self.build(messages)
         except ContextCompactionRequired:
@@ -129,6 +132,27 @@ class ContextManager:
                 content=f"Conversation summary:\n{summary}",
             )
             return system_messages + [summary_message] + recent_conversation
+
+
+def _apply_latest_compaction(
+    messages: Sequence[Message],
+    compactions: Sequence[CompactionRecord],
+) -> list[Message]:
+    """根据最新压缩记录重建模型可见的基础上下文。"""
+
+    if not compactions:
+        return list(messages)
+
+    latest = compactions[-1]
+    system_messages = [message for message in messages if message.role == "system"]
+    kept_messages = [
+        message
+        for message in messages[latest.first_kept_message_index :]
+        if message.role != "system"
+    ]
+    return system_messages + [
+        Message(role="system", content=f"Conversation summary:\n{latest.summary}")
+    ] + kept_messages
 
 
 def select_recent_messages(

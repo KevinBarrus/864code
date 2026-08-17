@@ -14,6 +14,7 @@ from core.context import (
     select_recent_messages,
 )
 from core.model import Message, ModelClientError, ToolCall
+from core.session_store import CompactionRecord
 
 
 def test_context_budget_exposes_compaction_threshold() -> None:
@@ -265,3 +266,25 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
     assert result[0] == Message(role="system", content=CONTEXT_FALLBACK_NOTICE)
     assert result[1:] == messages[-2:]
     assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_context_manager_uses_latest_restored_compaction() -> None:
+    client = FakeSummaryClient([])
+    manager = ContextManager(ContextBudget(100, 10, 20))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="保留的问题"),
+        Message(role="assistant", content="保留的回答"),
+    ]
+    compaction = CompactionRecord("已经完成旧任务", 2, 100)
+
+    result = await manager.build_for_model(client, messages, [compaction])
+
+    assert result == [
+        Message(role="system", content="Conversation summary:\n已经完成旧任务"),
+        Message(role="user", content="保留的问题"),
+        Message(role="assistant", content="保留的回答"),
+    ]
+    assert client.calls == 0
