@@ -54,6 +54,47 @@ class ContextManager:
         return message_list
 
 
+def select_recent_messages(
+    messages: Sequence[Message],
+    max_tokens: int,
+) -> list[Message]:
+    """保留系统消息和预算内的最近完整对话单元。"""
+
+    if max_tokens <= 0:
+        raise ValueError("最近消息预算必须大于 0")
+
+    system_messages = [message for message in messages if message.role == "system"]
+    conversation_messages = [
+        message for message in messages if message.role != "system"
+    ]
+    groups = _conversation_groups(conversation_messages)
+
+    selected_groups: list[list[Message]] = []
+    selected_tokens = 0
+    for group in reversed(groups):
+        group_tokens = estimate_context_tokens(group)
+        if selected_groups and selected_tokens + group_tokens > max_tokens:
+            break
+        selected_groups.append(group)
+        selected_tokens += group_tokens
+
+    selected_groups.reverse()
+    return system_messages + [
+        message for group in selected_groups for message in group
+    ]
+
+
+def _conversation_groups(messages: Sequence[Message]) -> list[list[Message]]:
+    """按用户消息边界划分对话单元并保持工具调用链完整。"""
+
+    groups: list[list[Message]] = []
+    for message in messages:
+        if message.role == "user" or not groups:
+            groups.append([])
+        groups[-1].append(message)
+    return groups
+
+
 def estimate_message_tokens(message: Message) -> int:
     """使用字符数估算单条消息的 Token 数。"""
 
