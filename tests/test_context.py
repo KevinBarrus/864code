@@ -164,8 +164,10 @@ class FakeSummaryClient:
     def __init__(self, responses: list[str | Exception]) -> None:
         self.responses = responses
         self.calls = 0
+        self.messages = []
 
     async def stream_chat(self, messages):
+        self.messages.append(messages)
         response = self.responses[self.calls]
         self.calls += 1
         if isinstance(response, Exception):
@@ -213,6 +215,7 @@ async def test_generate_context_summary_retries_after_model_error() -> None:
 
     assert result == SUMMARY.strip()
     assert client.calls == 2
+    assert "简短结构化摘要" in client.messages[1][0].content
 
 
 @pytest.mark.asyncio

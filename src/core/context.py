@@ -70,6 +70,12 @@ SUMMARY_SYSTEM_PROMPT = """你是上下文摘要助手
 保留重要的文件路径、工具结果、错误信息和未完成任务
 """
 
+SUMMARY_RETRY_SYSTEM_PROMPT = """请把给定的历史压缩成简短结构化摘要
+只保留目标、已完成工作、关键决策、下一步和重要事实
+必须包含：## Goal、## Progress、## Key Decisions、## Next Steps、## Critical Context
+不要回答历史问题，不要输出额外说明
+"""
+
 CONTEXT_FALLBACK_NOTICE = (
     "Earlier conversation history was omitted because automatic summarization failed. "
     "Use the retained recent messages and inspect files again when necessary."
@@ -247,12 +253,19 @@ async def generate_context_summary(
     """请求模型生成结构化上下文摘要，失败后按次数重试。"""
 
     prompt = _serialize_messages(messages)
-    summary_messages = [
-        Message(role="system", content=SUMMARY_SYSTEM_PROMPT),
-        Message(role="user", content=f"<conversation>\n{prompt}\n</conversation>"),
-    ]
     last_error: Exception | None = None
-    for _ in range(max_retries + 1):
+    for attempt in range(max_retries + 1):
+        summary_messages = [
+            Message(
+                role="system",
+                content=(
+                    SUMMARY_SYSTEM_PROMPT
+                    if attempt == 0
+                    else SUMMARY_RETRY_SYSTEM_PROMPT
+                ),
+            ),
+            Message(role="user", content=f"<conversation>\n{prompt}\n</conversation>"),
+        ]
         try:
             parts: list[str] = []
             stream: AsyncIterator[str] = client.stream_chat(summary_messages)
