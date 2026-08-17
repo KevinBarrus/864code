@@ -157,10 +157,12 @@ class ContextManager:
                 first_kept_message_index=first_kept_message_index,
                 tokens_before=estimate_context_tokens(messages),
             )
-            return ContextBuildResult(
-                system_messages + [summary_message] + recent_conversation,
-                compaction,
-            )
+            compacted_messages = system_messages + [summary_message] + recent_conversation
+            try:
+                self.build(compacted_messages)
+            except ContextCompactionRequired:
+                return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
+            return ContextBuildResult(compacted_messages, compaction)
 
 
 def _apply_latest_compaction(
