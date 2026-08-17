@@ -3,7 +3,7 @@ from pathlib import Path
 
 from core.model import Message, ToolCall
 from core.session import Session
-from core.session_store import SessionStore
+from core.session_store import CompactionRecord, SessionStore
 
 
 def test_new_sessions_have_unique_ids(tmp_path: Path) -> None:
@@ -81,3 +81,15 @@ def test_session_restores_tool_messages(tmp_path: Path) -> None:
     restored = Session.restore(tmp_path, original.session_id)
 
     assert restored.get_messages() == messages
+
+
+def test_restore_rebuilds_compaction_records(tmp_path: Path) -> None:
+    """测试恢复 Session 时可以读取压缩记录"""
+
+    original = Session(tmp_path)
+    compaction = CompactionRecord("早期摘要", 1, 1200)
+    SessionStore(tmp_path).append_compaction(original.session_id, compaction)
+
+    restored = Session.restore(tmp_path, original.session_id)
+
+    assert restored.get_compactions() == [compaction]

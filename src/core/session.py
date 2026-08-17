@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .memory import Memory
 from .model import Message
-from .session_store import SessionStore
+from .session_store import CompactionRecord, SessionStore
 
 
 class Session:
@@ -18,6 +18,7 @@ class Session:
         self.session_id = session_id or str(uuid.uuid4())
         self._memory = Memory()
         self._store = SessionStore(workspace)
+        self._compactions: list[CompactionRecord] = []
 
     @classmethod
     def restore(cls, workspace: Path, session_id: str) -> "Session":
@@ -26,6 +27,7 @@ class Session:
         session = cls(workspace, session_id)
         for message in session._store.load_messages(session.session_id):
             session._add_to_memory(message)
+        session._compactions = session._store.load_compactions(session.session_id)
         return session
 
     def add_user_message(self, content: str) -> None:
@@ -47,6 +49,11 @@ class Session:
         """返回当前会话的消息历史"""
 
         return self._memory.get_messages()
+
+    def get_compactions(self) -> list[CompactionRecord]:
+        """返回当前会话的压缩记录副本"""
+
+        return list(self._compactions)
 
     def _append_message(self, message: Message) -> None:
         """先写入 JSONL，再更新内存，避免写入失败时状态不一致"""
