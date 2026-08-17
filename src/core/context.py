@@ -119,7 +119,8 @@ class ContextManager:
     ) -> ContextBuildResult:
         """构建模型上下文，并返回成功生成的压缩记录。"""
 
-        messages = _apply_latest_compaction(messages, compactions)
+        original_messages = list(messages)
+        messages = _apply_latest_compaction(original_messages, compactions)
         try:
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
@@ -147,7 +148,10 @@ class ContextManager:
                 role="system",
                 content=f"Conversation summary:\n{summary}",
             )
-            first_kept_message_index = _first_message_index(messages, recent_conversation)
+            first_kept_message_index = _first_message_index(
+                original_messages,
+                recent_conversation,
+            )
             compaction = CompactionRecord(
                 summary=summary,
                 first_kept_message_index=first_kept_message_index,

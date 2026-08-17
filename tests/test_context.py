@@ -292,6 +292,27 @@ async def test_context_manager_marks_fallback_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_second_compaction_boundary_uses_full_session_history() -> None:
+    client = FakeSummaryClient([SUMMARY])
+    manager = ContextManager(ContextBudget(4, 1, 2))
+    messages = [
+        Message(role="user", content="第一轮"),
+        Message(role="assistant", content="第一轮回复"),
+        Message(role="user", content="第二轮"),
+        Message(role="assistant", content="第二轮回复"),
+        Message(role="user", content="第三轮"),
+        Message(role="assistant", content="第三轮回复"),
+    ]
+    previous = CompactionRecord("第一轮摘要", 2, 6)
+
+    result = await manager.build_for_model_result(client, messages, [previous])
+
+    assert result.compaction is not None
+    assert result.compaction.first_kept_message_index == 4
+    assert result.messages[-2:] == messages[-2:]
+
+
+@pytest.mark.asyncio
 async def test_context_manager_uses_latest_restored_compaction() -> None:
     client = FakeSummaryClient([])
     manager = ContextManager(ContextBudget(100, 10, 20))
