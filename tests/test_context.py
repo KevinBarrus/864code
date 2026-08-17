@@ -472,3 +472,33 @@ async def test_context_manager_falls_back_when_summary_still_exceeds_budget() ->
     assert result.compaction is None
     assert result.messages[0] == Message(role="system", content=CONTEXT_FALLBACK_NOTICE)
     assert estimate_context_tokens(result.messages) <= budget.compaction_threshold
+
+
+@pytest.mark.asyncio
+async def test_context_manager_accumulates_file_operations_in_summary() -> None:
+    client = FakeSummaryClient([SUMMARY])
+    manager = ContextManager(
+        ContextBudget(100, 20, 20),
+        {"read_file": "file.read", "write_file": "file.write"},
+    )
+    messages = [
+        Message(role="user", content="读取并修改文件"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(
+                ToolCall("read-1", "read_file", {"path": "src/app.py"}),
+                ToolCall("write-1", "write_file", {"path": "src/app.py"}),
+            ),
+        ),
+        Message(role="tool", content="x" * 400, tool_call_id="read-1"),
+        Message(role="tool", content="已写入", tool_call_id="write-1"),
+        Message(role="assistant", content="处理完成"),
+    ]
+
+    result = await manager.build_for_model_result(client, messages)
+
+    assert result.compaction is not None
+    summary = result.messages[0].content
+    assert "<read-files>\n- src/app.py\n</read-files>" in summary
+    assert "<modified-files>\n- src/app.py\n</modified-files>" in summary

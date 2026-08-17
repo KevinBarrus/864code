@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from math import ceil
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Sequence
 
 from .model import Message, ModelClient, ModelClientError
@@ -76,10 +76,15 @@ CONTEXT_FALLBACK_NOTICE = (
 class ContextManager:
     """根据上下文预算生成模型请求消息。"""
 
-    def __init__(self, budget: ContextBudget) -> None:
+    def __init__(
+        self,
+        budget: ContextBudget,
+        tool_capabilities: Mapping[str, str] | None = None,
+    ) -> None:
         """创建上下文管理器。"""
 
         self._budget = budget
+        self._tool_capabilities = dict(tool_capabilities or {})
 
     def build(self, messages: Sequence[Message]) -> list[Message]:
         """返回未超出预算的消息副本，超出预算时要求先压缩。"""
@@ -151,7 +156,10 @@ class ContextManager:
                 except ContextSummaryError:
                     return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
-                summary = "\n\n".join(summaries)
+                summary = _add_file_operation_sections(
+                    "\n\n".join(summaries),
+                    _collect_file_operations(original_messages, self._tool_capabilities),
+                )
                 summary_message = Message(
                     role="system",
                     content=f"Conversation summary:\n{summary}",
@@ -188,6 +196,10 @@ class ContextManager:
                 summary = await generate_context_summary(
                     client,
                     _summary_source(omitted, compactions),
+                )
+                summary = _add_file_operation_sections(
+                    summary,
+                    _collect_file_operations(original_messages, self._tool_capabilities),
                 )
             except ContextSummaryError:
                 return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
@@ -249,6 +261,46 @@ def _summary_source(
         content=f"Previous conversation summary:\n{compactions[-1].summary}",
     )
     return [previous_summary, *messages]
+
+
+def _collect_file_operations(
+    messages: Sequence[Message],
+    tool_capabilities: Mapping[str, str],
+) -> tuple[list[str], list[str]]:
+    """根据工具能力标签累计读取和修改过的文件路径。"""
+
+    read_files: set[str] = set()
+    modified_files: set[str] = set()
+    for message in messages:
+        if message.role != "assistant":
+            continue
+        for tool_call in message.tool_calls:
+            path = tool_call.arguments.get("path")
+            capability = tool_capabilities.get(tool_call.name)
+            if not isinstance(path, str) or capability not in {"file.read", "file.write"}:
+                continue
+            if capability == "file.read":
+                read_files.add(path)
+            else:
+                modified_files.add(path)
+    return sorted(read_files), sorted(modified_files)
+
+
+def _add_file_operation_sections(
+    summary: str,
+    file_operations: tuple[list[str], list[str]],
+) -> str:
+    """将文件操作列表追加到摘要末尾并保持路径去重。"""
+
+    read_files, modified_files = file_operations
+    if not read_files and not modified_files:
+        return summary
+    read_section = "\n".join(f"- {path}" for path in read_files)
+    modified_section = "\n".join(f"- {path}" for path in modified_files)
+    return (
+        f"{summary}\n\n<read-files>\n{read_section}\n</read-files>"
+        f"\n\n<modified-files>\n{modified_section}\n</modified-files>"
+    )
 
 
 def _first_message_index(

@@ -38,6 +38,7 @@ def create_write_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
             source="local",
             permission="write",
             idempotent=True,
+            capability="file.write",
         ),
         write_file,
     )
@@ -78,6 +79,7 @@ def create_edit_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
             source="local",
             permission="write",
             idempotent=True,
+            capability="file.write",
         ),
         edit_file,
     )

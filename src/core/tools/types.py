@@ -29,6 +29,7 @@ class ToolDefinition:
     source: ToolSource
     permission: ToolPermission
     idempotent: bool
+    capability: str | None = None
     provider_id: str = "builtin"
 
     @property

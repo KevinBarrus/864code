@@ -38,7 +38,6 @@ async def run_chat(
         if session_id
         else Session(session_workspace)
     )
-    context_manager = ContextManager(context_budget or DEFAULT_CONTEXT_BUDGET)
 
     async def handle_submit(prompt: str) -> None:
         """发送请求，并同步当前会话的消息历史"""
@@ -118,6 +117,14 @@ async def run_chat(
         create_run_command_tool,
     ):
         tool_manager.register_local(*create_tool(session_workspace))
+    context_manager = ContextManager(
+        context_budget or DEFAULT_CONTEXT_BUDGET,
+        {
+            definition.name: definition.capability
+            for definition in tool_manager.list_definitions()
+            if definition.capability is not None
+        },
+    )
     agent_loop = AgentLoop(client, tool_manager)
 
     history = session.get_messages()

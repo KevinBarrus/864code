@@ -32,6 +32,7 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
             source="local",
             permission="read",
             idempotent=True,
+            capability="file.read",
         ),
         read_file,
     )
@@ -67,6 +68,7 @@ def create_list_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
             source="local",
             permission="read",
             idempotent=True,
+            capability="file.read",
         ),
         list_files,
     )
@@ -114,6 +116,7 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
             source="local",
             permission="read",
             idempotent=True,
+            capability="file.read",
         ),
         search_files,
     )
