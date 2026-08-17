@@ -152,3 +152,45 @@ async def test_restore_rebuilds_context_after_compaction(tmp_path: Path) -> None
 
     assert restored_result.messages == first_result.messages
     assert restored_result.compaction is None
+
+
+@pytest.mark.asyncio
+async def test_restore_keeps_file_operation_sections_in_context(tmp_path: Path) -> None:
+    """测试恢复会话后仍能重建文件操作摘要。"""
+
+    session = Session(tmp_path)
+    session.add_user_message("读取并修改文件")
+    session.add_message(
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(
+                ToolCall("read-1", "read_file", {"path": "src/app.py"}),
+                ToolCall("write-1", "write_file", {"path": "src/app.py"}),
+            ),
+        )
+    )
+    session.add_message(
+        Message(role="tool", content="x" * 400, tool_call_id="read-1")
+    )
+    session.add_message(Message(role="tool", content="已写入", tool_call_id="write-1"))
+    session.add_assistant_message("处理完成")
+    manager = ContextManager(
+        ContextBudget(100, 20, 20),
+        {"read_file": "file.read", "write_file": "file.write"},
+    )
+
+    first_result = await manager.build_for_model_result(
+        SummaryClient(), session.get_messages()
+    )
+    assert first_result.compaction is not None
+    session.add_compaction(first_result.compaction)
+
+    restored = Session.restore(tmp_path, session.session_id)
+    restored_result = await manager.build_for_model_result(
+        SummaryClient(), restored.get_messages(), restored.get_compactions()
+    )
+
+    summary = restored_result.messages[0].content
+    assert "<read-files>\n- src/app.py\n</read-files>" in summary
+    assert "<modified-files>\n- src/app.py\n</modified-files>" in summary
