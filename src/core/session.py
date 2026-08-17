@@ -55,6 +55,12 @@ class Session:
 
         return list(self._compactions)
 
+    def add_compaction(self, compaction: CompactionRecord) -> None:
+        """持久化并追加一条上下文压缩记录"""
+
+        self._store.append_compaction(self.session_id, compaction)
+        self._compactions.append(compaction)
+
     def _append_message(self, message: Message) -> None:
         """先写入 JSONL，再更新内存，避免写入失败时状态不一致"""
 

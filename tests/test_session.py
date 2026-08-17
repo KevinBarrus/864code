@@ -93,3 +93,15 @@ def test_restore_rebuilds_compaction_records(tmp_path: Path) -> None:
     restored = Session.restore(tmp_path, original.session_id)
 
     assert restored.get_compactions() == [compaction]
+
+
+def test_session_add_compaction_updates_runtime_and_store(tmp_path: Path) -> None:
+    """测试追加压缩记录时同步更新运行时状态和 JSONL"""
+
+    session = Session(tmp_path)
+    compaction = CompactionRecord("早期摘要", 1, 1200)
+
+    session.add_compaction(compaction)
+
+    assert session.get_compactions() == [compaction]
+    assert SessionStore(tmp_path).load_compactions(session.session_id) == [compaction]
