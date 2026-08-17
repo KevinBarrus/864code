@@ -61,6 +61,11 @@ SUMMARY_SYSTEM_PROMPT = """你是上下文摘要助手
 保留重要的文件路径、工具结果、错误信息和未完成任务
 """
 
+CONTEXT_FALLBACK_NOTICE = (
+    "Earlier conversation history was omitted because automatic summarization failed. "
+    "Use the retained recent messages and inspect files again when necessary."
+)
+
 
 class ContextManager:
     """根据上下文预算生成模型请求消息。"""
@@ -77,6 +82,17 @@ class ContextManager:
         if estimate_context_tokens(message_list) > self._budget.compaction_threshold:
             raise ContextCompactionRequired("上下文超出预算，需要先执行压缩")
         return message_list
+
+    def build_fallback(self, messages: Sequence[Message]) -> list[Message]:
+        """摘要失败时生成不持久化的规则化上下文。"""
+
+        selected = select_recent_messages(messages, self._budget.keep_recent_tokens)
+        system_count = sum(message.role == "system" for message in selected)
+        selected.insert(
+            system_count,
+            Message(role="system", content=CONTEXT_FALLBACK_NOTICE),
+        )
+        return selected
 
 
 def select_recent_messages(

@@ -7,6 +7,7 @@ from core.context import (
     ContextCompactionRequired,
     ContextManager,
     ContextSummaryError,
+    CONTEXT_FALLBACK_NOTICE,
     estimate_context_tokens,
     estimate_message_tokens,
     generate_context_summary,
@@ -116,6 +117,45 @@ def test_select_recent_messages_keeps_tool_call_and_results_together() -> None:
 def test_select_recent_messages_rejects_non_positive_budget() -> None:
     with pytest.raises(ValueError):
         select_recent_messages([], max_tokens=0)
+
+
+def test_context_manager_build_fallback_keeps_recent_messages_and_notice() -> None:
+    messages = [
+        Message(role="system", content="系统规则"),
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+    manager = ContextManager(ContextBudget(100, 10, 2))
+
+    result = manager.build_fallback(messages)
+
+    assert result == [
+        Message(role="system", content="系统规则"),
+        Message(role="system", content=CONTEXT_FALLBACK_NOTICE),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+    assert messages[1].content == "旧问题"
+
+
+def test_context_manager_build_fallback_keeps_tool_chain() -> None:
+    messages = [
+        Message(role="user", content="读取文件"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+        ),
+        Message(role="tool", content="文件内容", tool_call_id="call-1"),
+    ]
+    manager = ContextManager(ContextBudget(100, 10, 1))
+
+    result = manager.build_fallback(messages)
+
+    assert result[0] == Message(role="system", content=CONTEXT_FALLBACK_NOTICE)
+    assert result[1:] == messages
 
 
 class FakeSummaryClient:
