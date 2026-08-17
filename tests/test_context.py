@@ -116,6 +116,20 @@ def test_select_recent_messages_keeps_tool_call_and_results_together() -> None:
     assert selected == messages
 
 
+def test_select_recent_messages_identifies_oversized_latest_turn() -> None:
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题" + "x" * 80),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    selected = select_recent_messages(messages, max_tokens=10)
+
+    assert selected == messages[-2:]
+    assert estimate_context_tokens(selected) > 10
+
+
 def test_select_recent_messages_rejects_non_positive_budget() -> None:
     with pytest.raises(ValueError):
         select_recent_messages([], max_tokens=0)
