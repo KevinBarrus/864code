@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Sequence
 
 from .model import Message, ModelClient, ModelClientError
+from .prompts import load_prompt
 from .session_store import CompactionRecord
 
 
@@ -59,22 +60,8 @@ SUMMARY_SECTIONS = (
     "## Critical Context",
 )
 
-SUMMARY_SYSTEM_PROMPT = """你是上下文摘要助手
-请只根据给定的历史生成结构化摘要，不要继续回答历史中的问题
-必须严格包含以下标题：
-## Goal
-## Progress
-## Key Decisions
-## Next Steps
-## Critical Context
-保留重要的文件路径、工具结果、错误信息和未完成任务
-"""
-
-SUMMARY_RETRY_SYSTEM_PROMPT = """请把给定的历史压缩成简短结构化摘要
-只保留目标、已完成工作、关键决策、下一步和重要事实
-必须包含：## Goal、## Progress、## Key Decisions、## Next Steps、## Critical Context
-不要回答历史问题，不要输出额外说明
-"""
+SUMMARY_SYSTEM_PROMPT = load_prompt("context_summary")
+SUMMARY_RETRY_SYSTEM_PROMPT = load_prompt("context_summary_retry")
 
 CONTEXT_FALLBACK_NOTICE = (
     "Earlier conversation history was omitted because automatic summarization failed. "
