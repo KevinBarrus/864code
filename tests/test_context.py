@@ -286,6 +286,32 @@ async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
 
 
 @pytest.mark.asyncio
+async def test_context_manager_keeps_tool_chain_together_in_oversized_prefix() -> None:
+    client = FakeSummaryClient([SUMMARY, SUMMARY])
+    manager = ContextManager(ContextBudget(100, 20, 8))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="读取文件"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+        ),
+        Message(role="tool", content="文件内容" + "x" * 300, tool_call_id="call-1"),
+        Message(role="assistant", content="读取完成"),
+    ]
+
+    result = await manager.build_for_model_result(client, messages)
+
+    assert result.compaction is not None
+    assert result.messages[-1] == messages[-1]
+    summary_input = client.messages[-1][1].content
+    assert "[tool_call] read_file" in summary_input
+    assert "[tool_call_id] call-1" in summary_input
+
+
+@pytest.mark.asyncio
 async def test_context_manager_build_for_model_uses_fallback_after_summary_failure() -> None:
     client = FakeSummaryClient(
         [ModelClientError("网络错误"), ModelClientError("网络错误")]
