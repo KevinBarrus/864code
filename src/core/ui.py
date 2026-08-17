@@ -8,6 +8,7 @@ from .screen import ChatScreen
 from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
 from .model import Message, ModelClient, ModelClientError, TextDelta, ToolCallEvent
+from .context import ContextBudget, ContextManager
 from .session import Session
 from .tools import (
     PermissionManager,
@@ -36,6 +37,14 @@ async def run_chat(
         if session_id
         else Session(session_workspace)
     )
+    context_manager = ContextManager(
+        ContextBudget(
+            context_window=100_000,
+            reserve_tokens=16_000,
+            keep_recent_tokens=20_000,
+        )
+    )
+
     async def handle_submit(prompt: str) -> None:
         """发送请求，并同步当前会话的消息历史"""
 
@@ -74,7 +83,11 @@ async def run_chat(
 
         try:
             # 由 Agent Loop 负责模型与工具循环，界面只消费文本事件
-            result = await agent_loop.run(session.get_messages(), on_event=handle_event)
+            context_messages = await context_manager.build_for_model(
+                client,
+                session.get_messages(),
+            )
+            result = await agent_loop.run(context_messages, on_event=handle_event)
         except asyncio.CancelledError:
             # 取消时保留已生成的部分回复，供下一轮继续参考
             response = "".join(response_parts)
