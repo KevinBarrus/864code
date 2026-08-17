@@ -140,10 +140,14 @@ class ContextManager:
                     if message.role != "system" and id(message) not in latest_group_ids
                 ]
                 try:
+                    # 先摘要历史，再摘要当前超大轮次的前缀
                     summaries = []
-                    if old_messages:
-                        summaries.append(await generate_context_summary(client, old_messages))
-                    summaries.append(await generate_context_summary(client, oversized_prefix))
+                    history = _summary_source(old_messages, compactions)
+                    if history:
+                        summaries.append(await generate_context_summary(client, history))
+                    summaries.append(
+                        await generate_context_summary(client, oversized_prefix)
+                    )
                 except ContextSummaryError:
                     return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
@@ -179,7 +183,10 @@ class ContextManager:
 
             omitted = all_conversation[:omitted_count]
             try:
-                summary = await generate_context_summary(client, omitted)
+                summary = await generate_context_summary(
+                    client,
+                    _summary_source(omitted, compactions),
+                )
             except ContextSummaryError:
                 return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
@@ -226,6 +233,21 @@ def _apply_latest_compaction(
     return system_messages + [
         Message(role="system", content=f"Conversation summary:\n{latest.summary}")
     ] + kept_messages
+
+
+def _summary_source(
+    messages: Sequence[Message],
+    compactions: Sequence[CompactionRecord],
+) -> list[Message]:
+    """组合上一次摘要和本次新增的旧消息，作为累计摘要输入。"""
+
+    if not compactions:
+        return list(messages)
+    previous_summary = Message(
+        role="system",
+        content=f"Previous conversation summary:\n{compactions[-1].summary}",
+    )
+    return [previous_summary, *messages]
 
 
 def _first_message_index(

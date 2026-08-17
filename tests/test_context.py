@@ -369,6 +369,7 @@ async def test_second_compaction_boundary_uses_full_session_history() -> None:
     assert result.compaction is not None
     assert result.compaction.first_kept_message_index == 4
     assert result.messages[-2:] == messages[-2:]
+    assert "第一轮摘要" in client.messages[0][1].content
 
 
 @pytest.mark.asyncio
