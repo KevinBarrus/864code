@@ -273,6 +273,25 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
 
 
 @pytest.mark.asyncio
+async def test_context_manager_marks_fallback_result() -> None:
+    client = FakeSummaryClient(
+        [ModelClientError("网络错误"), ModelClientError("网络错误")]
+    )
+    manager = ContextManager(ContextBudget(4, 1, 2))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    result = await manager.build_for_model_result(client, messages)
+
+    assert result.fallback_used is True
+    assert result.compaction is None
+
+
+@pytest.mark.asyncio
 async def test_context_manager_uses_latest_restored_compaction() -> None:
     client = FakeSummaryClient([])
     manager = ContextManager(ContextBudget(100, 10, 20))

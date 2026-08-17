@@ -53,6 +53,7 @@ class ContextBuildResult:
 
     messages: list[Message]
     compaction: CompactionRecord | None = None
+    fallback_used: bool = False
 
 
 SUMMARY_SECTIONS = (
@@ -131,13 +132,13 @@ class ContextManager:
             ]
             omitted_count = len(all_conversation) - len(recent_conversation)
             if omitted_count <= 0:
-                return ContextBuildResult(self.build_fallback(messages))
+                return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
             omitted = all_conversation[:omitted_count]
             try:
                 summary = await generate_context_summary(client, omitted)
             except ContextSummaryError:
-                return ContextBuildResult(self.build_fallback(messages))
+                return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
             system_messages = [
                 message for message in messages if message.role == "system"

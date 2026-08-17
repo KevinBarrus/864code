@@ -85,6 +85,11 @@ async def run_chat(
             )
             if context_result.compaction is not None:
                 session.add_compaction(context_result.compaction)
+            if context_result.fallback_used:
+                screen.add_entry(
+                    "tool",
+                    "⚠ Context summary failed; recent history only",
+                )
             result = await agent_loop.run(context_result.messages, on_event=handle_event)
         except asyncio.CancelledError:
             # 取消时保留已生成的部分回复，供下一轮继续参考
