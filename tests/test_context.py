@@ -226,3 +226,42 @@ async def test_generate_context_summary_raises_after_retries() -> None:
         )
 
     assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_context_manager_build_for_model_uses_summary_when_over_budget() -> None:
+    client = FakeSummaryClient([SUMMARY])
+    manager = ContextManager(ContextBudget(4, 1, 2))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    result = await manager.build_for_model(client, messages)
+
+    assert result[0].role == "system"
+    assert "## Goal" in result[0].content
+    assert result[1:] == messages[-2:]
+    assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_context_manager_build_for_model_uses_fallback_after_summary_failure() -> None:
+    client = FakeSummaryClient(
+        [ModelClientError("网络错误"), ModelClientError("网络错误")]
+    )
+    manager = ContextManager(ContextBudget(4, 1, 2))
+    messages = [
+        Message(role="user", content="旧问题"),
+        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="新问题"),
+        Message(role="assistant", content="新回答"),
+    ]
+
+    result = await manager.build_for_model(client, messages)
+
+    assert result[0] == Message(role="system", content=CONTEXT_FALLBACK_NOTICE)
+    assert result[1:] == messages[-2:]
+    assert client.calls == 2

@@ -94,6 +94,42 @@ class ContextManager:
         )
         return selected
 
+    async def build_for_model(
+        self,
+        client: ModelClient,
+        messages: Sequence[Message],
+    ) -> list[Message]:
+        """为模型构建上下文，超预算时优先摘要并回退到规则裁剪。"""
+
+        try:
+            return self.build(messages)
+        except ContextCompactionRequired:
+            recent = select_recent_messages(messages, self._budget.keep_recent_tokens)
+            recent_conversation = [
+                message for message in recent if message.role != "system"
+            ]
+            all_conversation = [
+                message for message in messages if message.role != "system"
+            ]
+            omitted_count = len(all_conversation) - len(recent_conversation)
+            if omitted_count <= 0:
+                return self.build_fallback(messages)
+
+            omitted = all_conversation[:omitted_count]
+            try:
+                summary = await generate_context_summary(client, omitted)
+            except ContextSummaryError:
+                return self.build_fallback(messages)
+
+            system_messages = [
+                message for message in messages if message.role == "system"
+            ]
+            summary_message = Message(
+                role="system",
+                content=f"Conversation summary:\n{summary}",
+            )
+            return system_messages + [summary_message] + recent_conversation
+
 
 def select_recent_messages(
     messages: Sequence[Message],
