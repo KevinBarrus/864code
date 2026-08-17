@@ -121,6 +121,9 @@ class ContextManager:
 
         original_messages = list(messages)
         messages = _apply_latest_compaction(original_messages, compactions)
+        original_system_messages = [
+            message for message in original_messages if message.role == "system"
+        ]
         try:
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
@@ -130,9 +133,6 @@ class ContextManager:
                 self._budget.keep_recent_tokens,
             )
             if oversized_prefix:
-                system_messages = [
-                    message for message in messages if message.role == "system"
-                ]
                 latest_group_ids = {id(message) for message in oversized_prefix + oversized_suffix}
                 old_messages = [
                     message
@@ -156,7 +156,9 @@ class ContextManager:
                     role="system",
                     content=f"Conversation summary:\n{summary}",
                 )
-                compacted_messages = system_messages + [summary_message] + oversized_suffix
+                compacted_messages = (
+                    original_system_messages + [summary_message] + oversized_suffix
+                )
                 try:
                     self.build(compacted_messages)
                 except ContextCompactionRequired:
@@ -190,9 +192,6 @@ class ContextManager:
             except ContextSummaryError:
                 return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
 
-            system_messages = [
-                message for message in messages if message.role == "system"
-            ]
             summary_message = Message(
                 role="system",
                 content=f"Conversation summary:\n{summary}",
@@ -206,7 +205,9 @@ class ContextManager:
                 first_kept_message_index=first_kept_message_index,
                 tokens_before=estimate_context_tokens(messages),
             )
-            compacted_messages = system_messages + [summary_message] + recent_conversation
+            compacted_messages = (
+                original_system_messages + [summary_message] + recent_conversation
+            )
             try:
                 self.build(compacted_messages)
             except ContextCompactionRequired:

@@ -373,6 +373,46 @@ async def test_second_compaction_boundary_uses_full_session_history() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repeated_compaction_keeps_latest_cumulative_summary() -> None:
+    first_summary = SUMMARY.replace("目标", "第一轮目标")
+    second_summary = SUMMARY.replace("目标", "第二轮目标")
+    budget = ContextBudget(50, 10, 10)
+    manager = ContextManager(budget)
+    messages = [
+        Message(role="user", content="旧问题" + "x" * 160),
+        Message(role="assistant", content="旧回答" + "x" * 160),
+        Message(role="user", content="保留的问题"),
+        Message(role="assistant", content="保留的回答"),
+    ]
+
+    first_result = await manager.build_for_model_result(
+        FakeSummaryClient([first_summary]),
+        messages,
+    )
+    assert first_result.compaction is not None
+
+    messages.extend(
+        [
+            Message(role="user", content="新的问题" + "x" * 16),
+            Message(role="assistant", content="新的回答" + "x" * 16),
+        ]
+    )
+    second_client = FakeSummaryClient([second_summary])
+    second_result = await manager.build_for_model_result(
+        second_client,
+        messages,
+        [first_result.compaction],
+    )
+
+    assert second_result.compaction is not None
+    assert "第一轮目标" in second_client.messages[0][1].content
+    assert second_result.messages[0].content == (
+        f"Conversation summary:\n{second_summary.strip()}"
+    )
+    assert sum(message.role == "system" for message in second_result.messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_context_manager_uses_latest_restored_compaction() -> None:
     client = FakeSummaryClient([])
     manager = ContextManager(ContextBudget(100, 10, 20))
