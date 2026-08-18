@@ -2,7 +2,8 @@ import pytest
 
 from core.model import TextDelta
 from evaluation.fakes import FakeModelClient
-from evaluation.online import TimedModelClient
+from evaluation.models import EvaluationAssertion, EvaluationResult
+from evaluation.online import TimedModelClient, run_online_suite
 
 
 @pytest.mark.asyncio
@@ -17,3 +18,30 @@ async def test_timed_model_client_records_request_duration() -> None:
     assert len(client.requests) == 1
     assert len(client.durations_ms) == 1
     assert client.durations_ms[0] >= 0
+
+
+@pytest.mark.asyncio
+async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
+    monkeypatch,
+) -> None:
+    """测试在线评测套件会完成全部重复运行"""
+
+    calls = 0
+
+    async def fake_run(env_path=None):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("模拟在线失败")
+        return EvaluationResult(
+            scenario="online_main_smoke",
+            duration_ms=10,
+            assertions=(EvaluationAssertion("ok", True),),
+        )
+
+    monkeypatch.setattr("evaluation.online.run_online_smoke", fake_run)
+
+    results = await run_online_suite(repetitions=3)
+
+    assert [result.repetition for result in results] == [1, 2, 3]
+    assert [result.passed for result in results] == [True, False, True]

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import tempfile
 from collections.abc import AsyncIterator, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
 
@@ -140,6 +141,34 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         )
 
 
+async def run_online_suite(
+    env_path: Path | None = None,
+    repetitions: int = 6,
+) -> list[EvaluationResult]:
+    """重复执行在线主链路并保留单次失败结果"""
+
+    if repetitions <= 0:
+        raise ValueError("在线评测重复次数必须大于 0")
+    results: list[EvaluationResult] = []
+    for repetition in range(1, repetitions + 1):
+        try:
+            result = await run_online_smoke(env_path)
+        except Exception:
+            result = EvaluationResult(
+                scenario="online_main_smoke",
+                duration_ms=0,
+                assertions=(
+                    EvaluationAssertion(
+                        "runner-error",
+                        False,
+                        "在线评测运行失败",
+                    ),
+                ),
+            )
+        results.append(replace(result, repetition=repetition))
+    return results
+
+
 def main() -> int:
     """处理真实在线评测命令行参数"""
 
@@ -150,6 +179,12 @@ def main() -> int:
         help="确认发起真实模型请求并可能产生费用",
     )
     parser.add_argument("--env", type=Path, help="指定 .env 配置文件")
+    parser.add_argument(
+        "--repetitions",
+        type=int,
+        default=6,
+        help="在线主链路重复次数，默认 6 次",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -165,15 +200,17 @@ def main() -> int:
         print("在线评测会发起真实模型请求，请添加 --confirm 后运行")
         return 2
 
-    result = asyncio.run(run_online_smoke(args.env))
+    results = asyncio.run(run_online_suite(args.env, args.repetitions))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("", encoding="utf-8")
-    append_result(args.output, result)
-    generate_report(args.report, [result])
-    print(f"online evaluation: {'passed' if result.passed else 'failed'}")
+    for result in results:
+        append_result(args.output, result)
+    generate_report(args.report, results)
+    passed = sum(result.passed for result in results)
+    print(f"online evaluation: {passed}/{len(results)} repetitions passed")
     print(f"results: {args.output}")
     print(f"report: {args.report}")
-    return 0 if result.passed else 1
+    return 0 if passed == len(results) else 1
 
 
 if __name__ == "__main__":

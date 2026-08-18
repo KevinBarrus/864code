@@ -3,6 +3,7 @@
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 from .metrics import EvaluationMetrics, calculate_metrics
 from .events import event_to_record, message_to_record
+from .online import run_online_suite
 from .report import generate_report, render_report
 from .scenarios import (
     FILE_EDIT_SCENARIO,
@@ -26,6 +27,7 @@ __all__ = [
     "calculate_metrics",
     "event_to_record",
     "message_to_record",
+    "run_online_suite",
     "generate_report",
     "render_report",
     "append_result",
