@@ -5,6 +5,7 @@ from time import perf_counter
 from core.agent_loop import AgentLoop, ToolExecutionEvent
 from core.context import estimate_context_tokens
 from core.context import ContextBudget, ContextManager
+from core.errors import AgentError
 from core.memory import Memory
 from core.model import Message, TextDelta, ToolCall, ToolCallEvent
 from core.tools import (
@@ -39,6 +40,11 @@ TOOL_RECOVERY_SCENARIO = EvaluationScenario(
 COMPACTION_RESTORE_SCENARIO = EvaluationScenario(
     name="compaction_restore",
     description="验证上下文压缩记录和 Session 恢复结果一致",
+)
+
+MODEL_RETRY_SCENARIO = EvaluationScenario(
+    name="model_network_retry",
+    description="验证模型网络错误会按策略有限重试",
 )
 
 
@@ -272,6 +278,48 @@ async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
         duration_ms=(perf_counter() - started_at) * 1000,
         model_requests=len(client.requests),
         compactions=int(first_result.compaction is not None),
+        estimated_tokens=sum(
+            estimate_context_tokens(request) for request in client.requests
+        ),
+        assertions=assertions,
+    )
+
+
+async def run_model_retry_scenario() -> EvaluationResult:
+    """运行模型网络错误重试场景并返回结构化结果"""
+
+    client = FakeModelClient(
+        [
+            AgentError(
+                category="network",
+                operation="model_request",
+                user_message="模型网络请求失败",
+                retryable=True,
+            ),
+            [TextDelta("重试后完成任务")],
+        ]
+    )
+    started_at = perf_counter()
+    result = await AgentLoop(client, ToolManager()).run(
+        [Message(role="user", content="完成一次网络重试")]
+    )
+    assertions = (
+        EvaluationAssertion(
+            "retry-once",
+            len(client.requests) == 2,
+            "模型网络错误没有按策略重试一次",
+        ),
+        EvaluationAssertion(
+            "retry-completed",
+            result.final_content == "重试后完成任务",
+            "模型重试后没有完成任务",
+        ),
+    )
+    return EvaluationResult(
+        scenario=MODEL_RETRY_SCENARIO.name,
+        duration_ms=(perf_counter() - started_at) * 1000,
+        model_requests=len(client.requests),
+        retries=max(0, len(client.requests) - 1),
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
