@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator, Sequence
 import pytest
 
 from core.agent_loop import AgentLoop, ToolExecutionEvent
+from core.errors import AgentError
 from core.model import (
     Message,
     ModelEvent,
@@ -97,3 +98,66 @@ async def test_agent_loop_returns_unknown_tool_result_to_model() -> None:
 
     assert result.final_content == "工具不存在"
     assert "工具不存在：missing" in client.requests[1][-1].content
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_retries_model_network_error_once() -> None:
+    """测试模型网络错误会按统一策略重试一次。"""
+
+    class RetryClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_response(
+            self,
+            messages: Sequence[Message],
+            tools: Sequence[dict[str, object]] = (),
+        ) -> AsyncIterator[ModelEvent]:
+            self.calls += 1
+            if self.calls == 1:
+                raise AgentError(
+                    category="network",
+                    operation="model_request",
+                    user_message="模型网络请求失败",
+                    retryable=True,
+                )
+            yield TextDelta("重试成功")
+
+    client = RetryClient()
+    result = await AgentLoop(client, ToolManager()).run(
+        [Message(role="user", content="继续")]
+    )
+
+    assert result.final_content == "重试成功"
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_does_not_retry_after_partial_model_output() -> None:
+    """测试模型已经输出内容后失败不会重复请求。"""
+
+    class PartialFailureClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_response(
+            self,
+            messages: Sequence[Message],
+            tools: Sequence[dict[str, object]] = (),
+        ) -> AsyncIterator[ModelEvent]:
+            self.calls += 1
+            yield TextDelta("部分内容")
+            raise AgentError(
+                category="network",
+                operation="model_request",
+                user_message="模型网络请求失败",
+                retryable=True,
+            )
+
+    client = PartialFailureClient()
+    with pytest.raises(AgentError):
+        await AgentLoop(client, ToolManager()).run(
+            [Message(role="user", content="继续")]
+        )
+
+    assert client.calls == 1
