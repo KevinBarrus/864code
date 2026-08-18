@@ -3,24 +3,33 @@
 from html import escape
 from pathlib import Path
 
+from .baseline import RegressionReport
 from .metrics import calculate_metrics
 from .models import EvaluationResult
 
 
-def generate_report(path: Path, results: list[EvaluationResult]) -> None:
+def generate_report(
+    path: Path,
+    results: list[EvaluationResult],
+    regression: RegressionReport | None = None,
+) -> None:
     """根据评测结果生成静态 HTML 文件"""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_report(results), encoding="utf-8")
+    path.write_text(render_report(results, regression), encoding="utf-8")
 
 
-def render_report(results: list[EvaluationResult]) -> str:
+def render_report(
+    results: list[EvaluationResult],
+    regression: RegressionReport | None = None,
+) -> str:
     """将评测结果转换为 HTML 文本"""
 
     metrics = calculate_metrics(results)
     rows = "\n".join(_result_row(result) for result in results)
     failures = "\n".join(_failure_row(result) for result in results for assertion in result.assertions if not assertion.passed)
     failures = failures or "<tr><td colspan=3>无失败断言</td></tr>"
+    regression_html = _regression_section(regression)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -65,6 +74,7 @@ def render_report(results: list[EvaluationResult]) -> str:
     <thead><tr><th>场景</th><th>断言</th><th>原因</th></tr></thead>
     <tbody>{failures}</tbody>
   </table>
+  {regression_html}
 </body>
 </html>
 """
@@ -105,3 +115,26 @@ def _percent(value: float) -> str:
     """将比例格式化为百分比"""
 
     return f"{value:.1%}"
+
+
+def _regression_section(regression: RegressionReport | None) -> str:
+    """生成 baseline 回归比较区域"""
+
+    if regression is None:
+        return ""
+    status = "通过" if regression.passed else "失败"
+    status_class = "pass" if regression.passed else "fail"
+    return f"""<h2>Baseline 回归</h2>
+<p class="{status_class}">回归门禁：{status}</p>
+<ul>
+  <li>新增失败：{_list_or_none(regression.new_failures)}</li>
+  <li>历史已知失败：{_list_or_none(regression.known_failures)}</li>
+  <li>缺失运行：{_list_or_none(regression.missing_runs)}</li>
+  <li>重复运行：{_list_or_none(regression.duplicate_runs)}</li>
+</ul>"""
+
+
+def _list_or_none(values: tuple[str, ...]) -> str:
+    """格式化回归项列表"""
+
+    return escape(", ".join(values) if values else "无")

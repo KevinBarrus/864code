@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from evaluation.models import EvaluationAssertion, EvaluationResult
+from evaluation.baseline import RegressionReport
 from evaluation.report import generate_report, render_report
 
 
@@ -22,6 +23,24 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
     assert "P95 耗时" in html
     assert "demo" in html
     assert "通过" in html
+
+
+def test_render_report_contains_baseline_regression() -> None:
+    """测试报告包含 baseline 回归结果"""
+
+    html = render_report(
+        [],
+        RegressionReport(
+            new_failures=("task#1",),
+            known_failures=(),
+            missing_runs=(),
+            duplicate_runs=(),
+        ),
+    )
+
+    assert "新增失败" in html
+    assert "task#1" in html
+    assert "回归门禁：失败" in html
 
 
 def test_generate_report_writes_static_html(tmp_path: Path) -> None:

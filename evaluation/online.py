@@ -11,6 +11,7 @@ from time import perf_counter
 from core.agent_loop import AgentLoop, ToolExecutionEvent
 from core.config import load_settings
 from core.context import estimate_context_tokens
+from core.context import ContextBudget, ContextManager
 from core.model import Message, ModelClient, ModelEvent, ToolCallEvent
 from core.openai_client import OpenAICompatibleClient
 from core.session import Session
@@ -25,6 +26,7 @@ from core.tools import (
 
 from .models import EvaluationAssertion, EvaluationResult
 from .events import event_to_record, message_to_record
+from .baseline import compare_baseline, create_baseline, load_baseline, write_baseline
 from .report import generate_report
 from .storage import append_result
 
@@ -51,6 +53,17 @@ class TimedModelClient:
         try:
             async for event in self._client.stream_response(messages, tools):
                 yield event
+        finally:
+            self.durations_ms.append((perf_counter() - started_at) * 1000)
+
+    async def stream_chat(self, messages: Sequence[Message]):
+        """记录一次真实摘要请求并转发文本片段"""
+
+        self.requests.append(list(messages))
+        started_at = perf_counter()
+        try:
+            async for chunk in self._client.stream_chat(messages):
+                yield chunk
         finally:
             self.durations_ms.append((perf_counter() - started_at) * 1000)
 
@@ -145,6 +158,7 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
 async def run_online_suite(
     env_path: Path | None = None,
     repetitions: int = 6,
+    scenario: str = "main",
 ) -> list[EvaluationResult]:
     """重复执行在线主链路并保留单次失败结果"""
 
@@ -153,7 +167,12 @@ async def run_online_suite(
     results: list[EvaluationResult] = []
     for repetition in range(1, repetitions + 1):
         try:
-            result = await run_online_smoke(env_path)
+            runner = (
+                run_online_smoke
+                if scenario == "main"
+                else run_online_compaction_smoke
+            )
+            result = await runner(env_path)
         except Exception:
             result = EvaluationResult(
                 scenario="online_main_smoke",
@@ -168,6 +187,63 @@ async def run_online_suite(
             )
         results.append(replace(result, repetition=repetition))
     return results
+
+
+async def run_online_compaction_smoke(
+    env_path: Path | None = None,
+) -> EvaluationResult:
+    """使用真实模型执行一次上下文压缩和 Session 恢复冒烟评测"""
+
+    settings = load_settings(env_path)
+    with tempfile.TemporaryDirectory(prefix="864code-compaction-") as directory:
+        workspace = Path(directory)
+        client = TimedModelClient(OpenAICompatibleClient(settings))
+        session = Session(workspace)
+        for index in range(4):
+            session.add_user_message(f"历史任务 {index}: " + "x" * 180)
+            session.add_assistant_message(f"历史回复 {index}: " + "x" * 180)
+        manager = ContextManager(ContextBudget(500, 100, 120))
+        started_at = perf_counter()
+        result = await manager.build_for_model_result(
+            client,
+            session.get_messages(),
+            session.get_compactions(),
+        )
+        if result.compaction is not None:
+            session.add_compaction(result.compaction)
+        persistence_ok = session.flush_persistence() and session.close()
+        restored = Session.restore(workspace, session.session_id)
+        restored_compactions = restored.get_compactions()
+        restored.close()
+        assertions = (
+            EvaluationAssertion(
+                "compaction-created",
+                result.compaction is not None and not result.fallback_used,
+                "真实模型没有生成有效上下文摘要",
+            ),
+            EvaluationAssertion(
+                "session-restore",
+                bool(restored_compactions) == (result.compaction is not None),
+                "压缩记录无法从 Session 恢复",
+            ),
+            EvaluationAssertion(
+                "persistence",
+                persistence_ok,
+                "上下文压缩 Session 持久化失败",
+            ),
+        )
+        return EvaluationResult(
+            scenario="online_context_compaction",
+            duration_ms=(perf_counter() - started_at) * 1000,
+            model_requests=len(client.requests),
+            compactions=int(result.compaction is not None),
+            estimated_tokens=sum(
+                estimate_context_tokens(request) for request in client.requests
+            ),
+            persistence_degraded=not persistence_ok,
+            model_request_durations_ms=tuple(client.durations_ms),
+            assertions=assertions,
+        )
 
 
 def main() -> int:
@@ -187,6 +263,12 @@ def main() -> int:
         help="在线主链路重复次数，默认 6 次",
     )
     parser.add_argument(
+        "--scenario",
+        choices=("main", "context-compaction"),
+        default="main",
+        help="在线专项场景",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("evaluation-results/online.jsonl"),
@@ -196,22 +278,40 @@ def main() -> int:
         type=Path,
         default=Path("evaluation-results/online-report.html"),
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path("evaluation-results/online-baseline.json"),
+    )
     args = parser.parse_args()
     if not args.confirm:
         print("在线评测会发起真实模型请求，请添加 --confirm 后运行")
         return 2
 
-    results = asyncio.run(run_online_suite(args.env, args.repetitions))
+    results = asyncio.run(
+        run_online_suite(
+            args.env,
+            args.repetitions,
+            scenario=args.scenario,
+        )
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("", encoding="utf-8")
     for result in results:
         append_result(args.output, result)
-    generate_report(args.report, results)
+    regression = None
+    if args.baseline.exists():
+        regression = compare_baseline(results, load_baseline(args.baseline))
+    elif all(result.passed for result in results):
+        write_baseline(args.baseline, create_baseline(results))
+    generate_report(args.report, results, regression)
     passed = sum(result.passed for result in results)
     print(f"online evaluation: {passed}/{len(results)} repetitions passed")
+    if regression is not None:
+        print(f"baseline regression: {'passed' if regression.passed else 'failed'}")
     print(f"results: {args.output}")
     print(f"report: {args.report}")
-    return 0 if passed == len(results) else 1
+    return 0 if passed == len(results) and (regression is None or regression.passed) else 1
 
 
 if __name__ == "__main__":

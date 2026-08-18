@@ -1,6 +1,6 @@
 import pytest
 
-from core.model import TextDelta
+from core.model import Message, TextDelta
 from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
 from evaluation.online import TimedModelClient, run_online_suite
@@ -18,6 +18,19 @@ async def test_timed_model_client_records_request_duration() -> None:
     assert len(client.requests) == 1
     assert len(client.durations_ms) == 1
     assert client.durations_ms[0] >= 0
+
+
+@pytest.mark.asyncio
+async def test_timed_model_client_records_summary_request_duration() -> None:
+    """测试客户端包装器记录摘要请求耗时"""
+
+    client = TimedModelClient(FakeModelClient([[TextDelta("摘要")]]))
+
+    chunks = [chunk async for chunk in client.stream_chat([Message("user", "历史")])]
+
+    assert chunks == ["摘要"]
+    assert len(client.requests) == 1
+    assert len(client.durations_ms) == 1
 
 
 @pytest.mark.asyncio
