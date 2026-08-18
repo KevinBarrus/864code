@@ -4,8 +4,10 @@ from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 from .scenarios import (
     FILE_EDIT_SCENARIO,
     MEMORY_SCENARIO,
+    TOOL_RECOVERY_SCENARIO,
     run_file_edit_scenario,
     run_memory_scenario,
+    run_tool_recovery_scenario,
 )
 
 __all__ = [
@@ -14,6 +16,8 @@ __all__ = [
     "EvaluationScenario",
     "MEMORY_SCENARIO",
     "FILE_EDIT_SCENARIO",
+    "TOOL_RECOVERY_SCENARIO",
     "run_file_edit_scenario",
     "run_memory_scenario",
+    "run_tool_recovery_scenario",
 ]

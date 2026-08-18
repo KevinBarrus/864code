@@ -29,6 +29,11 @@ FILE_EDIT_SCENARIO = EvaluationScenario(
     description="验证模型可以读取文件、修改文件并完成任务",
 )
 
+TOOL_RECOVERY_SCENARIO = EvaluationScenario(
+    name="tool_failure_recovery",
+    description="验证工具失败后模型可以修正调用并继续完成任务",
+)
+
 
 async def run_memory_scenario() -> EvaluationResult:
     """运行多轮记忆场景并返回结构化结果"""
@@ -136,6 +141,65 @@ async def run_file_edit_scenario(workspace) -> EvaluationResult:
         model_requests=len(client.requests),
         tool_calls=len(tool_events),
         tool_failures=sum(event.result.is_error for event in tool_events),
+        estimated_tokens=sum(
+            estimate_context_tokens(request) for request in client.requests
+        ),
+        assertions=assertions,
+    )
+
+
+async def run_tool_recovery_scenario(workspace) -> EvaluationResult:
+    """运行工具失败恢复场景并返回结构化结果"""
+
+    (workspace / "available.txt").write_text("可读取内容", encoding="utf-8")
+    failed_call = ToolCall("read-1", "read_file", {"path": "missing.txt"})
+    recovered_call = ToolCall("read-2", "read_file", {"path": "available.txt"})
+    client = FakeModelClient(
+        [
+            [ToolCallEvent(failed_call)],
+            [ToolCallEvent(recovered_call)],
+            [TextDelta("已根据工具错误修正路径并完成读取")],
+        ]
+    )
+    manager = ToolManager()
+    manager.register_local(*create_read_file_tool(workspace))
+    events: list[object] = []
+
+    async def collect_event(event: object) -> None:
+        events.append(event)
+
+    started_at = perf_counter()
+    result = await AgentLoop(client, manager).run(
+        [Message(role="user", content="读取 available.txt")],
+        on_event=collect_event,
+    )
+    tool_events = [event for event in events if isinstance(event, ToolExecutionEvent)]
+    failed_events = [event for event in tool_events if event.result.is_error]
+    assertions = (
+        EvaluationAssertion(
+            "tool-error-returned",
+            len(failed_events) == 1
+            and failed_events[0].result.error_category == "tool_execution",
+            "工具错误没有作为结构化结果返回",
+        ),
+        EvaluationAssertion(
+            "tool-retry-call",
+            [event.tool_call.arguments["path"] for event in tool_events]
+            == ["missing.txt", "available.txt"],
+            "模型没有修正工具调用参数",
+        ),
+        EvaluationAssertion(
+            "recovery-completed",
+            result.final_content == "已根据工具错误修正路径并完成读取",
+            "工具失败后 AgentLoop 未完成恢复",
+        ),
+    )
+    return EvaluationResult(
+        scenario=TOOL_RECOVERY_SCENARIO.name,
+        duration_ms=(perf_counter() - started_at) * 1000,
+        model_requests=len(client.requests),
+        tool_calls=len(tool_events),
+        tool_failures=len(failed_events),
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
