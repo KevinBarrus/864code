@@ -124,6 +124,27 @@ def test_jsonl_persists_tool_calls_and_results(tmp_path: Path) -> None:
     assert store.load_messages(session_id) == expected
 
 
+def test_jsonl_persists_assistant_error_status(tmp_path: Path) -> None:
+    """测试 JSONL 可以保存和恢复 assistant 的异常状态。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    expected = Message(
+        role="assistant",
+        content="部分回复",
+        status="error",
+        error_category="network",
+    )
+
+    store.append_message(session_id, expected)
+
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert record["status"] == "error"
+    assert record["error_category"] == "network"
+    assert store.load_messages(session_id) == [expected]
+
+
 def test_missing_session_returns_empty_history(tmp_path: Path) -> None:
     """测试不存在的会话文件返回空历史。"""
 

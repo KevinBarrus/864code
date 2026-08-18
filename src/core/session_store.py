@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .model import Message, ToolCall
+from .errors import is_error_category
+from .model import Message, MessageStatus, ToolCall
 
 
 class SessionStoreError(ValueError):
@@ -49,6 +50,10 @@ class SessionStore:
             "role": message.role,
             "content": message.content,
         }
+        if message.status != "completed":
+            record["status"] = message.status
+        if message.error_category is not None:
+            record["error_category"] = message.error_category
         if message.tool_calls:
             record["tool_calls"] = [
                 {
@@ -179,6 +184,13 @@ class SessionStore:
         if not isinstance(content, str):
             raise SessionStoreError(f"第 {line_number} 行的内容无效")
 
+        status = record.get("status", "completed")
+        if status not in {"completed", "cancelled", "error"}:
+            raise SessionStoreError(f"第 {line_number} 行的消息状态无效")
+        error_category = record.get("error_category")
+        if error_category is not None and not is_error_category(error_category):
+            raise SessionStoreError(f"第 {line_number} 行的错误类别无效")
+
         raw_tool_calls = record.get("tool_calls", [])
         if not isinstance(raw_tool_calls, list):
             raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
@@ -207,6 +219,8 @@ class SessionStore:
             content=content,
             tool_calls=tuple(tool_calls),
             tool_call_id=tool_call_id,
+            status=status,
+            error_category=error_category,
         )
 
     @staticmethod

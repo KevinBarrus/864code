@@ -8,6 +8,7 @@ from .errors import AgentError, ErrorCategory
 
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
+MessageStatus = Literal["completed", "cancelled", "error"]
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ class Message:
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    status: MessageStatus = "completed"
+    error_category: ErrorCategory | None = None
 
 
 class ModelClientError(AgentError):
