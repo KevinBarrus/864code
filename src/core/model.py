@@ -26,6 +26,7 @@ class ToolResult:
     call_id: str
     content: str
     is_error: bool = False
+    error_category: ErrorCategory | None = None
 
 
 @dataclass(frozen=True)

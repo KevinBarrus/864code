@@ -87,6 +87,7 @@ async def test_tool_manager_returns_error_for_unknown_tool() -> None:
     assert result.is_error is True
     assert result.call_id == "call-1"
     assert "工具不存在" in result.content
+    assert result.error_category == "invalid_request"
 
 
 @pytest.mark.asyncio
@@ -105,8 +106,9 @@ async def test_tool_manager_converts_handler_error() -> None:
 
     assert result == ToolResult(
         call_id="call-1",
-        content="工具执行失败：读取失败",
+        content="工具执行失败，请根据错误调整后续操作",
         is_error=True,
+        error_category="tool_execution",
     )
 
 
@@ -139,6 +141,7 @@ async def test_tool_manager_denies_write_without_confirmation() -> None:
 
     assert result.is_error is True
     assert "被拒绝" in result.content
+    assert result.error_category == "tool_permission"
     assert executed is False
 
 

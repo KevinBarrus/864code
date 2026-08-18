@@ -2,13 +2,14 @@
 
 import asyncio
 
+from ..errors import AgentError
 from ..model import ToolCall, ToolResult
 from .mcp import McpToolProvider, McpToolRegistry
 from .mcp import RegisteredMcpTool
 from .registry import RegisteredTool, ToolRegistry
 from .permissions import ApprovalDecision, PermissionDenied, PermissionManager
 from .types import ToolDefinition, ToolHandler
-from .validation import validate_tool_arguments
+from .validation import ToolArgumentError, validate_tool_arguments
 
 
 class ToolManager:
@@ -73,6 +74,7 @@ class ToolManager:
                 call_id=tool_call.call_id,
                 content=f"工具不存在：{tool_call.name}",
                 is_error=True,
+                error_category="invalid_request",
             )
 
         try:
@@ -87,19 +89,52 @@ class ToolManager:
                     call_id=tool_call.call_id,
                     content=f"工具调用被拒绝。{feedback}".strip(),
                     is_error=True,
+                    error_category="tool_permission",
                 )
             return await registered.execute(tool_call)
         except asyncio.CancelledError:
             raise
+        except ToolArgumentError as exc:
+            return _tool_error_result(
+                tool_call,
+                AgentError(
+                    category="invalid_request",
+                    operation="tool_validation",
+                    user_message=f"工具参数无效：{exc}",
+                    model_message=f"工具参数无效：{exc}",
+                    cause=exc,
+                ),
+            )
         except PermissionDenied as exc:
-            return ToolResult(
-                call_id=tool_call.call_id,
-                content=f"工具调用被拒绝：{exc}",
-                is_error=True,
+            return _tool_error_result(
+                tool_call,
+                AgentError(
+                    category="tool_permission",
+                    operation="tool_authorization",
+                    user_message="工具调用被拒绝",
+                    model_message=f"工具调用被拒绝：{exc}",
+                    cause=exc,
+                ),
             )
         except Exception as exc:
-            return ToolResult(
-                call_id=tool_call.call_id,
-                content=f"工具执行失败：{exc}",
-                is_error=True,
+            return _tool_error_result(
+                tool_call,
+                AgentError(
+                    category="tool_execution",
+                    operation="tool_execution",
+                    user_message="工具执行失败",
+                    model_message="工具执行失败，请根据错误调整后续操作",
+                    cause=exc,
+                ),
             )
+
+
+def _tool_error_result(tool_call: ToolCall, error: AgentError) -> ToolResult:
+    """将内部工具异常转换为模型可见的安全结果。"""
+
+    return ToolResult(
+        call_id=tool_call.call_id,
+        content=error.model_message or error.user_message,
+        is_error=True,
+        error_category=error.category,
+    )
