@@ -39,7 +39,7 @@ def render_report(results: list[EvaluationResult]) -> str:
 </head>
 <body>
   <h1>864code Evaluation Report</h1>
-  <p>场景数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
+  <p>样本数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
   <section class="metrics">
     {_metric("任务完成率", _percent(metrics.task_completion_rate))}
     {_metric("断言通过率", _percent(metrics.assertion_pass_rate))}
@@ -48,7 +48,12 @@ def render_report(results: list[EvaluationResult]) -> str:
     {_metric("持久化成功率", _percent(metrics.persistence_success_rate))}
     {_metric("降级率", _percent(metrics.degradation_rate))}
     {_metric("平均耗时", f"{metrics.average_duration_ms:.2f} ms")}
+    {_metric("P50 耗时", f"{metrics.p50_duration_ms:.2f} ms")}
+    {_metric("P95 耗时", f"{metrics.p95_duration_ms:.2f} ms")}
     {_metric("平均模型请求", f"{metrics.average_model_requests:.2f}")}
+    {_metric("平均请求耗时", f"{metrics.average_model_request_duration_ms:.2f} ms")}
+    {_metric("请求 P50", f"{metrics.p50_model_request_duration_ms:.2f} ms")}
+    {_metric("请求 P95", f"{metrics.p95_model_request_duration_ms:.2f} ms")}
   </section>
   <h2>场景结果</h2>
   <table>

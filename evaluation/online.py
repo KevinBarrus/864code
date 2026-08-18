@@ -136,6 +136,7 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
                 estimate_context_tokens(request) for request in client.requests
             ),
             persistence_degraded=not persistence_ok,
+            model_request_durations_ms=tuple(client.durations_ms),
             events=tuple(events),
             assertions=assertions,
         )

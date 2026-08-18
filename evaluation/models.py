@@ -37,6 +37,7 @@ class EvaluationResult:
     estimated_tokens: int = 0
     actual_tokens: int | None = None
     persistence_degraded: bool = False
+    model_request_durations_ms: tuple[float, ...] = ()
     events: tuple[dict[str, object], ...] = ()
     assertions: tuple[EvaluationAssertion, ...] = ()
 

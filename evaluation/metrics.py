@@ -21,6 +21,11 @@ class EvaluationMetrics:
     average_model_requests: float
     total_retries: int
     total_compactions: int
+    p50_duration_ms: float
+    p95_duration_ms: float
+    average_model_request_duration_ms: float
+    p50_model_request_duration_ms: float
+    p95_model_request_duration_ms: float
 
 
 def calculate_metrics(results: list[EvaluationResult]) -> EvaluationMetrics:
@@ -64,6 +69,35 @@ def calculate_metrics(results: list[EvaluationResult]) -> EvaluationMetrics:
         ),
         total_retries=sum(result.retries for result in results),
         total_compactions=sum(result.compactions for result in results),
+        p50_duration_ms=_percentile(
+            [result.duration_ms for result in results], 0.50
+        ),
+        p95_duration_ms=_percentile(
+            [result.duration_ms for result in results], 0.95
+        ),
+        average_model_request_duration_ms=_average(
+            [
+                duration
+                for result in results
+                for duration in result.model_request_durations_ms
+            ]
+        ),
+        p50_model_request_duration_ms=_percentile(
+            [
+                duration
+                for result in results
+                for duration in result.model_request_durations_ms
+            ],
+            0.50,
+        ),
+        p95_model_request_duration_ms=_percentile(
+            [
+                duration
+                for result in results
+                for duration in result.model_request_durations_ms
+            ],
+            0.95,
+        ),
     )
 
 
@@ -77,3 +111,16 @@ def _average(values: list[float | int]) -> float:
     """计算平均值，避免空评测集产生除零异常"""
 
     return sum(values) / len(values) if values else 0.0
+
+
+def _percentile(values: list[float | int], percentile: float) -> float:
+    """使用线性插值计算百分位数"""
+
+    if not values:
+        return 0.0
+    ordered = sorted(float(value) for value in values)
+    position = (len(ordered) - 1) * percentile
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction

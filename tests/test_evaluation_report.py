@@ -18,6 +18,8 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
     )
 
     assert "任务完成率" in html
+    assert "P50 耗时" in html
+    assert "P95 耗时" in html
     assert "demo" in html
     assert "通过" in html
 

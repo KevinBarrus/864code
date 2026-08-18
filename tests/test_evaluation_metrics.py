@@ -48,6 +48,27 @@ def test_calculate_metrics_aggregates_task_tool_and_recovery_rates() -> None:
     assert metrics.total_retries == 3
 
 
+def test_calculate_metrics_computes_percentiles_and_request_latency() -> None:
+    """测试指标计算包含总耗时和模型请求耗时分布"""
+
+    results = [
+        EvaluationResult(
+            scenario=f"scenario-{index}",
+            duration_ms=duration,
+            model_request_durations_ms=(duration / 2,),
+        )
+        for index, duration in enumerate((100, 200, 300, 400, 500))
+    ]
+
+    metrics = calculate_metrics(results)
+
+    assert metrics.p50_duration_ms == 300
+    assert metrics.p95_duration_ms == 480
+    assert metrics.average_model_request_duration_ms == 150
+    assert metrics.p50_model_request_duration_ms == 150
+    assert metrics.p95_model_request_duration_ms == 240
+
+
 def test_results_can_round_trip_through_jsonl(tmp_path: Path) -> None:
     """测试评测结果可以写入并从 JSONL 恢复"""
 

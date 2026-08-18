@@ -45,6 +45,7 @@ def _result_to_record(result: EvaluationResult) -> dict[str, object]:
         "estimated_tokens": result.estimated_tokens,
         "actual_tokens": result.actual_tokens,
         "persistence_degraded": result.persistence_degraded,
+        "model_request_durations_ms": list(result.model_request_durations_ms),
         "events": list(result.events),
         "assertions": [
             {
@@ -78,6 +79,10 @@ def _result_from_record(record: object) -> EvaluationResult:
         estimated_tokens=_required_int(record, "estimated_tokens"),
         actual_tokens=record.get("actual_tokens"),
         persistence_degraded=bool(record.get("persistence_degraded", False)),
+        model_request_durations_ms=tuple(
+            float(value)
+            for value in record.get("model_request_durations_ms", [])
+        ),
         events=tuple(_event_from_record(item) for item in record.get("events", [])),
         assertions=tuple(_assertion_from_record(item) for item in assertions),
     )
