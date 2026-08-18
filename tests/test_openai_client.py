@@ -162,6 +162,31 @@ async def test_client_classifies_timeout_error() -> None:
     assert error_info.value.retryable
 
 
+@pytest.mark.asyncio
+async def test_client_classifies_openai_connection_error() -> None:
+    """测试 OpenAI SDK 网络异常会被转换为 network 类别"""
+
+    class APIConnectionError(Exception):
+        pass
+
+    class FailingCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            """模拟 OpenAI SDK 网络连接失败"""
+
+            raise APIConnectionError("connection failed")
+
+    failing_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=FailingCompletions())
+    )
+    client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError) as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "network"
+    assert error_info.value.retryable
+
+
 async def _collect_events(client: OpenAICompatibleClient) -> list[object]:
     """收集客户端产生的模型事件。"""
 

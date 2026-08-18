@@ -99,8 +99,12 @@ def _to_model_error(error: BaseException) -> ModelClientError:
     """将底层模型异常转换为统一类别和安全提示。"""
 
     error_name = type(error).__name__
-    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
-        category: ErrorCategory = "timeout" if isinstance(error, TimeoutError) else "network"
+    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)) or error_name in {
+        "APIConnectionError",
+        "APITimeoutError",
+    }:
+        is_timeout = isinstance(error, (TimeoutError, asyncio.TimeoutError)) or error_name == "APITimeoutError"
+        category: ErrorCategory = "timeout" if is_timeout else "network"
         message = "模型请求超时" if category == "timeout" else "模型网络请求失败"
         return ModelClientError(message, category=category, retryable=True, cause=error)
     if error_name == "RateLimitError":
