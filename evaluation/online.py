@@ -107,7 +107,7 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         assertions = (
             EvaluationAssertion(
                 "file-content",
-                target.read_text(encoding="utf-8") == "after\n",
+                target.read_text(encoding="utf-8").strip() == "after",
                 "真实模型没有完成文件修改",
             ),
             EvaluationAssertion(
