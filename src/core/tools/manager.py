@@ -116,6 +116,17 @@ class ToolManager:
                     cause=exc,
                 ),
             )
+        except ValueError as exc:
+            return _tool_error_result(
+                tool_call,
+                AgentError(
+                    category="tool_execution",
+                    operation="tool_execution",
+                    user_message="工具执行失败",
+                    model_message=f"工具执行失败：{exc}",
+                    cause=exc,
+                ),
+            )
         except Exception as exc:
             return _tool_error_result(
                 tool_call,
