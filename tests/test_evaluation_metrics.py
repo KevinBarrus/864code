@@ -53,6 +53,20 @@ def test_results_can_round_trip_through_jsonl(tmp_path: Path) -> None:
 
     path = tmp_path / "results.jsonl"
     expected = _result("round-trip", True, tool_calls=1)
+    expected = EvaluationResult(
+        scenario=expected.scenario,
+        duration_ms=expected.duration_ms,
+        run_id="run-1",
+        repetition=2,
+        model_requests=expected.model_requests,
+        tool_calls=expected.tool_calls,
+        tool_failures=expected.tool_failures,
+        retries=expected.retries,
+        compactions=expected.compactions,
+        persistence_degraded=expected.persistence_degraded,
+        events=({"type": "tool_call", "name": "read_file"},),
+        assertions=expected.assertions,
+    )
 
     append_result(path, expected)
 

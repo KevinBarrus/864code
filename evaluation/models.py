@@ -1,6 +1,7 @@
 """定义评测场景、断言和结果的数据结构"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,8 @@ class EvaluationResult:
 
     scenario: str
     duration_ms: float
+    run_id: str = field(default_factory=lambda: str(uuid4()))
+    repetition: int = 1
     model_requests: int = 0
     tool_calls: int = 0
     tool_failures: int = 0
@@ -34,6 +37,7 @@ class EvaluationResult:
     estimated_tokens: int = 0
     actual_tokens: int | None = None
     persistence_degraded: bool = False
+    events: tuple[dict[str, object], ...] = ()
     assertions: tuple[EvaluationAssertion, ...] = ()
 
     @property

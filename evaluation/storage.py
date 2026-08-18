@@ -32,7 +32,9 @@ def _result_to_record(result: EvaluationResult) -> dict[str, object]:
     """将评测结果转换为 JSON 对象"""
 
     return {
+        "run_id": result.run_id,
         "scenario": result.scenario,
+        "repetition": result.repetition,
         "passed": result.passed,
         "duration_ms": result.duration_ms,
         "model_requests": result.model_requests,
@@ -43,6 +45,7 @@ def _result_to_record(result: EvaluationResult) -> dict[str, object]:
         "estimated_tokens": result.estimated_tokens,
         "actual_tokens": result.actual_tokens,
         "persistence_degraded": result.persistence_degraded,
+        "events": list(result.events),
         "assertions": [
             {
                 "name": assertion.name,
@@ -65,6 +68,8 @@ def _result_from_record(record: object) -> EvaluationResult:
     return EvaluationResult(
         scenario=_required_string(record, "scenario"),
         duration_ms=_required_number(record, "duration_ms"),
+        run_id=str(record.get("run_id", "legacy")),
+        repetition=_required_int_or_default(record, "repetition", 1),
         model_requests=_required_int(record, "model_requests"),
         tool_calls=_required_int(record, "tool_calls"),
         tool_failures=_required_int(record, "tool_failures"),
@@ -73,8 +78,17 @@ def _result_from_record(record: object) -> EvaluationResult:
         estimated_tokens=_required_int(record, "estimated_tokens"),
         actual_tokens=record.get("actual_tokens"),
         persistence_degraded=bool(record.get("persistence_degraded", False)),
+        events=tuple(_event_from_record(item) for item in record.get("events", [])),
         assertions=tuple(_assertion_from_record(item) for item in assertions),
     )
+
+
+def _event_from_record(record: object) -> dict[str, object]:
+    """校验并恢复一条评测事件"""
+
+    if not isinstance(record, dict):
+        raise ValueError("评测事件必须是 JSON 对象")
+    return dict(record)
 
 
 def _assertion_from_record(record: object) -> EvaluationAssertion:
@@ -102,6 +116,19 @@ def _required_int(record: dict[str, object], key: str) -> int:
     """读取必需的整数数字段"""
 
     value = record.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"评测结果字段无效：{key}")
+    return value
+
+
+def _required_int_or_default(
+    record: dict[str, object],
+    key: str,
+    default: int,
+) -> int:
+    """读取兼容旧结果的整数数字段"""
+
+    value = record.get(key, default)
     if not isinstance(value, int):
         raise ValueError(f"评测结果字段无效：{key}")
     return value
