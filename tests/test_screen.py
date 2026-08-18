@@ -89,6 +89,20 @@ def test_chat_screen_renders_status_with_separate_style_classes(
     assert str(tmp_path) in text
 
 
+def test_chat_screen_renders_runtime_status_message(tmp_path: Path) -> None:
+    """测试状态栏可以展示运行时降级提示。"""
+
+    screen = _create_screen(tmp_path)
+    screen.set_status_message("Session persistence degraded")
+
+    fragments = screen._render_status()
+    styles = [style for style, _ in fragments]
+    text = "".join(content for _, content in fragments)
+
+    assert "class:status-error" in styles
+    assert "Session persistence degraded" in text
+
+
 def test_chat_screen_appends_conversation_entries(tmp_path: Path) -> None:
     """测试对话区可以追加并渲染模型内容。"""
 

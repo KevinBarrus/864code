@@ -121,6 +121,7 @@ async def run_chat(
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息
             _persist_new_messages(session, result.messages)
+            _update_persistence_status(screen, session)
 
     screen = ChatScreen(status, on_submit=handle_submit)
     tool_manager = ToolManager(
@@ -153,7 +154,8 @@ async def run_chat(
     try:
         await screen.application.run_async()
     finally:
-        session.close()
+        if not session.close():
+            screen.set_status_message("Session persistence degraded")
 
 
 def _tool_call_summary(tool_call) -> str:
@@ -177,6 +179,13 @@ def _tool_result_summary(event: ToolExecutionEvent) -> str:
     marker = "✗" if event.result.is_error else "✓"
     content = _single_line(event.result.content, 60)
     return f"{marker} {event.tool_call.name}  {content}"
+
+
+def _update_persistence_status(screen: ChatScreen, session: Session) -> None:
+    """在持久化降级后向状态栏写入安全提示。"""
+
+    if session.persistence_degraded:
+        screen.set_status_message("Session persistence degraded")
 
 
 def _single_line(content: str, limit: int) -> str:

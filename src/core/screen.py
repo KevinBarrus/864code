@@ -73,6 +73,7 @@ class ChatScreen:
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
         self._approval_prompt: ApprovalPrompt | None = None
+        self._status_message = ""
         self._conversation: list[ConversationEntry] = []
         self.input_area = TextArea(
             prompt="",
@@ -416,7 +417,7 @@ class ChatScreen:
     def _render_status(self) -> list[tuple[str, str]]:
         """将状态信息转换为带独立颜色的底部状态栏。"""
 
-        return [
+        fragments = [
             ("class:status-model", f"模型：{self._status.model_name}"),
             ("", "    "),
             ("class:status-balance", f"余额：{self._status.balance}"),
@@ -426,3 +427,14 @@ class ChatScreen:
                 f"工作目录：{self._status.working_directory}",
             ),
         ]
+        if self._status_message:
+            fragments.extend(
+                [("", "    "), ("class:status-error", self._status_message)]
+            )
+        return fragments
+
+    def set_status_message(self, message: str) -> None:
+        """更新状态栏中的运行时提示。"""
+
+        self._status_message = message
+        self.application.invalidate()

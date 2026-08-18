@@ -76,6 +76,12 @@ class Session:
 
         return self._persistence.close()
 
+    @property
+    def persistence_degraded(self) -> bool:
+        """返回当前会话是否出现持久化降级"""
+
+        return self._persistence.degraded
+
     def _append_message(self, message: Message) -> None:
         """先更新运行时记忆，再交给后台队列持久化"""
 
