@@ -3,6 +3,13 @@
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 from .metrics import EvaluationMetrics, calculate_metrics
 from .events import event_to_record, message_to_record
+from .baseline import (
+    RegressionReport,
+    compare_baseline,
+    create_baseline,
+    load_baseline,
+    write_baseline,
+)
 from .online import run_online_suite
 from .report import generate_report, render_report
 from .scenarios import (
@@ -28,6 +35,11 @@ __all__ = [
     "event_to_record",
     "message_to_record",
     "run_online_suite",
+    "RegressionReport",
+    "compare_baseline",
+    "create_baseline",
+    "load_baseline",
+    "write_baseline",
     "generate_report",
     "render_report",
     "append_result",
