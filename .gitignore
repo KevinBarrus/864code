@@ -13,6 +13,7 @@ AGENTS.md
 CLAUDE.md
 .idea/
 /.864code/
+/evaluation-results/
 /build/
 /dist/
 *.egg-info/
