@@ -36,6 +36,28 @@ def test_session_updates_memory_and_store(tmp_path: Path) -> None:
     assert SessionStore(tmp_path).load_messages(session.session_id) == expected
 
 
+def test_session_keeps_runtime_message_when_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试 JSONL 持久化失败时运行时消息仍保留并进入降级状态。"""
+
+    def fail_append(self, session_id: str, message: Message) -> None:
+        raise OSError("JSONL 不可写入")
+
+    monkeypatch.setattr(SessionStore, "append_message", fail_append)
+    session = Session(tmp_path)
+    message = Message(role="user", content="待保存消息")
+
+    session.add_message(message)
+
+    assert session.get_messages() == [message]
+    assert not session.flush_persistence()
+    assert session.persistence_degraded
+    assert session.close() is False
+    assert session._persistence.pending_messages == (message,)
+
+
 def test_restore_rebuilds_session_memory(tmp_path: Path) -> None:
     """测试可以从 JSONL 恢复完整的会话记忆"""
 
