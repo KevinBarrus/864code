@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .memory import Memory
 from .model import Message
+from .session_persistence import SessionPersistenceQueue
 from .session_store import CompactionRecord, SessionStore
 
 
@@ -19,6 +20,9 @@ class Session:
         self._memory = Memory()
         self._store = SessionStore(workspace)
         self._compactions: list[CompactionRecord] = []
+        self._persistence = SessionPersistenceQueue(
+            lambda message: self._store.append_message(self.session_id, message)
+        )
 
     @classmethod
     def restore(cls, workspace: Path, session_id: str) -> "Session":
@@ -58,14 +62,25 @@ class Session:
     def add_compaction(self, compaction: CompactionRecord) -> None:
         """持久化并追加一条上下文压缩记录"""
 
+        self._persistence.flush()
         self._store.append_compaction(self.session_id, compaction)
         self._compactions.append(compaction)
 
-    def _append_message(self, message: Message) -> None:
-        """先写入 JSONL，再更新内存，避免写入失败时状态不一致"""
+    def flush_persistence(self) -> bool:
+        """等待当前消息队列写入完成并返回持久化状态"""
 
-        self._store.append_message(self.session_id, message)
+        return self._persistence.flush()
+
+    def close(self) -> bool:
+        """刷新并关闭当前会话的持久化队列"""
+
+        return self._persistence.close()
+
+    def _append_message(self, message: Message) -> None:
+        """先更新运行时记忆，再交给后台队列持久化"""
+
         self._add_to_memory(message)
+        self._persistence.enqueue(message)
 
     def _add_to_memory(self, message: Message) -> None:
         """将已有消息按角色追加到运行时记忆"""

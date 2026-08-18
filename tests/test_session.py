@@ -30,6 +30,7 @@ def test_session_updates_memory_and_store(tmp_path: Path) -> None:
 
     session.add_user_message("你好")
     session.add_assistant_message("你好！")
+    assert session.flush_persistence()
 
     assert session.get_messages() == expected
     assert SessionStore(tmp_path).load_messages(session.session_id) == expected
@@ -41,6 +42,7 @@ def test_restore_rebuilds_session_memory(tmp_path: Path) -> None:
     original = Session(tmp_path)
     original.add_user_message("第一次输入")
     original.add_assistant_message("第一次回复")
+    assert original.flush_persistence()
 
     restored = Session.restore(tmp_path, original.session_id)
 
@@ -56,9 +58,11 @@ def test_restored_session_can_continue_writing(tmp_path: Path) -> None:
 
     original = Session(tmp_path)
     original.add_user_message("之前的问题")
+    assert original.flush_persistence()
 
     restored = Session.restore(tmp_path, original.session_id)
     restored.add_assistant_message("之前的回答")
+    assert restored.flush_persistence()
 
     assert SessionStore(tmp_path).load_messages(original.session_id) == [
         Message(role="user", content="之前的问题"),
@@ -80,6 +84,7 @@ def test_session_restores_tool_messages(tmp_path: Path) -> None:
     ]
     for message in messages:
         original.add_message(message)
+    assert original.flush_persistence()
 
     restored = Session.restore(tmp_path, original.session_id)
 
@@ -105,6 +110,7 @@ def test_session_add_compaction_updates_runtime_and_store(tmp_path: Path) -> Non
     compaction = CompactionRecord("早期摘要", 1, 1200)
 
     session.add_compaction(compaction)
+    assert session.flush_persistence()
 
     assert session.get_compactions() == [compaction]
     assert SessionStore(tmp_path).load_compactions(session.session_id) == [compaction]

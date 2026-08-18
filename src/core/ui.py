@@ -150,7 +150,10 @@ async def run_chat(
         screen.add_entry(message.role, message.content)
     if history:
         screen.conversation_view.scroll_to_bottom()
-    await screen.application.run_async()
+    try:
+        await screen.application.run_async()
+    finally:
+        session.close()
 
 
 def _tool_call_summary(tool_call) -> str:
