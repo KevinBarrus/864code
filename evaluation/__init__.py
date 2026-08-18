@@ -1,6 +1,7 @@
 """提供离线和在线评测所需的数据结构"""
 
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
+from .metrics import EvaluationMetrics, calculate_metrics
 from .scenarios import (
     FILE_EDIT_SCENARIO,
     MEMORY_SCENARIO,
@@ -13,11 +14,16 @@ from .scenarios import (
     run_tool_recovery_scenario,
     run_model_retry_scenario,
 )
+from .storage import append_result, load_results
 
 __all__ = [
     "EvaluationAssertion",
     "EvaluationResult",
     "EvaluationScenario",
+    "EvaluationMetrics",
+    "calculate_metrics",
+    "append_result",
+    "load_results",
     "MEMORY_SCENARIO",
     "FILE_EDIT_SCENARIO",
     "TOOL_RECOVERY_SCENARIO",

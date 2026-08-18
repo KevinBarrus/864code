@@ -1,0 +1,116 @@
+"""保存和读取评测结果 JSONL"""
+
+import json
+from pathlib import Path
+
+from .models import EvaluationAssertion, EvaluationResult
+
+
+def append_result(path: Path, result: EvaluationResult) -> None:
+    """向 JSONL 文件追加一条评测结果"""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        json.dump(_result_to_record(result), file, ensure_ascii=False)
+        file.write("\n")
+
+
+def load_results(path: Path) -> list[EvaluationResult]:
+    """按文件顺序读取全部评测结果"""
+
+    if not path.exists():
+        return []
+    results: list[EvaluationResult] = []
+    with path.open(encoding="utf-8") as file:
+        for line in file:
+            if line.strip():
+                results.append(_result_from_record(json.loads(line)))
+    return results
+
+
+def _result_to_record(result: EvaluationResult) -> dict[str, object]:
+    """将评测结果转换为 JSON 对象"""
+
+    return {
+        "scenario": result.scenario,
+        "passed": result.passed,
+        "duration_ms": result.duration_ms,
+        "model_requests": result.model_requests,
+        "tool_calls": result.tool_calls,
+        "tool_failures": result.tool_failures,
+        "retries": result.retries,
+        "compactions": result.compactions,
+        "estimated_tokens": result.estimated_tokens,
+        "actual_tokens": result.actual_tokens,
+        "persistence_degraded": result.persistence_degraded,
+        "assertions": [
+            {
+                "name": assertion.name,
+                "passed": assertion.passed,
+                "message": assertion.message,
+            }
+            for assertion in result.assertions
+        ],
+    }
+
+
+def _result_from_record(record: object) -> EvaluationResult:
+    """将 JSON 对象转换为评测结果"""
+
+    if not isinstance(record, dict):
+        raise ValueError("评测结果必须是 JSON 对象")
+    assertions = record.get("assertions", [])
+    if not isinstance(assertions, list):
+        raise ValueError("评测断言必须是数组")
+    return EvaluationResult(
+        scenario=_required_string(record, "scenario"),
+        duration_ms=_required_number(record, "duration_ms"),
+        model_requests=_required_int(record, "model_requests"),
+        tool_calls=_required_int(record, "tool_calls"),
+        tool_failures=_required_int(record, "tool_failures"),
+        retries=_required_int(record, "retries"),
+        compactions=_required_int(record, "compactions"),
+        estimated_tokens=_required_int(record, "estimated_tokens"),
+        actual_tokens=record.get("actual_tokens"),
+        persistence_degraded=bool(record.get("persistence_degraded", False)),
+        assertions=tuple(_assertion_from_record(item) for item in assertions),
+    )
+
+
+def _assertion_from_record(record: object) -> EvaluationAssertion:
+    """将 JSON 断言对象转换为评测断言"""
+
+    if not isinstance(record, dict):
+        raise ValueError("评测断言必须是 JSON 对象")
+    return EvaluationAssertion(
+        name=_required_string(record, "name"),
+        passed=bool(record.get("passed", False)),
+        message=str(record.get("message", "")),
+    )
+
+
+def _required_string(record: dict[str, object], key: str) -> str:
+    """读取必需的字符串字段"""
+
+    value = record.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"评测结果字段无效：{key}")
+    return value
+
+
+def _required_int(record: dict[str, object], key: str) -> int:
+    """读取必需的整数数字段"""
+
+    value = record.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"评测结果字段无效：{key}")
+    return value
+
+
+def _required_number(record: dict[str, object], key: str) -> float:
+    """读取必需的数值字段"""
+
+    value = record.get(key)
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"评测结果字段无效：{key}")
+    return float(value)
