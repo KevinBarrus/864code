@@ -2,6 +2,7 @@
 
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 from .metrics import EvaluationMetrics, calculate_metrics
+from .report import generate_report, render_report
 from .scenarios import (
     FILE_EDIT_SCENARIO,
     MEMORY_SCENARIO,
@@ -22,6 +23,8 @@ __all__ = [
     "EvaluationScenario",
     "EvaluationMetrics",
     "calculate_metrics",
+    "generate_report",
+    "render_report",
     "append_result",
     "load_results",
     "MEMORY_SCENARIO",
