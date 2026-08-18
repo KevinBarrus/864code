@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from core.model import Message, ModelEvent, ToolCall, ToolResult
+from core.model import Message, ModelEvent, TextDelta, ToolCall, ToolResult
 
 
 class FakeModelClient:
@@ -35,6 +35,13 @@ class FakeModelClient:
             raise response
         for event in response:
             yield event
+
+    async def stream_chat(self, messages: Sequence[Message]):
+        """记录摘要请求并只返回其中的文本事件"""
+
+        async for event in self.stream_response(messages):
+            if isinstance(event, TextDelta):
+                yield event.content
 
 
 class FakeToolHandler:

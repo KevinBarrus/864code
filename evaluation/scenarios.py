@@ -4,6 +4,7 @@ from time import perf_counter
 
 from core.agent_loop import AgentLoop, ToolExecutionEvent
 from core.context import estimate_context_tokens
+from core.context import ContextBudget, ContextManager
 from core.memory import Memory
 from core.model import Message, TextDelta, ToolCall, ToolCallEvent
 from core.tools import (
@@ -14,6 +15,7 @@ from core.tools import (
     create_edit_file_tool,
     create_read_file_tool,
 )
+from core.session import Session
 
 from .fakes import FakeModelClient
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
@@ -32,6 +34,11 @@ FILE_EDIT_SCENARIO = EvaluationScenario(
 TOOL_RECOVERY_SCENARIO = EvaluationScenario(
     name="tool_failure_recovery",
     description="验证工具失败后模型可以修正调用并继续完成任务",
+)
+
+COMPACTION_RESTORE_SCENARIO = EvaluationScenario(
+    name="compaction_restore",
+    description="验证上下文压缩记录和 Session 恢复结果一致",
 )
 
 
@@ -200,6 +207,71 @@ async def run_tool_recovery_scenario(workspace) -> EvaluationResult:
         model_requests=len(client.requests),
         tool_calls=len(tool_events),
         tool_failures=len(failed_events),
+        estimated_tokens=sum(
+            estimate_context_tokens(request) for request in client.requests
+        ),
+        assertions=assertions,
+    )
+
+
+async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
+    """运行上下文压缩与 Session 恢复场景并返回结构化结果"""
+
+    summary = """## Goal
+实现 Coding Agent
+## Progress
+已完成核心功能
+## Key Decisions
+保持架构简洁
+## Next Steps
+继续评测
+## Critical Context
+保留任务目标和关键决策"""
+    session = Session(workspace)
+    session.add_user_message("旧问题" + "x" * 160)
+    session.add_assistant_message("旧回答" + "x" * 160)
+    session.add_user_message("新问题")
+    session.add_assistant_message("新回答")
+    client = FakeModelClient([[TextDelta(summary)]])
+    manager = ContextManager(ContextBudget(100, 20, 20))
+    started_at = perf_counter()
+
+    first_result = await manager.build_for_model_result(
+        client,
+        session.get_messages(),
+    )
+    if first_result.compaction is not None:
+        session.add_compaction(first_result.compaction)
+    session.close()
+
+    restored = Session.restore(workspace, session.session_id)
+    restored_result = await manager.build_for_model_result(
+        FakeModelClient([]),
+        restored.get_messages(),
+        restored.get_compactions(),
+    )
+    assertions = (
+        EvaluationAssertion(
+            "compaction-created",
+            first_result.compaction is not None,
+            "超预算历史没有生成压缩记录",
+        ),
+        EvaluationAssertion(
+            "session-restored",
+            restored.get_compactions() == session.get_compactions(),
+            "Session 恢复后压缩记录不一致",
+        ),
+        EvaluationAssertion(
+            "context-restored",
+            restored_result.messages == first_result.messages,
+            "恢复后的模型上下文与压缩结果不一致",
+        ),
+    )
+    return EvaluationResult(
+        scenario=COMPACTION_RESTORE_SCENARIO.name,
+        duration_ms=(perf_counter() - started_at) * 1000,
+        model_requests=len(client.requests),
+        compactions=int(first_result.compaction is not None),
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
