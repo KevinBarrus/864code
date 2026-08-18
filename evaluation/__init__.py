@@ -1,12 +1,19 @@
 """提供离线和在线评测所需的数据结构"""
 
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
-from .scenarios import MEMORY_SCENARIO, run_memory_scenario
+from .scenarios import (
+    FILE_EDIT_SCENARIO,
+    MEMORY_SCENARIO,
+    run_file_edit_scenario,
+    run_memory_scenario,
+)
 
 __all__ = [
     "EvaluationAssertion",
     "EvaluationResult",
     "EvaluationScenario",
     "MEMORY_SCENARIO",
+    "FILE_EDIT_SCENARIO",
+    "run_file_edit_scenario",
     "run_memory_scenario",
 ]
