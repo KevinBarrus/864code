@@ -12,6 +12,7 @@ from core.agent_loop import AgentLoop, ToolExecutionEvent
 from core.config import load_settings
 from core.context import estimate_context_tokens
 from core.context import ContextBudget, ContextManager
+from core.errors import AgentError
 from core.model import Message, ModelClient, ModelEvent, ToolCallEvent
 from core.openai_client import OpenAICompatibleClient
 from core.session import Session
@@ -165,17 +166,19 @@ async def run_online_suite(
     if repetitions <= 0:
         raise ValueError("在线评测重复次数必须大于 0")
     results: list[EvaluationResult] = []
+    runners = {
+        "main": run_online_smoke,
+        "context-compaction": run_online_compaction_smoke,
+        "network-error": run_online_network_error_smoke,
+    }
+    if scenario not in runners:
+        raise ValueError(f"不支持的在线评测场景：{scenario}")
     for repetition in range(1, repetitions + 1):
         try:
-            runner = (
-                run_online_smoke
-                if scenario == "main"
-                else run_online_compaction_smoke
-            )
-            result = await runner(env_path)
+            result = await runners[scenario](env_path)
         except Exception:
             result = EvaluationResult(
-                scenario="online_main_smoke",
+                scenario=f"online_{scenario}",
                 duration_ms=0,
                 assertions=(
                     EvaluationAssertion(
@@ -246,6 +249,56 @@ async def run_online_compaction_smoke(
         )
 
 
+async def run_online_network_error_smoke(
+    env_path: Path | None = None,
+) -> EvaluationResult:
+    """通过本机不可用端口验证真实网络异常处理"""
+
+    settings = load_settings(env_path)
+    unavailable_settings = replace(settings, base_url="http://127.0.0.1:1")
+    client = TimedModelClient(OpenAICompatibleClient(unavailable_settings))
+    started_at = perf_counter()
+    error: AgentError | None = None
+    try:
+        await AgentLoop(client, ToolManager()).run(
+            [Message(role="user", content="测试网络异常处理")]
+        )
+    except AgentError as exc:
+        error = exc
+    assertions = (
+        EvaluationAssertion(
+            "network-category",
+            error is not None and error.category == "network",
+            "真实连接失败没有转换为 network 错误",
+        ),
+        EvaluationAssertion(
+            "retry-once",
+            len(client.requests) == 2,
+            "网络错误没有按策略重试一次",
+        ),
+        EvaluationAssertion(
+            "safe-error",
+            error is not None and error.cause is not None,
+            "网络错误没有保留内部诊断原因",
+        ),
+    )
+    return EvaluationResult(
+        scenario="online_network_error",
+        duration_ms=(perf_counter() - started_at) * 1000,
+        model_requests=len(client.requests),
+        retries=max(0, len(client.requests) - 1),
+        estimated_tokens=sum(
+            estimate_context_tokens(request) for request in client.requests
+        ),
+        model_request_durations_ms=tuple(client.durations_ms),
+        events=(
+            message_to_record(Message(role="user", content="测试网络异常处理")),
+            {"type": "model_error", "category": error.category if error else None},
+        ),
+        assertions=assertions,
+    )
+
+
 def main() -> int:
     """处理真实在线评测命令行参数"""
 
@@ -264,7 +317,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--scenario",
-        choices=("main", "context-compaction"),
+        choices=("main", "context-compaction", "network-error"),
         default="main",
         help="在线专项场景",
     )

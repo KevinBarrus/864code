@@ -58,3 +58,22 @@ async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
 
     assert [result.repetition for result in results] == [1, 2, 3]
     assert [result.passed for result in results] == [True, False, True]
+
+
+@pytest.mark.asyncio
+async def test_online_suite_dispatches_network_error_scenario(monkeypatch) -> None:
+    """测试在线评测套件能调度网络异常专项场景"""
+
+    async def fake_run(env_path=None):
+        return EvaluationResult(
+            scenario="online_network_error",
+            duration_ms=10,
+            assertions=(EvaluationAssertion("ok", True),),
+        )
+
+    monkeypatch.setattr("evaluation.online.run_online_network_error_smoke", fake_run)
+
+    results = await run_online_suite(repetitions=1, scenario="network-error")
+
+    assert results[0].scenario == "online_network_error"
+    assert results[0].passed
