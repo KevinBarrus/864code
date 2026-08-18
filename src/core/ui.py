@@ -4,10 +4,11 @@ import asyncio
 from pathlib import Path
 
 from .agent_loop import AgentLoop, AgentLoopError
+from .errors import AgentError
 from .screen import ChatScreen
 from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
-from .model import Message, ModelClient, ModelClientError, TextDelta, ToolCallEvent
+from .model import Message, ModelClient, TextDelta, ToolCallEvent
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .session import Session
 from .tools import (
@@ -94,11 +95,28 @@ async def run_chat(
             # 取消时保留已生成的部分回复，供下一轮继续参考
             response = "".join(response_parts)
             if response:
-                session.add_assistant_message(response)
+                session.add_message(
+                    Message(
+                        role="assistant",
+                        content=response,
+                        status="cancelled",
+                    )
+                )
             screen.append_to_entry(response_index, "（已取消）")
             raise
-        except (ModelClientError, AgentLoopError) as exc:
-            # 模型请求失败只展示错误，不把错误提示写入模型记忆
+        except (AgentError, AgentLoopError) as exc:
+            # 模型请求失败时保留部分回复和结构化错误状态
+            response = "".join(response_parts)
+            session.add_message(
+                Message(
+                    role="assistant",
+                    content=response,
+                    status="error",
+                    error_category=(
+                        exc.category if isinstance(exc, AgentError) else "internal"
+                    ),
+                )
+            )
             screen.append_to_entry(response_index, f"错误：{exc}")
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息

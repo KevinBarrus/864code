@@ -109,7 +109,13 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
                 screen.append_to_entry(response_index, chunk)
         except asyncio.CancelledError:
             if response:
-                session.add_assistant_message(response)
+                session.add_message(
+                    Message(
+                        role="assistant",
+                        content=response,
+                        status="cancelled",
+                    )
+                )
             screen.append_to_entry(response_index, "（已取消）")
             raise
 
@@ -120,7 +126,11 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
     restored = Session.restore(tmp_path, session.session_id)
     assert restored.get_messages() == [
         Message(role="user", content="第一次输入"),
-        Message(role="assistant", content="部分回复"),
+        Message(
+            role="assistant",
+            content="部分回复",
+            status="cancelled",
+        ),
     ]
 
     # 第二次请求仍然取消，但断言的是它收到的历史
@@ -129,14 +139,18 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
 
     assert client.received[1] == [
         Message(role="user", content="第一次输入"),
-        Message(role="assistant", content="部分回复"),
+        Message(
+            role="assistant",
+            content="部分回复",
+            status="cancelled",
+        ),
         Message(role="user", content="第二次输入"),
     ]
 
 
 @pytest.mark.asyncio
-async def test_model_error_is_not_saved_in_session(tmp_path: Path) -> None:
-    """测试模型错误提示只展示，不写入会话历史"""
+async def test_model_error_is_saved_with_error_status(tmp_path: Path) -> None:
+    """测试模型错误会以异常状态写入会话历史"""
 
     client = FailingClient()
     session = Session(tmp_path)
@@ -153,9 +167,25 @@ async def test_model_error_is_not_saved_in_session(tmp_path: Path) -> None:
             async for chunk in client.stream_chat(session.get_messages()):
                 screen.append_to_entry(response_index, chunk)
         except ModelClientError as exc:
+            session.add_message(
+                Message(
+                    role="assistant",
+                    content="",
+                    status="error",
+                    error_category=exc.category,
+                )
+            )
             screen.append_to_entry(response_index, f"错误：{exc}")
 
     screen._on_submit = handle_submit
     await screen._submit("测试错误")
 
-    assert session.get_messages() == [Message(role="user", content="测试错误")]
+    assert session.get_messages() == [
+        Message(role="user", content="测试错误"),
+        Message(
+            role="assistant",
+            content="",
+            status="error",
+            error_category="internal",
+        ),
+    ]
