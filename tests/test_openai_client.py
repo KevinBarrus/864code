@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.config import Settings
+from core.errors import AgentError
 from core.model import Message, ModelClientError, TextDelta, ToolCall, ToolCallEvent
 from core.openai_client import OpenAICompatibleClient
 
@@ -130,8 +131,35 @@ async def test_client_wraps_request_error() -> None:
     )
     client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
 
-    with pytest.raises(ModelClientError, match="模型请求失败"):
+    with pytest.raises(ModelClientError, match="模型网络请求失败") as error_info:
         await _collect(client)
+
+    error = error_info.value
+    assert isinstance(error, AgentError)
+    assert error.category == "network"
+    assert error.retryable
+
+
+@pytest.mark.asyncio
+async def test_client_classifies_timeout_error() -> None:
+    """测试超时异常会被转换为可重试的统一错误。"""
+
+    class TimeoutCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            """模拟模型请求超时。"""
+
+            raise TimeoutError("test timeout")
+
+    timeout_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=TimeoutCompletions())
+    )
+    client = OpenAICompatibleClient(_settings(), timeout_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError) as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "timeout"
+    assert error_info.value.retryable
 
 
 async def _collect_events(client: OpenAICompatibleClient) -> list[object]:

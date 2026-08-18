@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from .errors import AgentError, ErrorCategory
+
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
 
@@ -53,8 +55,27 @@ class Message:
     tool_call_id: str | None = None
 
 
-class ModelClientError(RuntimeError):
-    """模型请求失败时向上层抛出的统一异常。"""
+class ModelClientError(AgentError):
+    """模型客户端向上层报告的统一模型异常。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: ErrorCategory = "internal",
+        retryable: bool = False,
+        cause: BaseException | None = None,
+    ) -> None:
+        """将旧模型异常接口转换为统一 AgentError。"""
+
+        super().__init__(
+            category=category,
+            operation="model_request",
+            user_message=message,
+            model_message=message,
+            retryable=retryable,
+            cause=cause,
+        )
 
 
 class ModelClient(Protocol):

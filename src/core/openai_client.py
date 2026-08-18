@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from openai import AsyncOpenAI
 
 from .config import Settings
+from .errors import ErrorCategory
 from .model import (
     Message,
     ModelEvent,
@@ -91,7 +92,24 @@ class OpenAICompatibleClient:
         except ModelClientError:
             raise
         except Exception as exc:
-            raise ModelClientError("模型请求失败，请检查配置和网络连接") from exc
+            raise _to_model_error(exc) from exc
+
+
+def _to_model_error(error: BaseException) -> ModelClientError:
+    """将底层模型异常转换为统一类别和安全提示。"""
+
+    error_name = type(error).__name__
+    if isinstance(error, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
+        category: ErrorCategory = "timeout" if isinstance(error, TimeoutError) else "network"
+        message = "模型请求超时" if category == "timeout" else "模型网络请求失败"
+        return ModelClientError(message, category=category, retryable=True, cause=error)
+    if error_name == "RateLimitError":
+        return ModelClientError("模型请求过于频繁", category="rate_limit", retryable=True, cause=error)
+    if error_name in {"AuthenticationError", "PermissionDeniedError"}:
+        return ModelClientError("模型认证失败，请检查密钥配置", category="authentication", cause=error)
+    if error_name in {"BadRequestError", "UnprocessableEntityError"}:
+        return ModelClientError("模型请求参数无效", category="invalid_request", cause=error)
+    return ModelClientError("模型请求失败，请检查配置和网络连接", category="internal", cause=error)
 
 
 def _serialize_message(message: Message) -> dict[str, object]:
