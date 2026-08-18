@@ -19,6 +19,7 @@ from core.tools import (
 from core.session import Session
 
 from .fakes import FakeModelClient
+from .events import event_to_record, message_to_record
 from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 
 
@@ -60,13 +61,34 @@ async def run_memory_scenario() -> EvaluationResult:
     memory = Memory()
     loop = AgentLoop(client, ToolManager())
     started_at = perf_counter()
+    events = [
+        message_to_record(
+            Message(role="user", content="项目目标是实现一个简洁的 Coding Agent")
+        )
+    ]
 
     memory.add_user_message("项目目标是实现一个简洁的 Coding Agent")
-    first_result = await loop.run(memory.get_messages())
+    async def collect_first_event(event: object) -> None:
+        events.append(event_to_record(event))
+
+    first_result = await loop.run(
+        memory.get_messages(),
+        on_event=collect_first_event,
+    )
     memory.add_message(first_result.messages[-1])
+    events.append(message_to_record(first_result.messages[-1]))
 
     memory.add_user_message("继续执行")
-    second_result = await loop.run(memory.get_messages())
+    events.append(message_to_record(Message(role="user", content="继续执行")))
+
+    async def collect_second_event(event: object) -> None:
+        events.append(event_to_record(event))
+
+    second_result = await loop.run(
+        memory.get_messages(),
+        on_event=collect_second_event,
+    )
+    events.append(message_to_record(second_result.messages[-1]))
 
     has_history = (
         len(client.requests) == 2
@@ -90,6 +112,7 @@ async def run_memory_scenario() -> EvaluationResult:
         estimated_tokens=sum(
             len(message.content) // 4 for request in client.requests for message in request
         ),
+        events=tuple(events),
         assertions=assertions,
     )
 
@@ -119,17 +142,22 @@ async def run_file_edit_scenario(workspace) -> EvaluationResult:
     manager = ToolManager(permission_manager=PermissionManager(approve_write))
     manager.register_local(*create_read_file_tool(workspace))
     manager.register_local(*create_edit_file_tool(workspace))
-    events: list[object] = []
+    events: list[dict[str, object]] = [
+        message_to_record(
+            Message(role="user", content="把 note.txt 的内容改成 new")
+        )
+    ]
 
     async def collect_event(event: object) -> None:
-        events.append(event)
+        events.append(event_to_record(event))
 
     started_at = perf_counter()
     result = await AgentLoop(client, manager).run(
         [Message(role="user", content="把 note.txt 的内容改成 new")],
         on_event=collect_event,
     )
-    tool_events = [event for event in events if isinstance(event, ToolExecutionEvent)]
+    tool_events = [event for event in events if event["type"] == "tool_result"]
+    events.append(message_to_record(Message(role="assistant", content=result.final_content)))
     assertions = (
         EvaluationAssertion(
             "file-content",
@@ -138,7 +166,7 @@ async def run_file_edit_scenario(workspace) -> EvaluationResult:
         ),
         EvaluationAssertion(
             "tool-chain",
-            [event.tool_call.name for event in tool_events]
+            [event["name"] for event in tool_events]
             == ["read_file", "edit_file"],
             "工具调用链不符合预期",
         ),
@@ -153,10 +181,11 @@ async def run_file_edit_scenario(workspace) -> EvaluationResult:
         duration_ms=(perf_counter() - started_at) * 1000,
         model_requests=len(client.requests),
         tool_calls=len(tool_events),
-        tool_failures=sum(event.result.is_error for event in tool_events),
+        tool_failures=sum(bool(event["is_error"]) for event in tool_events),
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
+        events=tuple(events),
         assertions=assertions,
     )
 
@@ -176,28 +205,30 @@ async def run_tool_recovery_scenario(workspace) -> EvaluationResult:
     )
     manager = ToolManager()
     manager.register_local(*create_read_file_tool(workspace))
-    events: list[object] = []
+    events: list[dict[str, object]] = [
+        message_to_record(Message(role="user", content="读取 available.txt"))
+    ]
 
     async def collect_event(event: object) -> None:
-        events.append(event)
+        events.append(event_to_record(event))
 
     started_at = perf_counter()
     result = await AgentLoop(client, manager).run(
         [Message(role="user", content="读取 available.txt")],
         on_event=collect_event,
     )
-    tool_events = [event for event in events if isinstance(event, ToolExecutionEvent)]
-    failed_events = [event for event in tool_events if event.result.is_error]
+    tool_events = [event for event in events if event["type"] == "tool_result"]
+    failed_events = [event for event in tool_events if event["is_error"]]
     assertions = (
         EvaluationAssertion(
             "tool-error-returned",
             len(failed_events) == 1
-            and failed_events[0].result.error_category == "tool_execution",
+            and failed_events[0]["error_category"] == "tool_execution",
             "工具错误没有作为结构化结果返回",
         ),
         EvaluationAssertion(
             "tool-retry-call",
-            [event.tool_call.arguments["path"] for event in tool_events]
+            [event["arguments"]["path"] for event in events if event["type"] == "tool_call"]
             == ["missing.txt", "available.txt"],
             "模型没有修正工具调用参数",
         ),
@@ -216,6 +247,7 @@ async def run_tool_recovery_scenario(workspace) -> EvaluationResult:
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
+        events=tuple(events),
         assertions=assertions,
     )
 
@@ -241,6 +273,9 @@ async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
     client = FakeModelClient([[TextDelta(summary)]])
     manager = ContextManager(ContextBudget(100, 20, 20))
     started_at = perf_counter()
+    events = [
+        message_to_record(Message(role="user", content="旧问题和旧回答需要压缩"))
+    ]
 
     first_result = await manager.build_for_model_result(
         client,
@@ -256,6 +291,8 @@ async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
         restored.get_messages(),
         restored.get_compactions(),
     )
+    events.append({"type": "context_compaction", "created": first_result.compaction is not None})
+    events.append({"type": "session_restore", "message_count": len(restored.get_messages())})
     assertions = (
         EvaluationAssertion(
             "compaction-created",
@@ -281,6 +318,7 @@ async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
+        events=tuple(events),
         assertions=assertions,
     )
 
@@ -300,9 +338,12 @@ async def run_model_retry_scenario() -> EvaluationResult:
         ]
     )
     started_at = perf_counter()
+    events = [message_to_record(Message(role="user", content="完成一次网络重试"))]
     result = await AgentLoop(client, ToolManager()).run(
         [Message(role="user", content="完成一次网络重试")]
     )
+    events.append({"type": "model_error", "category": "network"})
+    events.append(message_to_record(Message(role="assistant", content=result.final_content)))
     assertions = (
         EvaluationAssertion(
             "retry-once",
@@ -323,5 +364,6 @@ async def run_model_retry_scenario() -> EvaluationResult:
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
+        events=tuple(events),
         assertions=assertions,
     )

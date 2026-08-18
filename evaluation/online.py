@@ -23,6 +23,7 @@ from core.tools import (
 )
 
 from .models import EvaluationAssertion, EvaluationResult
+from .events import event_to_record, message_to_record
 from .report import generate_report
 from .storage import append_result
 
@@ -72,13 +73,20 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         manager.register_local(*create_read_file_tool(workspace))
         manager.register_local(*create_edit_file_tool(workspace))
         session = Session(workspace)
-        events: list[object] = []
+        events: list[dict[str, object]] = [
+            message_to_record(
+                Message(
+                    role="user",
+                    content="请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果",
+                )
+            )
+        ]
         session.add_user_message(
             "请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果"
         )
 
         async def collect_event(event: object) -> None:
-            events.append(event)
+            events.append(event_to_record(event))
 
         started_at = perf_counter()
         result = await AgentLoop(client, manager).run(
@@ -92,10 +100,9 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         restored_messages = restored.get_messages()
         restored.close()
 
-        tool_events = [
-            event for event in events if isinstance(event, ToolExecutionEvent)
-        ]
-        tool_names = [event.tool_call.name for event in tool_events]
+        tool_events = [event for event in events if event["type"] == "tool_result"]
+        tool_names = [event["name"] for event in tool_events]
+        events.append(message_to_record(Message(role="assistant", content=result.final_content)))
         assertions = (
             EvaluationAssertion(
                 "file-content",
@@ -123,11 +130,12 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
             duration_ms=(perf_counter() - started_at) * 1000,
             model_requests=len(client.requests),
             tool_calls=len(tool_events),
-            tool_failures=sum(event.result.is_error for event in tool_events),
+            tool_failures=sum(bool(event["is_error"]) for event in tool_events),
             estimated_tokens=sum(
                 estimate_context_tokens(request) for request in client.requests
             ),
             persistence_degraded=not persistence_ok,
+            events=tuple(events),
             assertions=assertions,
         )
 
