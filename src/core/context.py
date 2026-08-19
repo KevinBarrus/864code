@@ -1,7 +1,7 @@
 """提供模型上下文的 Token 估算和预算配置。"""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from collections.abc import AsyncIterator, Mapping
 from typing import Sequence
@@ -97,13 +97,19 @@ class ContextManager:
     def build_fallback(self, messages: Sequence[Message]) -> list[Message]:
         """摘要失败时生成不持久化的规则化上下文。"""
 
-        selected = select_recent_messages(messages, self._budget.keep_recent_tokens)
+        selected = select_recent_messages(
+            messages,
+            min(
+                self._budget.keep_recent_tokens,
+                self._budget.compaction_threshold,
+            ),
+        )
         system_count = sum(message.role == "system" for message in selected)
         selected.insert(
             system_count,
             Message(role="system", content=CONTEXT_FALLBACK_NOTICE),
         )
-        return selected
+        return _fit_messages_to_budget(selected, self._budget.compaction_threshold)
 
     async def build_for_model(
         self,
@@ -346,6 +352,74 @@ def select_recent_messages(
     return system_messages + [
         message for group in selected_groups for message in group
     ]
+
+
+def _fit_messages_to_budget(
+    messages: Sequence[Message],
+    max_tokens: int,
+) -> list[Message]:
+    """在硬预算内尽量保留系统消息和最近对话。"""
+
+    result = list(messages)
+    while estimate_context_tokens(result) > max_tokens:
+        conversation_indices = [
+            index for index, message in enumerate(result) if message.role != "system"
+        ]
+        if conversation_indices:
+            groups = _conversation_groups(
+                [result[index] for index in conversation_indices]
+            )
+            if len(groups) > 1:
+                removed = {id(message) for message in groups[0]}
+                result = [message for message in result if id(message) not in removed]
+                continue
+
+            index = conversation_indices[-1]
+            current = result[index]
+            remaining = max_tokens - (
+                estimate_context_tokens(result) - estimate_message_tokens(current)
+            )
+            shortened = _truncate_message(current, remaining)
+            if shortened is None:
+                del result[index]
+            else:
+                result[index] = shortened
+            continue
+
+        index = len(result) - 1
+        current = result[index]
+        remaining = max_tokens - (
+            estimate_context_tokens(result) - estimate_message_tokens(current)
+        )
+        shortened = _truncate_message(current, remaining)
+        if shortened is None:
+            del result[index]
+        else:
+            result[index] = shortened
+    return result
+
+
+def _truncate_message(message: Message, max_tokens: int) -> Message | None:
+    """在指定 Token 上限内裁剪消息文本。"""
+
+    if max_tokens <= 0:
+        return None
+    if estimate_message_tokens(message) <= max_tokens:
+        return message
+
+    low = 0
+    high = len(message.content)
+    best: Message | None = None
+    while low <= high:
+        middle = (low + high) // 2
+        suffix = "" if middle == len(message.content) else "…"
+        candidate = replace(message, content=message.content[:middle] + suffix)
+        if estimate_message_tokens(candidate) <= max_tokens:
+            best = candidate
+            low = middle + 1
+        else:
+            high = middle - 1
+    return best
 
 
 def _split_oversized_latest_turn(

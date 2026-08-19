@@ -326,9 +326,25 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
 
     result = await manager.build_for_model(client, messages)
 
-    assert result[0] == Message(role="system", content=CONTEXT_FALLBACK_NOTICE)
-    assert result[1:] == messages[-2:]
+    assert result[0].role == "system"
+    assert result[0].content.startswith(CONTEXT_FALLBACK_NOTICE[:4])
+    assert estimate_context_tokens(result) <= 3
     assert client.calls == 2
+
+
+def test_context_manager_fallback_honors_budget_for_oversized_system_message() -> None:
+    """测试 fallback 在系统消息过大时仍然遵守硬预算。"""
+
+    budget = ContextBudget(20, 5, 20)
+    manager = ContextManager(budget)
+    result = manager.build_fallback(
+        [
+            Message(role="system", content="系统规则" * 100),
+            Message(role="user", content="用户请求" * 100),
+        ]
+    )
+
+    assert estimate_context_tokens(result) <= budget.compaction_threshold
 
 
 @pytest.mark.asyncio
