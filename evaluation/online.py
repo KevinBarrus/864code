@@ -73,7 +73,7 @@ ONLINE_FILE_TASKS = (
     _OnlineFileTask(
         name="online_multi_file_edit",
         prompt=(
-            "请先分别读取 config.txt 和 note.txt，再将 config.txt 中的 "
+            "请读取 config.txt 和 note.txt，并将 config.txt 中的 "
             "old-config 改为 new-config、note.txt 中的 old-note 改为 new-note。"
             "不要修改 keep.txt。完成后说明 config.txt 和 note.txt 已完成修改"
         ),
@@ -306,9 +306,9 @@ async def _run_online_file_task(
                 "真实模型没有完成预期文件修改",
             ),
             EvaluationAssertion(
-                "tool-chain",
-                _has_expected_tool_order(events, task),
-                "真实模型没有按先读取后编辑的顺序调用目标工具",
+                "read-before-edit",
+                _has_expected_file_read_before_edit(events, task),
+                "真实模型在读取目标文件前尝试编辑",
             ),
             EvaluationAssertion(
                 "unrelated-files",
@@ -366,11 +366,11 @@ def _files_match(workspace: Path, expected_files: tuple[tuple[str, str], ...]) -
     )
 
 
-def _has_expected_tool_order(
+def _has_expected_file_read_before_edit(
     events: Sequence[dict[str, object]],
     task: _OnlineFileTask,
 ) -> bool:
-    """确认所有目标文件先被读取，再被编辑。"""
+    """确认每个目标文件都在编辑前被读取。"""
 
     calls = [event for event in events if event.get("type") == "tool_call"]
     read_positions = _tool_positions(calls, "read_file", task.required_reads)
@@ -378,7 +378,11 @@ def _has_expected_tool_order(
     return (
         len(read_positions) == len(task.required_reads)
         and len(edit_positions) == len(task.required_edits)
-        and max(read_positions) < min(edit_positions)
+        and all(
+            (read_position := _tool_position(calls, "read_file", path)) is not None
+            and read_position < edit_position
+            for path, edit_position in zip(task.required_edits, edit_positions)
+        )
     )
 
 
@@ -412,18 +416,29 @@ def _tool_positions(
 ) -> list[int]:
     """返回每个指定路径首次由目标工具调用的位置。"""
 
-    positions: list[int] = []
-    for path in paths:
-        for index, call in enumerate(calls):
-            arguments = call.get("arguments")
-            if (
-                call.get("name") == tool_name
-                and isinstance(arguments, dict)
-                and arguments.get("path") == path
-            ):
-                positions.append(index)
-                break
-    return positions
+    return [
+        position
+        for path in paths
+        if (position := _tool_position(calls, tool_name, path)) is not None
+    ]
+
+
+def _tool_position(
+    calls: Sequence[dict[str, object]],
+    tool_name: str,
+    path: str,
+) -> int | None:
+    """返回目标工具首次操作指定路径的位置。"""
+
+    for index, call in enumerate(calls):
+        arguments = call.get("arguments")
+        if (
+            call.get("name") == tool_name
+            and isinstance(arguments, dict)
+            and arguments.get("path") == path
+        ):
+            return index
+    return None
 
 
 def _contains_keywords(content: str, keywords: tuple[str, ...]) -> bool:

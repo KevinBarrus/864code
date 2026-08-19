@@ -8,6 +8,7 @@ from evaluation.online import (
     DEFAULT_ONLINE_REPETITIONS,
     ONLINE_FILE_TASKS,
     TimedModelClient,
+    _has_expected_file_read_before_edit,
     run_online_file_task,
     run_online_suite,
 )
@@ -118,10 +119,7 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
         (
             ONLINE_FILE_TASKS[1],
             [
-                [
-                    ToolCallEvent(ToolCall("read-config", "read_file", {"path": "config.txt"})),
-                    ToolCallEvent(ToolCall("read-note", "read_file", {"path": "note.txt"})),
-                ],
+                [ToolCallEvent(ToolCall("read-config", "read_file", {"path": "config.txt"}))],
                 [
                     ToolCallEvent(
                         ToolCall(
@@ -133,7 +131,10 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
                                 "new_content": "new-config\n",
                             },
                         )
-                    ),
+                    )
+                ],
+                [ToolCallEvent(ToolCall("read-note", "read_file", {"path": "note.txt"}))],
+                [
                     ToolCallEvent(
                         ToolCall(
                             "edit-note",
@@ -189,6 +190,27 @@ async def test_online_file_tasks_validate_expected_agent_behavior(
     result = await run_online_file_task(task)
 
     assert result.passed
+
+
+def test_online_file_task_requires_each_target_read_before_edit() -> None:
+    """测试多文件任务允许交错读写，但拒绝先编辑目标文件。"""
+
+    task = ONLINE_FILE_TASKS[1]
+    interleaved_events = [
+        {"type": "tool_call", "name": "read_file", "arguments": {"path": "config.txt"}},
+        {"type": "tool_call", "name": "edit_file", "arguments": {"path": "config.txt"}},
+        {"type": "tool_call", "name": "read_file", "arguments": {"path": "note.txt"}},
+        {"type": "tool_call", "name": "edit_file", "arguments": {"path": "note.txt"}},
+    ]
+    edit_first_events = [
+        {"type": "tool_call", "name": "edit_file", "arguments": {"path": "config.txt"}},
+        {"type": "tool_call", "name": "read_file", "arguments": {"path": "config.txt"}},
+        {"type": "tool_call", "name": "read_file", "arguments": {"path": "note.txt"}},
+        {"type": "tool_call", "name": "edit_file", "arguments": {"path": "note.txt"}},
+    ]
+
+    assert _has_expected_file_read_before_edit(interleaved_events, task)
+    assert not _has_expected_file_read_before_edit(edit_first_events, task)
 
 
 @pytest.mark.asyncio
