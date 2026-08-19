@@ -67,6 +67,7 @@ async def test_agent_loop_executes_tool_and_continues_model_request(
         content="项目说明",
         tool_call_id="call-1",
     )
+    assert result.new_messages == result.messages[1:]
     assert any(isinstance(event, ToolExecutionEvent) for event in events)
     assert len(client.requests) == 2
     assert client.tools[0][0]["function"]["name"] == "read_file"  # type: ignore[index]

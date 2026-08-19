@@ -36,6 +36,7 @@ class AgentRunResult:
 
     messages: tuple[Message, ...]
     final_content: str
+    new_messages: tuple[Message, ...] = ()
 
 
 class AgentLoopError(RuntimeError):
@@ -66,6 +67,7 @@ class AgentLoop:
         """执行一轮模型—工具循环并返回完整上下文。"""
 
         context = list(messages)
+        new_messages: list[Message] = []
         for _ in range(self._max_tool_rounds + 1):
             text_parts: list[str] = []
             tool_calls: list[ToolCall] = []
@@ -81,25 +83,29 @@ class AgentLoop:
                     tool_calls.append(event.tool_call)
 
             assistant_content = "".join(text_parts)
-            context.append(
-                Message(
-                    role="assistant",
-                    content=assistant_content,
-                    tool_calls=tuple(tool_calls),
-                )
+            assistant_message = Message(
+                role="assistant",
+                content=assistant_content,
+                tool_calls=tuple(tool_calls),
             )
+            context.append(assistant_message)
+            new_messages.append(assistant_message)
             if not tool_calls:
-                return AgentRunResult(tuple(context), assistant_content)
+                return AgentRunResult(
+                    tuple(context),
+                    assistant_content,
+                    tuple(new_messages),
+                )
 
             for tool_call in tool_calls:
                 result = await self._tool_manager.execute(tool_call)
-                context.append(
-                    Message(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=tool_call.call_id,
-                    )
+                tool_message = Message(
+                    role="tool",
+                    content=result.content,
+                    tool_call_id=tool_call.call_id,
                 )
+                context.append(tool_message)
+                new_messages.append(tool_message)
                 if on_event is not None:
                     await on_event(ToolExecutionEvent(tool_call, result))
 

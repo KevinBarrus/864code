@@ -10,8 +10,7 @@ def test_ui_persists_new_tool_messages_in_agent_order(tmp_path: Path) -> None:
 
     session = Session(tmp_path)
     session.add_user_message("读取文件")
-    messages = (
-        *session.get_messages(),
+    new_messages = (
         Message(
             role="assistant",
             content="",
@@ -21,6 +20,9 @@ def test_ui_persists_new_tool_messages_in_agent_order(tmp_path: Path) -> None:
         Message(role="assistant", content="文件内容如下"),
     )
 
-    _persist_new_messages(session, messages)
+    _persist_new_messages(session, new_messages)
 
-    assert session.get_messages() == list(messages)
+    assert session.get_messages() == [
+        Message(role="user", content="读取文件"),
+        *new_messages,
+    ]

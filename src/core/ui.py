@@ -120,7 +120,7 @@ async def run_chat(
             screen.append_to_entry(response_index, f"错误：{exc}")
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息
-            _persist_new_messages(session, result.messages)
+            _persist_new_messages(session, result.new_messages)
             _update_persistence_status(screen, session)
 
     screen = ChatScreen(status, on_submit=handle_submit)
@@ -166,10 +166,9 @@ def _tool_call_summary(tool_call) -> str:
 
 
 def _persist_new_messages(session: Session, messages: tuple[Message, ...]) -> None:
-    """只将 AgentLoop 本轮新增消息追加到 Session。"""
+    """将 AgentLoop 明确返回的本轮新增消息追加到 Session。"""
 
-    existing_count = len(session.get_messages())
-    for message in messages[existing_count:]:
+    for message in messages:
         session.add_message(message)
 
 
