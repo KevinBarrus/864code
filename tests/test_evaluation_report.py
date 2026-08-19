@@ -63,6 +63,34 @@ def test_render_report_separates_regression_and_real_task_metrics() -> None:
     assert "offline-script" not in real_task_section
 
 
+def test_render_report_marks_small_sample_percentiles_as_observations() -> None:
+    """测试小样本报告不会把百分位数表达为稳定性能结论。"""
+
+    html = render_report(
+        [
+            EvaluationResult(
+                scenario=f"task-{index}",
+                duration_ms=10 + index,
+                model_request_durations_ms=(5 + index,),
+                evaluation_type="real-task",
+                assertions=(EvaluationAssertion("done", True),),
+            )
+            for index in range(6)
+        ]
+    )
+
+    real_task_section = html.split("<h2>真实任务评测</h2>", 1)[1].split(
+        "<h2>在线专项</h2>",
+        1,
+    )[0]
+    assert "样本数：6，通过数：6" in real_task_section
+    assert "样本少于 20，P50/P95 仅为观察值，不代表稳定性能结论" in real_task_section
+    assert "P50 耗时（观察值）" in real_task_section
+    assert "P95 耗时（观察值）" in real_task_section
+    assert "请求 P50（观察值）" in real_task_section
+    assert "请求 P95（观察值）" in real_task_section
+
+
 def test_render_report_contains_baseline_regression() -> None:
     """测试报告包含 baseline 回归结果"""
 

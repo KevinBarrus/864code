@@ -8,6 +8,9 @@ from .metrics import calculate_metrics
 from .models import EvaluationResult
 
 
+MIN_STABLE_SAMPLE_COUNT = 20
+
+
 def generate_report(
     path: Path,
     results: list[EvaluationResult],
@@ -99,6 +102,7 @@ def _evaluation_section(
   <h2>{escape(title)}</h2>
   <p>{escape(description)}</p>
   <p>样本数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
+  {_sample_size_note(metrics.scenario_count)}
   <section class="metrics">
     {_metric(completion_label, _percent(metrics.task_completion_rate))}
     {_metric("断言通过率", _percent(metrics.assertion_pass_rate))}
@@ -107,12 +111,12 @@ def _evaluation_section(
     {_metric("持久化成功率", _percent(metrics.persistence_success_rate))}
     {_metric("降级率", _percent(metrics.degradation_rate))}
     {_metric("平均耗时", f"{metrics.average_duration_ms:.2f} ms")}
-    {_metric("P50 耗时", f"{metrics.p50_duration_ms:.2f} ms")}
-    {_metric("P95 耗时", f"{metrics.p95_duration_ms:.2f} ms")}
+    {_metric(_percentile_label("P50 耗时", metrics.scenario_count), f"{metrics.p50_duration_ms:.2f} ms")}
+    {_metric(_percentile_label("P95 耗时", metrics.scenario_count), f"{metrics.p95_duration_ms:.2f} ms")}
     {_metric("平均模型请求", f"{metrics.average_model_requests:.2f}")}
     {_metric("平均请求耗时", f"{metrics.average_model_request_duration_ms:.2f} ms")}
-    {_metric("请求 P50", f"{metrics.p50_model_request_duration_ms:.2f} ms")}
-    {_metric("请求 P95", f"{metrics.p95_model_request_duration_ms:.2f} ms")}
+    {_metric(_percentile_label("请求 P50", metrics.scenario_count), f"{metrics.p50_model_request_duration_ms:.2f} ms")}
+    {_metric(_percentile_label("请求 P95", metrics.scenario_count), f"{metrics.p95_model_request_duration_ms:.2f} ms")}
   </section>
   <h3>场景结果</h3>
   <table>
@@ -171,6 +175,23 @@ def _metric(name: str, value: str) -> str:
     """生成指标卡片"""
 
     return f'<div class="metric">{escape(name)}<span class="value">{escape(value)}</span></div>'
+
+
+def _sample_size_note(sample_count: int) -> str:
+    """在小样本时明确百分位数仅供观察。"""
+
+    if sample_count < MIN_STABLE_SAMPLE_COUNT:
+        return (
+            "<p>样本少于 20，P50/P95 仅为观察值，"
+            "不代表稳定性能结论</p>"
+        )
+    return ""
+
+
+def _percentile_label(name: str, sample_count: int) -> str:
+    """为小样本百分位数增加观察性标签。"""
+
+    return f"{name}（观察值）" if sample_count < MIN_STABLE_SAMPLE_COUNT else name
 
 
 def _percent(value: float) -> str:
