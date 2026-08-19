@@ -50,7 +50,7 @@ class FakeScreen:
         self.entries.append((role, content))
         return len(self.entries) - 1
 
-    async def request_approval(self, definition, tool_call) -> ApprovalResult:
+    async def request_approval(self, definition, tool_call, allow_session=True) -> ApprovalResult:
         """模拟界面审批回调"""
 
         return ApprovalResult(ApprovalDecision.ALLOW_ONCE)

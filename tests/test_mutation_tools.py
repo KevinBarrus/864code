@@ -29,7 +29,7 @@ def _call(name: str, arguments: dict[str, object]) -> ToolCall:
 def _manager(*tools: tuple) -> ToolManager:
     """注册指定的本地工具。"""
 
-    async def approve(definition, tool_call) -> ApprovalResult:
+    async def approve(definition, tool_call, allow_session) -> ApprovalResult:
         return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
     manager = ToolManager(permission_manager=PermissionManager(approve))

@@ -132,7 +132,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
         def set_status_message(self, message: str) -> None:
             pass
 
-        async def request_approval(self, definition, tool_call):
+        async def request_approval(self, definition, tool_call, allow_session=True):
             raise AssertionError("本测试不应请求工具审批")
 
         async def run_async(self) -> None:

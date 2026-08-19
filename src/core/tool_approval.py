@@ -18,17 +18,32 @@ APPROVAL_OPTIONS = (
     "Yes, and don't ask again for this tool in this session",
     "No, and tell the model what to do instead",
 )
+COMMAND_APPROVAL_OPTIONS = (
+    APPROVAL_OPTIONS[0],
+    APPROVAL_OPTIONS[2],
+)
 ARGUMENT_PREVIEW_LIMIT = 120
 
 
 class ApprovalPrompt:
     """管理工具审批选项、键盘选择和异步结果。"""
 
-    def __init__(self, definition: ToolDefinition, tool_call: ToolCall) -> None:
+    def __init__(
+        self,
+        definition: ToolDefinition,
+        tool_call: ToolCall,
+        allow_session: bool = True,
+    ) -> None:
         """创建一次工具调用对应的审批面板。"""
 
         self.definition = definition
         self.tool_call = tool_call
+        self._options = APPROVAL_OPTIONS if allow_session else COMMAND_APPROVAL_OPTIONS
+        self._decisions = (
+            (ApprovalDecision.ALLOW_ONCE, ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY)
+            if allow_session
+            else (ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY)
+        )
         self.selected_index = 0
         self._result: asyncio.Future[ApprovalResult] = (
             asyncio.get_running_loop().create_future()
@@ -46,18 +61,13 @@ class ApprovalPrompt:
 
         self.selected_index = max(
             0,
-            min(len(APPROVAL_OPTIONS) - 1, self.selected_index + offset),
+            min(len(self._options) - 1, self.selected_index + offset),
         )
 
     def confirm(self) -> None:
         """确认当前选项并结束审批等待。"""
 
-        decisions = (
-            ApprovalDecision.ALLOW_ONCE,
-            ApprovalDecision.ALLOW_SESSION,
-            ApprovalDecision.DENY,
-        )
-        self._resolve(ApprovalResult(decisions[self.selected_index]))
+        self._resolve(ApprovalResult(self._decisions[self.selected_index]))
 
     def reject(self) -> None:
         """使用安全默认值拒绝当前工具调用。"""
@@ -82,11 +92,11 @@ class ApprovalPrompt:
             ("", f"Allow tool {self.definition.name}?\n"),
             ("", f"{_format_arguments(self.tool_call)}\n"),
         ]
-        for index, option in enumerate(APPROVAL_OPTIONS):
+        for index, option in enumerate(self._options):
             style = "class:approval-selected" if index == self.selected_index else ""
             prefix = "> " if index == self.selected_index else "  "
             fragments.append((style, f"{prefix}{option}"))
-            if index < len(APPROVAL_OPTIONS) - 1:
+            if index < len(self._options) - 1:
                 fragments.append(("", "\n"))
         return fragments
 

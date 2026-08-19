@@ -221,10 +221,11 @@ class ChatScreen:
         self,
         definition: ToolDefinition,
         tool_call: ToolCall,
+        allow_session: bool = True,
     ) -> ApprovalResult:
         """在输入区域显示审批选项并等待用户选择。"""
 
-        prompt = ApprovalPrompt(definition, tool_call)
+        prompt = ApprovalPrompt(definition, tool_call, allow_session)
         self._approval_prompt = prompt
         self._input_container.children = [prompt.window]
         self._layout.focus(prompt.window)

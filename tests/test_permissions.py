@@ -48,18 +48,19 @@ async def test_mutating_tool_is_denied_without_confirmation() -> None:
 async def test_confirmation_callback_receives_tool_context() -> None:
     """测试确认回调可以获取工具定义和调用参数。"""
 
-    received: list[tuple[str, str]] = []
+    received: list[tuple[str, str, str]] = []
 
     async def approve(
         definition: ToolDefinition,
         tool_call: ToolCall,
+        allow_session: bool,
     ) -> ApprovalResult:
-        received.append((definition.name, tool_call.call_id))
+        received.append((definition.name, tool_call.call_id, str(allow_session)))
         return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
     result = await PermissionManager(approve).authorize(_definition("command"), _call())
 
-    assert received == [("test_tool", "call-1")]
+    assert received == [("test_tool", "call-1", "False")]
     assert result.decision == ApprovalDecision.ALLOW_ONCE
 
 
@@ -70,6 +71,7 @@ async def test_rejected_confirmation_returns_denial() -> None:
     async def reject(
         definition: ToolDefinition,
         tool_call: ToolCall,
+        allow_session: bool,
     ) -> ApprovalResult:
         return ApprovalResult(
             ApprovalDecision.DENY,
@@ -90,6 +92,7 @@ async def test_session_grant_skips_future_confirmation() -> None:
     async def approve(
         definition: ToolDefinition,
         tool_call: ToolCall,
+        allow_session: bool,
     ) -> ApprovalResult:
         nonlocal calls
         calls += 1
@@ -102,3 +105,24 @@ async def test_session_grant_skips_future_confirmation() -> None:
     assert first.decision == ApprovalDecision.ALLOW_SESSION
     assert second.decision == ApprovalDecision.ALLOW_SESSION
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_command_never_grants_session_permission() -> None:
+    """测试命令工具即使请求会话授权也只会单次放行。"""
+
+    calls = 0
+
+    async def approve(definition, tool_call, allow_session) -> ApprovalResult:
+        nonlocal calls
+        calls += 1
+        assert allow_session is False
+        return ApprovalResult(ApprovalDecision.ALLOW_SESSION)
+
+    manager = PermissionManager(approve)
+    first = await manager.authorize(_definition("command"), _call())
+    second = await manager.authorize(_definition("command"), _call())
+
+    assert first.decision == ApprovalDecision.ALLOW_ONCE
+    assert second.decision == ApprovalDecision.ALLOW_ONCE
+    assert calls == 2

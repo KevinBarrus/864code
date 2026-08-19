@@ -149,7 +149,7 @@ async def test_tool_manager_denies_write_without_confirmation() -> None:
 async def test_tool_manager_uses_injected_approval() -> None:
     """测试工具管理器可以使用应用层注入的确认回调。"""
 
-    async def approve(definition, tool_call):
+    async def approve(definition, tool_call, allow_session):
         return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
     manager = ToolManager(permission_manager=PermissionManager(approve))

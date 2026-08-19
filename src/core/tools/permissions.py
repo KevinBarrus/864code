@@ -29,7 +29,7 @@ class ApprovalResult:
 
 
 ApprovalHandler = Callable[
-    [ToolDefinition, ToolCall],
+    [ToolDefinition, ToolCall, bool],
     Awaitable[ApprovalResult],
 ]
 
@@ -60,7 +60,10 @@ class PermissionManager:
         if self._approval_handler is None:
             raise PermissionDenied("该工具需要用户确认")
 
-        result = await self._approval_handler(definition, tool_call)
+        allow_session = definition.permission != "command"
+        result = await self._approval_handler(definition, tool_call, allow_session)
+        if result.decision == ApprovalDecision.ALLOW_SESSION and not allow_session:
+            return ApprovalResult(ApprovalDecision.ALLOW_ONCE, result.feedback)
         if result.decision == ApprovalDecision.ALLOW_SESSION:
             self._session_grants.add(grant_key)
         return result

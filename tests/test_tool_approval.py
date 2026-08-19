@@ -1,7 +1,7 @@
 import pytest
 
 from core.model import ToolCall
-from core.tool_approval import APPROVAL_OPTIONS, ApprovalPrompt
+from core.tool_approval import APPROVAL_OPTIONS, COMMAND_APPROVAL_OPTIONS, ApprovalPrompt
 from core.tools import ApprovalDecision, ToolDefinition
 
 
@@ -104,6 +104,24 @@ async def test_approval_prompt_confirms_session_permission() -> None:
     result = prompt._result.result()
 
     assert result.decision == ApprovalDecision.ALLOW_SESSION
+
+
+@pytest.mark.asyncio
+async def test_command_approval_omits_session_option() -> None:
+    """测试不允许会话授权时只展示单次确认和拒绝。"""
+
+    prompt = ApprovalPrompt(
+        _definition(),
+        ToolCall("call-1", "run_command", {"command": "pwd"}),
+        allow_session=False,
+    )
+    text = "".join(content for _, content in prompt._render())
+
+    assert all(option in text for option in COMMAND_APPROVAL_OPTIONS)
+    assert APPROVAL_OPTIONS[1] not in text
+    prompt.move(1)
+    prompt.confirm()
+    assert prompt._result.result().decision == ApprovalDecision.DENY
 
 
 @pytest.mark.asyncio
