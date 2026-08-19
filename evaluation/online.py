@@ -3,13 +3,13 @@
 import argparse
 import asyncio
 import tempfile
-from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import replace
+from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import perf_counter
 
 from core.agent_loop import AgentLoop, ToolExecutionEvent
-from core.config import load_settings
+from core.config import ConfigError, load_settings
 from core.context import estimate_context_tokens
 from core.context import ContextBudget, ContextManager
 from core.errors import AgentError
@@ -71,15 +71,107 @@ class TimedModelClient:
             self.durations_ms.append((perf_counter() - started_at) * 1000)
 
 
+@dataclass
+class _OnlineRunState:
+    """收集在线场景失败前的最小诊断信息。"""
+
+    scenario: str
+    evaluation_type: str
+    started_at: float = field(default_factory=perf_counter)
+    stage: str = "initialization"
+    client: TimedModelClient | None = None
+    events: list[dict[str, object]] = field(default_factory=list)
+
+    def failure(self, error: Exception) -> EvaluationResult:
+        """将场景异常转换为保留诊断信息的评测结果。"""
+
+        tool_events = [event for event in self.events if event.get("type") == "tool_result"]
+        message = f"{type(error).__name__}: {error}"
+        return EvaluationResult(
+            scenario=self.scenario,
+            duration_ms=(perf_counter() - self.started_at) * 1000,
+            evaluation_type=self.evaluation_type,  # type: ignore[arg-type]
+            model_requests=len(self.client.requests) if self.client else 0,
+            tool_calls=len(tool_events),
+            tool_failures=sum(bool(event.get("is_error")) for event in tool_events),
+            estimated_tokens=(
+                sum(estimate_context_tokens(request) for request in self.client.requests)
+                if self.client
+                else 0
+            ),
+            model_request_durations_ms=(
+                tuple(self.client.durations_ms) if self.client else ()
+            ),
+            error_category=_error_category(error),
+            error_stage=self.stage,
+            error_message=message,
+            events=tuple(
+                [
+                    *self.events,
+                    {
+                        "type": "evaluation_error",
+                        "category": _error_category(error),
+                        "stage": self.stage,
+                        "exception_type": type(error).__name__,
+                        "message": str(error),
+                    },
+                ]
+            ),
+            assertions=(
+                EvaluationAssertion(
+                    "online-evaluation-error",
+                    False,
+                    f"在线评测在 {self.stage} 失败：{message}",
+                ),
+            ),
+        )
+
+
+async def _run_with_diagnostics(
+    state: _OnlineRunState,
+    runner: Awaitable[EvaluationResult],
+) -> EvaluationResult:
+    """执行在线场景并将未处理异常转换为评测结果。"""
+
+    try:
+        return await runner
+    except Exception as error:
+        return state.failure(error)
+
+
+def _error_category(error: Exception) -> str:
+    """按异常来源标记评测失败类别。"""
+
+    if isinstance(error, AgentError):
+        return error.category
+    if isinstance(error, ConfigError):
+        return "configuration"
+    if isinstance(error, OSError):
+        return "environment"
+    return "runner"
+
+
 async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
     """在临时工作区执行一条真实模型主链路冒烟评测"""
 
+    state = _OnlineRunState("online_main_smoke", "real-task")
+    return await _run_with_diagnostics(state, _run_online_smoke(state, env_path))
+
+
+async def _run_online_smoke(
+    state: _OnlineRunState,
+    env_path: Path | None,
+) -> EvaluationResult:
+    """执行真实模型主链路并持续更新诊断状态。"""
+
+    state.stage = "load-settings"
     settings = load_settings(env_path)
     with tempfile.TemporaryDirectory(prefix="864code-online-") as directory:
         workspace = Path(directory)
         target = workspace / "note.txt"
         target.write_text("before\n", encoding="utf-8")
         client = TimedModelClient(OpenAICompatibleClient(settings))
+        state.client = client
 
         async def approve_write(definition, tool_call):
             return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
@@ -90,14 +182,15 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         manager.register_local(*create_read_file_tool(workspace))
         manager.register_local(*create_edit_file_tool(workspace))
         session = Session(workspace)
-        events: list[dict[str, object]] = [
+        events = state.events
+        events.append(
             message_to_record(
                 Message(
                     role="user",
                     content="请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果",
                 )
             )
-        ]
+        )
         session.add_user_message(
             "请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果"
         )
@@ -106,12 +199,14 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
             events.append(event_to_record(event))
 
         started_at = perf_counter()
+        state.stage = "agent-loop"
         result = await AgentLoop(client, manager).run(
             session.get_messages(),
             on_event=collect_event,
         )
         for message in result.new_messages:
             session.add_message(message)
+        state.stage = "session-persistence"
         persistence_ok = session.flush_persistence() and session.close()
         restored = Session.restore(workspace, session.session_id)
         restored_messages = restored.get_messages()
@@ -179,15 +274,28 @@ async def run_online_suite(
     for repetition in range(1, repetitions + 1):
         try:
             result = await runners[scenario](env_path)
-        except Exception:
+        except Exception as error:
             result = EvaluationResult(
                 scenario=f"online_{scenario}",
                 duration_ms=0,
+                evaluation_type="online-special",
+                error_category=_error_category(error),
+                error_stage="suite",
+                error_message=f"{type(error).__name__}: {error}",
+                events=(
+                    {
+                        "type": "evaluation_error",
+                        "category": _error_category(error),
+                        "stage": "suite",
+                        "exception_type": type(error).__name__,
+                        "message": str(error),
+                    },
+                ),
                 assertions=(
                     EvaluationAssertion(
-                        "runner-error",
+                        "online-evaluation-error",
                         False,
-                        "在线评测运行失败",
+                        f"在线评测在 suite 失败：{type(error).__name__}: {error}",
                     ),
                 ),
             )
@@ -200,16 +308,32 @@ async def run_online_compaction_smoke(
 ) -> EvaluationResult:
     """使用真实模型执行一次上下文压缩和 Session 恢复冒烟评测"""
 
+    state = _OnlineRunState("online_context_compaction", "online-special")
+    return await _run_with_diagnostics(
+        state,
+        _run_online_compaction_smoke(state, env_path),
+    )
+
+
+async def _run_online_compaction_smoke(
+    state: _OnlineRunState,
+    env_path: Path | None,
+) -> EvaluationResult:
+    """执行上下文压缩专项并持续更新诊断状态。"""
+
+    state.stage = "load-settings"
     settings = load_settings(env_path)
     with tempfile.TemporaryDirectory(prefix="864code-compaction-") as directory:
         workspace = Path(directory)
         client = TimedModelClient(OpenAICompatibleClient(settings))
+        state.client = client
         session = Session(workspace)
         for index in range(4):
             session.add_user_message(f"历史任务 {index}: " + "x" * 180)
             session.add_assistant_message(f"历史回复 {index}: " + "x" * 180)
         manager = ContextManager(ContextBudget(500, 100, 120))
         started_at = perf_counter()
+        state.stage = "context-compaction"
         result = await manager.build_for_model_result(
             client,
             session.get_messages(),
@@ -217,6 +341,7 @@ async def run_online_compaction_smoke(
         )
         if result.compaction is not None:
             session.add_compaction(result.compaction)
+        state.stage = "session-persistence"
         persistence_ok = session.flush_persistence() and session.close()
         restored = Session.restore(workspace, session.session_id)
         restored_compactions = restored.get_compactions()
@@ -258,12 +383,28 @@ async def run_online_network_error_smoke(
 ) -> EvaluationResult:
     """通过本机不可用端口验证真实网络异常处理"""
 
+    state = _OnlineRunState("online_network_error", "online-special")
+    return await _run_with_diagnostics(
+        state,
+        _run_online_network_error_smoke(state, env_path),
+    )
+
+
+async def _run_online_network_error_smoke(
+    state: _OnlineRunState,
+    env_path: Path | None,
+) -> EvaluationResult:
+    """执行网络异常专项并持续更新诊断状态。"""
+
+    state.stage = "load-settings"
     settings = load_settings(env_path)
     unavailable_settings = replace(settings, base_url="http://127.0.0.1:1")
     client = TimedModelClient(OpenAICompatibleClient(unavailable_settings))
+    state.client = client
     started_at = perf_counter()
     error: AgentError | None = None
     try:
+        state.stage = "network-request"
         await AgentLoop(client, ToolManager()).run(
             [Message(role="user", content="测试网络异常处理")]
         )

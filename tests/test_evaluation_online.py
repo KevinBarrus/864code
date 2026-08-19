@@ -1,5 +1,6 @@
 import pytest
 
+from core.config import ConfigError
 from core.model import Message, TextDelta
 from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
@@ -77,3 +78,23 @@ async def test_online_suite_dispatches_network_error_scenario(monkeypatch) -> No
 
     assert results[0].scenario == "online_network_error"
     assert results[0].passed
+
+
+@pytest.mark.asyncio
+async def test_online_smoke_keeps_configuration_failure_diagnostics(monkeypatch) -> None:
+    """测试在线场景会保留配置失败的类别和阶段。"""
+
+    def fail_load_settings(env_path=None):
+        raise ConfigError("缺少模型配置")
+
+    monkeypatch.setattr("evaluation.online.load_settings", fail_load_settings)
+
+    from evaluation.online import run_online_smoke
+
+    result = await run_online_smoke()
+
+    assert result.passed is False
+    assert result.error_category == "configuration"
+    assert result.error_stage == "load-settings"
+    assert "ConfigError" in (result.error_message or "")
+    assert result.events[-1]["type"] == "evaluation_error"

@@ -46,6 +46,9 @@ def _result_to_record(result: EvaluationResult) -> dict[str, object]:
         "estimated_tokens": result.estimated_tokens,
         "actual_tokens": result.actual_tokens,
         "persistence_degraded": result.persistence_degraded,
+        "error_category": result.error_category,
+        "error_stage": result.error_stage,
+        "error_message": result.error_message,
         "model_request_durations_ms": list(result.model_request_durations_ms),
         "events": list(result.events),
         "assertions": [
@@ -81,6 +84,9 @@ def _result_from_record(record: object) -> EvaluationResult:
         estimated_tokens=_required_int(record, "estimated_tokens"),
         actual_tokens=record.get("actual_tokens"),
         persistence_degraded=bool(record.get("persistence_degraded", False)),
+        error_category=_optional_string(record.get("error_category")),
+        error_stage=_optional_string(record.get("error_stage")),
+        error_message=_optional_string(record.get("error_message")),
         model_request_durations_ms=tuple(
             float(value)
             for value in record.get("model_request_durations_ms", [])
@@ -125,6 +131,14 @@ def _evaluation_type(value: object) -> str:
     if value not in {"core-regression", "real-task", "online-special"}:
         raise ValueError("评测结果字段无效：evaluation_type")
     return value
+
+
+def _optional_string(value: object) -> str | None:
+    """读取允许为空的字符串字段。"""
+
+    if value is None or isinstance(value, str):
+        return value
+    raise ValueError("评测结果可选字符串字段无效")
 
 
 def _required_int(record: dict[str, object], key: str) -> int:
