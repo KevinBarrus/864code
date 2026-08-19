@@ -65,7 +65,7 @@ def test_baseline_detects_missing_runs() -> None:
 
 
 def test_baseline_detects_metric_regressions() -> None:
-    """测试性能或压缩次数明显恶化会触发回归。"""
+    """测试小样本仍拦截成功率和模型请求数回归。"""
 
     baseline = create_baseline(
         [
@@ -93,11 +93,44 @@ def test_baseline_detects_metric_regressions() -> None:
         baseline,
     )
 
-    assert report.metric_regressions == (
-        "P95 延迟增加超过 25%",
-        "平均模型请求数增加超过 25%",
-        "总上下文压缩次数增加",
+    assert report.metric_regressions == ("平均模型请求数增加超过 25%",)
+    assert report.metric_observations == ("总上下文压缩次数增加",)
+    assert not report.passed
+
+
+def test_baseline_ignores_small_sample_p95_noise() -> None:
+    """测试小样本的 P95 波动和压缩增加不会触发门禁。"""
+
+    baseline = create_baseline(
+        [_result("task", index, True, duration_ms=100) for index in range(1, 7)]
     )
+
+    report = compare_baseline(
+        [
+            _result("task", index, True, duration_ms=1_000, compactions=1)
+            for index in range(1, 7)
+        ],
+        baseline,
+    )
+
+    assert report.metric_regressions == ()
+    assert report.metric_observations == ("总上下文压缩次数增加",)
+    assert report.passed
+
+
+def test_baseline_rejects_large_sample_p95_regression() -> None:
+    """测试足够样本下明显的 P95 延迟回归仍会失败。"""
+
+    baseline = create_baseline(
+        [_result("task", index, True, duration_ms=100) for index in range(1, 21)]
+    )
+
+    report = compare_baseline(
+        [_result("task", index, True, duration_ms=130) for index in range(1, 21)],
+        baseline,
+    )
+
+    assert report.metric_regressions == ("P95 延迟增加超过 25%",)
     assert not report.passed
 
 

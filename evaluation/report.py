@@ -215,6 +215,7 @@ def _regression_section(regression: RegressionReport | None) -> str:
   <li>缺失运行：{_list_or_none(regression.missing_runs)}</li>
   <li>重复运行：{_list_or_none(regression.duplicate_runs)}</li>
   <li>指标回归：{_list_or_none(regression.metric_regressions)}</li>
+  <li>指标观察：{_list_or_none(regression.metric_observations)}</li>
   <li>配置不匹配：{_list_or_none(regression.metadata_mismatches)}</li>
 </ul>"""
 

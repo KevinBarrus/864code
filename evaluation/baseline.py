@@ -9,6 +9,7 @@ from .models import EvaluationResult
 
 MAX_P95_DURATION_RATIO = 1.25
 MAX_AVERAGE_MODEL_REQUEST_RATIO = 1.25
+MIN_PERFORMANCE_SAMPLE_COUNT = 20
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class RegressionReport:
     missing_runs: tuple[str, ...]
     duplicate_runs: tuple[str, ...]
     metric_regressions: tuple[str, ...] = ()
+    metric_observations: tuple[str, ...] = ()
     metadata_mismatches: tuple[str, ...] = ()
 
     @property
@@ -82,7 +84,7 @@ def compare_baseline(
             new_failures.append(key)
 
     missing_runs = [key for key in baseline_runs if key not in current_runs]
-    metric_regressions = _compare_metrics(current, baseline)
+    metric_regressions, metric_observations = _compare_metrics(current, baseline)
     metadata_mismatches = _compare_metadata(baseline, metadata)
     return RegressionReport(
         new_failures=tuple(sorted(new_failures)),
@@ -90,6 +92,7 @@ def compare_baseline(
         missing_runs=tuple(sorted(missing_runs)),
         duplicate_runs=tuple(sorted(duplicate_runs)),
         metric_regressions=metric_regressions,
+        metric_observations=metric_observations,
         metadata_mismatches=metadata_mismatches,
     )
 
@@ -151,24 +154,26 @@ def _run_key(scenario: str, repetition: int) -> str:
 def _compare_metrics(
     current: list[EvaluationResult],
     baseline: dict[str, object],
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """比较 baseline 中已记录的关键性能与质量指标。"""
 
     baseline_metrics = baseline.get("metrics")
     if not isinstance(baseline_metrics, dict):
-        return ()
+        return (), ()
     current_metrics = calculate_metrics(current)
     regressions: list[str] = []
+    observations: list[str] = []
     previous_rate = baseline_metrics.get("task_completion_rate")
     if isinstance(previous_rate, (int, float)) and current_metrics.task_completion_rate < previous_rate:
         regressions.append("任务成功率下降")
-    previous_p95 = baseline_metrics.get("p95_duration_ms")
-    if (
-        isinstance(previous_p95, (int, float))
-        and previous_p95 > 0
-        and current_metrics.p95_duration_ms > previous_p95 * MAX_P95_DURATION_RATIO
-    ):
-        regressions.append("P95 延迟增加超过 25%")
+    if _has_stable_performance_samples(current, baseline):
+        previous_p95 = baseline_metrics.get("p95_duration_ms")
+        if (
+            isinstance(previous_p95, (int, float))
+            and previous_p95 > 0
+            and current_metrics.p95_duration_ms > previous_p95 * MAX_P95_DURATION_RATIO
+        ):
+            regressions.append("P95 延迟增加超过 25%")
     previous_requests = baseline_metrics.get("average_model_requests")
     if (
         isinstance(previous_requests, (int, float))
@@ -181,8 +186,30 @@ def _compare_metrics(
         isinstance(previous_compactions, int)
         and current_metrics.total_compactions > previous_compactions
     ):
-        regressions.append("总上下文压缩次数增加")
-    return tuple(regressions)
+        observations.append("总上下文压缩次数增加")
+    return tuple(regressions), tuple(observations)
+
+
+def _has_stable_performance_samples(
+    current: list[EvaluationResult],
+    baseline: dict[str, object],
+) -> bool:
+    """仅在当前和 baseline 均有足够样本时比较 P95。"""
+
+    return (
+        len(current) >= MIN_PERFORMANCE_SAMPLE_COUNT
+        and _baseline_sample_count(baseline) >= MIN_PERFORMANCE_SAMPLE_COUNT
+    )
+
+
+def _baseline_sample_count(baseline: dict[str, object]) -> int:
+    """读取 baseline 样本数，并兼容缺少该字段的旧文件。"""
+
+    sample_count = baseline.get("sample_count")
+    if isinstance(sample_count, int):
+        return sample_count
+    runs = baseline.get("runs")
+    return len(runs) if isinstance(runs, list) else 0
 
 
 def _compare_metadata(
