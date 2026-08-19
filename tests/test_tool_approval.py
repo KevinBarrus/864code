@@ -28,6 +28,44 @@ def _prompt() -> ApprovalPrompt:
 
 
 @pytest.mark.asyncio
+async def test_approval_prompt_shows_full_command() -> None:
+    """测试命令审批会展示将执行的完整命令。"""
+
+    definition = ToolDefinition(
+        name="run_command",
+        description="执行命令",
+        parameters={"type": "object"},
+        source="local",
+        permission="command",
+        idempotent=False,
+    )
+    prompt = ApprovalPrompt(
+        definition,
+        ToolCall("call-1", "run_command", {"command": "git status && pytest -q"}),
+    )
+
+    text = "".join(content for _, content in prompt._render())
+
+    assert "Command: git status && pytest -q" in text
+
+
+@pytest.mark.asyncio
+async def test_approval_prompt_summarizes_file_content() -> None:
+    """测试文件审批会展示路径和受限内容摘要。"""
+
+    prompt = ApprovalPrompt(
+        _definition(),
+        ToolCall("call-1", "write_file", {"path": "src/app.py", "content": "x" * 200}),
+    )
+
+    text = "".join(content for _, content in prompt._render())
+
+    assert "Path: src/app.py" in text
+    assert "content: " in text
+    assert "(200 chars)" in text
+
+
+@pytest.mark.asyncio
 async def test_approval_prompt_moves_and_clamps_selection() -> None:
     """测试审批选项支持上下移动并限制边界。"""
 

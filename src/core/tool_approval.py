@@ -1,6 +1,7 @@
 """提供工具审批选择组件。"""
 
 import asyncio
+import json
 
 from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.layout import Window
@@ -17,6 +18,7 @@ APPROVAL_OPTIONS = (
     "Yes, and don't ask again for this tool in this session",
     "No, and tell the model what to do instead",
 )
+ARGUMENT_PREVIEW_LIMIT = 120
 
 
 class ApprovalPrompt:
@@ -33,8 +35,9 @@ class ApprovalPrompt:
         )
         self.window = Window(
             content=FormattedTextControl(self._render, focusable=True),
-            height=Dimension(min=4, preferred=4, max=4),
+            height=Dimension(min=5, preferred=7),
             dont_extend_height=True,
+            wrap_lines=True,
             style="class:approval-area",
         )
 
@@ -73,10 +76,11 @@ class ApprovalPrompt:
             self._result.set_result(result)
 
     def _render(self) -> AnyFormattedText:
-        """渲染工具名和三项审批选项。"""
+        """渲染工具名、参数预览和三项审批选项。"""
 
         fragments: list[tuple[str, str]] = [
             ("", f"Allow tool {self.definition.name}?\n"),
+            ("", f"{_format_arguments(self.tool_call)}\n"),
         ]
         for index, option in enumerate(APPROVAL_OPTIONS):
             style = "class:approval-selected" if index == self.selected_index else ""
@@ -85,3 +89,28 @@ class ApprovalPrompt:
             if index < len(APPROVAL_OPTIONS) - 1:
                 fragments.append(("", "\n"))
         return fragments
+
+
+def _format_arguments(tool_call: ToolCall) -> str:
+    """生成供用户审批的工具参数预览。"""
+
+    arguments = tool_call.arguments
+    if tool_call.name == "run_command" and isinstance(arguments.get("command"), str):
+        return f"Command: {arguments['command']}"
+    if isinstance(arguments.get("path"), str):
+        preview = [f"Path: {arguments['path']}"]
+        for key in ("content", "old_content", "new_content"):
+            value = arguments.get(key)
+            if isinstance(value, str):
+                preview.append(f"{key}: {_summarize(value)}")
+        return " | ".join(preview)
+    return f"Arguments: {_summarize(json.dumps(arguments, ensure_ascii=False, sort_keys=True))}"
+
+
+def _summarize(value: str) -> str:
+    """限制审批预览中的长文本，同时保留原始长度。"""
+
+    compact = " ".join(value.split())
+    if len(compact) <= ARGUMENT_PREVIEW_LIMIT:
+        return compact
+    return f"{compact[:ARGUMENT_PREVIEW_LIMIT - 1]}… ({len(value)} chars)"
