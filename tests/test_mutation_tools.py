@@ -155,8 +155,12 @@ async def test_run_command_cancellation_stops_process_group(
 
         def __init__(self) -> None:
             self.started = asyncio.Event()
+            self.communicate_calls = 0
 
         async def communicate(self) -> tuple[bytes, bytes]:
+            self.communicate_calls += 1
+            if self.returncode is not None:
+                return b"", b""
             self.started.set()
             await asyncio.Event().wait()
             return b"", b""
@@ -189,3 +193,4 @@ async def test_run_command_cancellation_stops_process_group(
 
     assert kwargs["start_new_session"] is True
     assert signals == [command_tool.signal.SIGTERM]
+    assert process.communicate_calls == 2

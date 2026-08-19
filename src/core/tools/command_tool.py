@@ -87,27 +87,25 @@ def _format_output(stdout: bytes, stderr: bytes) -> str:
 
 
 async def _stop_process_group(process: asyncio.subprocess.Process) -> None:
-    """终止命令进程及其仍在运行的子进程。"""
+    """终止命令进程组并回收标准输出与错误管道。"""
 
-    if process.returncode is not None:
-        return
-    if os.name == "posix":
+    if process.returncode is None:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            process.terminate()
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-    else:
-        process.terminate()
-    try:
-        await asyncio.wait_for(process.wait(), timeout=1)
-        return
-    except TimeoutError:
-        pass
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
-    else:
-        process.kill()
-    await process.wait()
+            await asyncio.wait_for(process.wait(), timeout=1)
+        except TimeoutError:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            await process.wait()
+    await process.communicate()
