@@ -163,6 +163,28 @@ async def test_client_classifies_timeout_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_classifies_context_overflow_error() -> None:
+    """测试服务端上下文超限会被单独分类。"""
+
+    class BadRequestError(Exception):
+        pass
+
+    class FailingCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            raise BadRequestError("maximum context length exceeded")
+
+    failing_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=FailingCompletions())
+    )
+    client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError) as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "context_overflow"
+
+
+@pytest.mark.asyncio
 async def test_client_classifies_openai_connection_error() -> None:
     """测试 OpenAI SDK 网络异常会被转换为 network 类别"""
 

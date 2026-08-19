@@ -79,19 +79,29 @@ async def run_chat(
 
         try:
             # 由 Agent Loop 负责模型与工具循环，界面只消费文本事件
-            context_result = await context_manager.build_for_model_result(
-                client,
-                session.get_messages(),
-                session.get_compactions(),
-            )
-            if context_result.compaction is not None:
-                session.add_compaction(context_result.compaction)
-            if context_result.fallback_used:
-                screen.add_entry(
-                    "tool",
-                    "⚠ Context summary failed; recent history only",
+            for force_compaction in (False, True):
+                context_result = await context_manager.build_for_model_result(
+                    client,
+                    session.get_messages(),
+                    session.get_compactions(),
+                    force_compaction=force_compaction,
                 )
-            result = await agent_loop.run(context_result.messages, on_event=handle_event)
+                if context_result.compaction is not None:
+                    session.add_compaction(context_result.compaction)
+                if context_result.fallback_used:
+                    screen.add_entry(
+                        "tool",
+                        "⚠ Context summary failed; recent history only",
+                    )
+                try:
+                    result = await agent_loop.run(
+                        context_result.messages,
+                        on_event=handle_event,
+                    )
+                    break
+                except AgentError as exc:
+                    if exc.category != "context_overflow" or force_compaction:
+                        raise
         except asyncio.CancelledError as exc:
             # 取消时保留已生成的部分回复，供下一轮继续参考
             cancelled_messages = (

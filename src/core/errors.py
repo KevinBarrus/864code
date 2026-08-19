@@ -13,6 +13,7 @@ ErrorCategory = Literal[
     "tool_permission",
     "session_persistence",
     "context_compaction",
+    "context_overflow",
     "internal",
 ]
 
@@ -53,5 +54,6 @@ def is_error_category(value: object) -> bool:
         "tool_permission",
         "session_persistence",
         "context_compaction",
+        "context_overflow",
         "internal",
     }

@@ -12,6 +12,7 @@ from core.context import (
     estimate_context_tokens,
     estimate_model_request_tokens,
     estimate_message_tokens,
+    estimate_text_tokens,
     generate_context_summary,
     select_recent_messages,
 )
@@ -42,8 +43,12 @@ def test_context_budget_rejects_invalid_values(kwargs: dict[str, int]) -> None:
         ContextBudget(**kwargs)
 
 
-def test_estimate_message_tokens_uses_four_characters_per_token() -> None:
+def test_estimate_message_tokens_uses_four_characters_per_ascii_token() -> None:
     assert estimate_message_tokens(Message(role="user", content="a" * 9)) == 3
+
+
+def test_estimate_text_tokens_counts_cjk_characters_conservatively() -> None:
+    assert estimate_text_tokens("你好，世界") == 5
 
 
 def test_estimate_message_tokens_includes_tool_call_arguments() -> None:
@@ -275,7 +280,7 @@ async def test_generate_context_summary_raises_after_retries() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_build_for_model_uses_summary_when_over_budget() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(64, 10, 20))
+    manager = ContextManager(ContextBudget(70, 10, 20))
     messages = [
         Message(role="user", content="旧问题" + "x" * 64),
         Message(role="assistant", content="旧回答" + "x" * 64),
@@ -294,7 +299,7 @@ async def test_context_manager_build_for_model_uses_summary_when_over_budget() -
 @pytest.mark.asyncio
 async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
     client = FakeSummaryClient([SUMMARY, SUMMARY])
-    manager = ContextManager(ContextBudget(100, 20, 10))
+    manager = ContextManager(ContextBudget(120, 20, 10))
     messages = [
         Message(role="user", content="旧问题" + "x" * 160),
         Message(role="assistant", content="旧回答" + "x" * 160),
@@ -313,7 +318,7 @@ async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_keeps_tool_chain_together_in_oversized_prefix() -> None:
     client = FakeSummaryClient([SUMMARY, SUMMARY])
-    manager = ContextManager(ContextBudget(100, 20, 8))
+    manager = ContextManager(ContextBudget(120, 20, 8))
     messages = [
         Message(role="user", content="旧问题"),
         Message(role="assistant", content="旧回答"),
@@ -395,7 +400,7 @@ async def test_context_manager_marks_fallback_result() -> None:
 @pytest.mark.asyncio
 async def test_second_compaction_boundary_uses_full_session_history() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(80, 20, 20))
+    manager = ContextManager(ContextBudget(100, 20, 20))
     messages = [
         Message(role="user", content="第一轮" + "x" * 64),
         Message(role="assistant", content="第一轮回复" + "x" * 64),
@@ -418,7 +423,7 @@ async def test_second_compaction_boundary_uses_full_session_history() -> None:
 async def test_repeated_compaction_keeps_latest_cumulative_summary() -> None:
     first_summary = SUMMARY.replace("目标", "第一轮目标")
     second_summary = SUMMARY.replace("目标", "第二轮目标")
-    budget = ContextBudget(80, 20, 20)
+    budget = ContextBudget(100, 20, 30)
     manager = ContextManager(budget)
     messages = [
         Message(role="user", content="旧问题" + "x" * 160),
@@ -479,7 +484,7 @@ async def test_context_manager_uses_latest_restored_compaction() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_returns_compaction_record_after_summary() -> None:
     client = FakeSummaryClient([SUMMARY])
-    budget = ContextBudget(64, 10, 20)
+    budget = ContextBudget(70, 10, 20)
     manager = ContextManager(budget)
     messages = [
         Message(role="user", content="旧问题" + "x" * 64),

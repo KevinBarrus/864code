@@ -112,8 +112,24 @@ def _to_model_error(error: BaseException) -> ModelClientError:
     if error_name in {"AuthenticationError", "PermissionDeniedError"}:
         return ModelClientError("模型认证失败，请检查密钥配置", category="authentication", cause=error)
     if error_name in {"BadRequestError", "UnprocessableEntityError"}:
+        if _is_context_overflow_error(error):
+            return ModelClientError(
+                "模型上下文超出限制，正在压缩后重试",
+                category="context_overflow",
+                cause=error,
+            )
         return ModelClientError("模型请求参数无效", category="invalid_request", cause=error)
     return ModelClientError("模型请求失败，请检查配置和网络连接", category="internal", cause=error)
+
+
+def _is_context_overflow_error(error: BaseException) -> bool:
+    """根据服务端错误文本识别上下文长度超限。"""
+
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in ("context length", "context window", "maximum context", "too many tokens")
+    )
 
 
 def _serialize_message(message: Message) -> dict[str, object]:

@@ -29,6 +29,7 @@ _ERROR_POLICIES: dict[ErrorCategory, ErrorDecision] = {
     "tool_permission": ErrorDecision("continue"),
     "session_persistence": ErrorDecision("retry", max_attempts=2),
     "context_compaction": ErrorDecision("fallback", max_attempts=1),
+    "context_overflow": ErrorDecision("stop"),
     "internal": ErrorDecision("stop"),
 }
 

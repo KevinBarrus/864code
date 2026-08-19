@@ -159,6 +159,7 @@ class ContextManager:
         client: ModelClient,
         messages: Sequence[Message],
         compactions: Sequence[CompactionRecord] = (),
+        force_compaction: bool = False,
     ) -> ContextBuildResult:
         """构建模型上下文，并返回成功生成的压缩记录。"""
 
@@ -169,6 +170,8 @@ class ContextManager:
         ]
         self._ensure_message_budget()
         try:
+            if force_compaction:
+                raise ContextCompactionRequired("服务端拒绝当前上下文，需要强制压缩")
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
             recent = select_recent_messages(messages, min(
@@ -583,15 +586,37 @@ def _is_structured_summary(summary: str) -> bool:
 def estimate_message_tokens(message: Message) -> int:
     """使用字符数估算单条消息的 Token 数。"""
 
-    content_chars = len(message.content)
-    tool_call_chars = sum(
-        len(tool_call.name)
-        + len(tool_call.call_id)
-        + len(json.dumps(tool_call.arguments, ensure_ascii=False, sort_keys=True))
+    return estimate_text_tokens(message.content) + sum(
+        estimate_text_tokens(tool_call.name)
+        + estimate_text_tokens(tool_call.call_id)
+        + estimate_text_tokens(
+            json.dumps(tool_call.arguments, ensure_ascii=False, sort_keys=True)
+        )
         for tool_call in message.tool_calls
+    ) + estimate_text_tokens(message.tool_call_id or "")
+
+
+def estimate_text_tokens(content: str) -> int:
+    """按宽字符和普通字符保守估算文本 Token 数。"""
+
+    wide_chars = sum(_is_wide_character(char) for char in content)
+    return wide_chars + ceil((len(content) - wide_chars) / 4)
+
+
+def _is_wide_character(char: str) -> bool:
+    """判断字符是否通常以单独 Token 计入上下文。"""
+
+    codepoint = ord(char)
+    return (
+        0x1100 <= codepoint <= 0x115F
+        or 0x2E80 <= codepoint <= 0xA4CF
+        or 0xAC00 <= codepoint <= 0xD7AF
+        or 0xF900 <= codepoint <= 0xFAFF
+        or 0xFE10 <= codepoint <= 0xFE6F
+        or 0xFF01 <= codepoint <= 0xFF60
+        or 0xFFE0 <= codepoint <= 0xFFE6
+        or 0x1F300 <= codepoint <= 0x1FAFF
     )
-    tool_call_id_chars = len(message.tool_call_id or "")
-    return ceil((content_chars + tool_call_chars + tool_call_id_chars) / 4)
 
 
 def estimate_context_tokens(messages: Sequence[Message]) -> int:

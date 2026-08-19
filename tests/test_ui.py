@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+import core.ui as ui
+from core.context import CONTEXT_FALLBACK_NOTICE
+from core.errors import AgentError
 from core.model import Message
 from core.model import ModelClientError
 from core.screen import ChatScreen
@@ -85,6 +88,70 @@ class FailingClient:
 
         raise ModelClientError("请求失败")
         yield ""
+
+
+@pytest.mark.asyncio
+async def test_run_chat_retries_once_with_forced_context_compaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试服务端上下文超限后会强制压缩并重试一次。"""
+
+    class ContextOverflowClient:
+        def __init__(self) -> None:
+            self.requests: list[list[Message]] = []
+
+        async def stream_response(self, messages, tools=()):
+            self.requests.append(list(messages))
+            if len(self.requests) == 1:
+                raise AgentError(
+                    category="context_overflow",
+                    operation="model_request",
+                    user_message="模型上下文超出限制",
+                )
+            yield ui.TextDelta("已压缩后重试")
+
+    class FakeScreen:
+        def __init__(self, status, on_submit) -> None:
+            self._on_submit = on_submit
+            self.application = self
+            self.entries: list[tuple[str, str]] = []
+
+        def add_entry(self, role: str, content: str) -> int:
+            self.entries.append((role, content))
+            return len(self.entries) - 1
+
+        def append_to_entry(self, index: int, content: str) -> None:
+            role, current = self.entries[index]
+            self.entries[index] = (role, current + content)
+
+        def set_entry_content(self, index: int, content: str) -> None:
+            role, _ = self.entries[index]
+            self.entries[index] = (role, content)
+
+        def set_status_message(self, message: str) -> None:
+            pass
+
+        async def request_approval(self, definition, tool_call):
+            raise AssertionError("本测试不应请求工具审批")
+
+        async def run_async(self) -> None:
+            await self._on_submit("继续完成任务")
+
+    client = ContextOverflowClient()
+    monkeypatch.setattr(ui, "ChatScreen", FakeScreen)
+
+    await ui.run_chat(
+        client,
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        workspace=tmp_path,
+    )
+
+    assert len(client.requests) == 2
+    assert any(
+        message.content == CONTEXT_FALLBACK_NOTICE
+        for message in client.requests[1]
+    )
 
 
 @pytest.mark.asyncio
