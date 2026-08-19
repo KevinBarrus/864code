@@ -1,5 +1,6 @@
 """实现第一批只读本地文件工具。"""
 
+import os
 from pathlib import Path
 
 from ..model import ToolCall, ToolResult
@@ -9,6 +10,10 @@ from .path_utils import resolve_workspace_path
 from .types import ToolDefinition, ToolHandler
 
 
+MAX_FILE_READ_BYTES = 1_000_000
+IGNORED_SEARCH_DIRECTORIES = {".git", ".864code", ".venv", "node_modules"}
+
+
 def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]:
     """创建读取单个文件的工具。"""
 
@@ -16,6 +21,8 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
         path = resolve_workspace_path(workspace, string_argument(tool_call, "path"))
         if not path.is_file():
             raise ValueError("目标不是文件")
+        if path.stat().st_size > MAX_FILE_READ_BYTES:
+            raise ValueError("文件超过读取上限（1 MB）")
         return ToolResult(
             call_id=tool_call.call_id,
             content=limit_tool_output(path.read_text(encoding="utf-8")),
@@ -85,17 +92,28 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
             raise ValueError("搜索范围不是目录")
 
         matches: list[str] = []
-        for path in sorted(root.rglob("*")):
-            if not path.is_file():
-                continue
-            try:
-                lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-            except OSError:
-                continue
-            for line_number, line in enumerate(lines, start=1):
-                if pattern in line:
-                    relative_path = path.relative_to(workspace.resolve())
-                    matches.append(f"{relative_path}:{line_number}: {line}")
+        for directory, directories, filenames in os.walk(root):
+            directories[:] = sorted(
+                name for name in directories if name not in IGNORED_SEARCH_DIRECTORIES
+            )
+            for filename in sorted(filenames):
+                path = Path(directory, filename)
+                if not _is_searchable_file(path):
+                    continue
+                try:
+                    with path.open(encoding="utf-8", errors="replace") as file:
+                        for line_number, line in enumerate(file, start=1):
+                            if pattern not in line:
+                                continue
+                            relative_path = path.relative_to(workspace.resolve())
+                            match = f"{relative_path}:{line_number}: {line.rstrip()}"
+                            content = "\n".join([*matches, match])
+                            limited = limit_tool_output(content)
+                            if limited != content:
+                                return ToolResult(call_id=tool_call.call_id, content=limited)
+                            matches.append(match)
+                except OSError:
+                    continue
 
         return ToolResult(
             call_id=tool_call.call_id,
@@ -121,3 +139,15 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
         ),
         search_files,
     )
+
+
+def _is_searchable_file(path: Path) -> bool:
+    """判断文件是否适合按文本逐行搜索。"""
+
+    try:
+        if path.stat().st_size > MAX_FILE_READ_BYTES:
+            return False
+        with path.open("rb") as file:
+            return b"\0" not in file.read(4_096)
+    except OSError:
+        return False

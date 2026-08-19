@@ -13,6 +13,7 @@ from core.tools import (
     create_read_file_tool,
     create_search_files_tool,
 )
+from core.tools.file_tools import MAX_FILE_READ_BYTES
 
 
 def _call(name: str, arguments: dict[str, object]) -> ToolCall:
@@ -60,6 +61,19 @@ async def test_read_file_truncates_large_output(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_read_file_rejects_file_larger_than_read_limit(tmp_path: Path) -> None:
+    """测试读取工具会在读入前拒绝超大文件。"""
+
+    (tmp_path / "too-large.txt").write_bytes(b"x" * (MAX_FILE_READ_BYTES + 1))
+    manager = _manager(tmp_path, create_read_file_tool(tmp_path))
+
+    result = await manager.execute(_call("read_file", {"path": "too-large.txt"}))
+
+    assert result.is_error is True
+    assert "读取上限" in result.content
+
+
+@pytest.mark.asyncio
 async def test_list_files_returns_sorted_entries(tmp_path: Path) -> None:
     """测试目录列表按名称排序并标记子目录。"""
 
@@ -97,6 +111,25 @@ async def test_search_files_truncates_excessive_matches(tmp_path: Path) -> None:
     result = await manager.execute(_call("search_files", {"pattern": "needle"}))
 
     assert result.content.endswith(TRUNCATION_NOTICE)
+
+
+@pytest.mark.asyncio
+async def test_search_files_skips_ignored_binary_and_oversized_files(tmp_path: Path) -> None:
+    """测试搜索跳过常见运行目录、二进制和超大文件。"""
+
+    (tmp_path / "main.py").write_text("needle\n", encoding="utf-8")
+    ignored = tmp_path / ".git"
+    ignored.mkdir()
+    (ignored / "config").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "binary.bin").write_bytes(b"needle\0")
+    (tmp_path / "large.txt").write_bytes(
+        b"needle" + b"x" * MAX_FILE_READ_BYTES
+    )
+    manager = _manager(tmp_path, create_search_files_tool(tmp_path))
+
+    result = await manager.execute(_call("search_files", {"pattern": "needle"}))
+
+    assert result.content == "main.py:1: needle"
 
 
 @pytest.mark.asyncio
