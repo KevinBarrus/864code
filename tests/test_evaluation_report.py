@@ -113,6 +113,34 @@ def test_render_report_lists_all_failed_assertions() -> None:
     assert "工具顺序不正确" in html
 
 
+def test_render_report_distinguishes_estimated_and_actual_tokens() -> None:
+    """测试报告不会将本地估算值误写为服务端用量。"""
+
+    html = render_report(
+        [
+            EvaluationResult(
+                scenario="estimated-only",
+                duration_ms=10,
+                estimated_tokens=12,
+                assertions=(EvaluationAssertion("done", True),),
+            ),
+            EvaluationResult(
+                scenario="with-usage",
+                duration_ms=10,
+                estimated_tokens=20,
+                actual_tokens=18,
+                assertions=(EvaluationAssertion("done", True),),
+            ),
+        ]
+    )
+
+    assert "估算上下文 Token 基于本地字符估算，不等同于服务端 usage" in html
+    assert "估算上下文 Token" in html
+    assert "服务端实际 Token" in html
+    assert "<td>12</td><td></td>" in html
+    assert "<td>20</td><td>18</td>" in html
+
+
 def test_render_report_contains_baseline_regression() -> None:
     """测试报告包含 baseline 回归结果"""
 

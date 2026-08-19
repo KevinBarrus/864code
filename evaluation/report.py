@@ -90,7 +90,7 @@ def _evaluation_section(
 
     metrics = calculate_metrics(results)
     rows = "\n".join(_result_row(result) for result in results)
-    rows = rows or "<tr><td colspan=11>暂无结果</td></tr>"
+    rows = rows or "<tr><td colspan=13>暂无结果</td></tr>"
     failures = "\n".join(
         _failure_row(result, assertion)
         for result in results
@@ -102,6 +102,7 @@ def _evaluation_section(
   <h2>{escape(title)}</h2>
   <p>{escape(description)}</p>
   <p>样本数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
+  <p>估算上下文 Token 基于本地字符估算，不等同于服务端 usage；服务端实际 Token 无数据时留空</p>
   {_sample_size_note(metrics.scenario_count)}
   <section class="metrics">
     {_metric(completion_label, _percent(metrics.task_completion_rate))}
@@ -120,7 +121,7 @@ def _evaluation_section(
   </section>
   <h3>场景结果</h3>
   <table>
-    <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>错误类别</th><th>失败阶段</th><th>错误详情</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
+    <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>错误类别</th><th>失败阶段</th><th>错误详情</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th><th>估算上下文 Token</th><th>服务端实际 Token</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
   <h3>失败断言</h3>
@@ -145,7 +146,9 @@ def _result_row(result: EvaluationResult) -> str:
         f"<td>{escape(result.error_message or '-')}</td>"
         f"<td>{result.duration_ms:.2f} ms</td>"
         f"<td>{result.model_requests}</td><td>{result.tool_calls}</td>"
-        f"<td>{result.retries}</td><td>{result.compactions}</td></tr>"
+        f"<td>{result.retries}</td><td>{result.compactions}</td>"
+        f"<td>{result.estimated_tokens}</td>"
+        f"<td>{'' if result.actual_tokens is None else result.actual_tokens}</td></tr>"
     )
 
 

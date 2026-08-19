@@ -123,7 +123,7 @@ async def run_memory_scenario(workspace) -> EvaluationResult:
         duration_ms=(perf_counter() - started_at) * 1000,
         model_requests=len(client.requests),
         estimated_tokens=sum(
-            len(message.content) // 4 for request in client.requests for message in request
+            estimate_context_tokens(request) for request in client.requests
         ),
         persistence_degraded=not persistence_ok,
         events=tuple(events),

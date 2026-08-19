@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from evaluation.metrics import calculate_metrics
 from evaluation.models import EvaluationAssertion, EvaluationResult
 from evaluation.storage import append_result, load_results
@@ -67,6 +69,30 @@ def test_calculate_metrics_computes_percentiles_and_request_latency() -> None:
     assert metrics.average_model_request_duration_ms == 150
     assert metrics.p50_model_request_duration_ms == 150
     assert metrics.p95_model_request_duration_ms == 240
+
+
+@pytest.mark.asyncio
+async def test_memory_scenario_uses_cjk_aware_token_estimation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试中文会话评测复用核心 Token 估算函数。"""
+
+    from evaluation import scenarios
+    calls = 0
+
+    def estimate(messages) -> int:
+        """模拟核心 Token 估算函数并记录调用。"""
+
+        nonlocal calls
+        calls += 1
+        return 7
+
+    monkeypatch.setattr(scenarios, "estimate_context_tokens", estimate)
+    result = await scenarios.run_memory_scenario(tmp_path)
+
+    assert calls == 2
+    assert result.estimated_tokens == 14
 
 
 def test_results_can_round_trip_through_jsonl(tmp_path: Path) -> None:
