@@ -2,6 +2,7 @@
 
 import asyncio
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -15,6 +16,9 @@ from .session_store import SessionStore
 from .session_store import SessionStoreError
 from .status import create_status_info
 from .ui import run_chat
+
+
+logger = logging.getLogger(__name__)
 
 
 async def run(session_id: str | None = None, resume: bool = False) -> None:
@@ -69,6 +73,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except KeyboardInterrupt:
         print("\n已退出。")
+    except Exception:
+        logger.debug("启动过程发生未分类异常", exc_info=True)
+        print("运行错误：发生未预期错误，请重试或查看调试日志", file=sys.stderr)
+        return 1
     return 0
 
 

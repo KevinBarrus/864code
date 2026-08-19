@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,30 @@ class FakePicker:
         """返回预设的会话 ID"""
 
         return self.selected_id
+
+
+def test_main_handles_unexpected_error_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """测试未知异常只展示简洁提示并保留调试异常链"""
+
+    def raise_unexpected_error(coroutine) -> None:
+        """模拟 asyncio 运行阶段发生未知异常"""
+
+        coroutine.close()
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(main.asyncio, "run", raise_unexpected_error)
+    with caplog.at_level(logging.DEBUG, logger="core.main"):
+        exit_code = main.main([])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "运行错误：发生未预期错误，请重试或查看调试日志" in captured.err
+    assert "Traceback" not in captured.err
+    assert caplog.records[0].exc_info is not None
 
 
 @pytest.mark.asyncio
