@@ -149,12 +149,31 @@ def _to_model_error(error: BaseException) -> ModelClientError:
 
 
 def _is_context_overflow_error(error: BaseException) -> bool:
-    """根据服务端错误文本识别上下文长度超限。"""
+    """根据服务端结构化错误码识别上下文长度超限。"""
 
-    message = str(error).lower()
     return any(
-        marker in message
-        for marker in ("context length", "context window", "maximum context", "too many tokens")
+        code in {
+            "context_length_exceeded",
+            "context_window_exceeded",
+            "max_context_length_exceeded",
+        }
+        for code in _error_codes(error)
+    )
+
+
+def _error_codes(error: BaseException) -> tuple[str, ...]:
+    """读取 SDK 异常中可用于分类的结构化错误码。"""
+
+    values = [getattr(error, "code", None)]
+    body = getattr(error, "body", None)
+    if isinstance(body, Mapping):
+        details = body.get("error")
+        if isinstance(details, Mapping):
+            values.extend((details.get("code"), details.get("type")))
+    return tuple(
+        value.strip().lower()
+        for value in values
+        if isinstance(value, str) and value.strip()
     )
 
 

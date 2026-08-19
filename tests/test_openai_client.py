@@ -270,8 +270,42 @@ async def test_client_times_out_when_stream_becomes_idle() -> None:
 
 
 @pytest.mark.asyncio
-async def test_client_classifies_context_overflow_error() -> None:
-    """测试服务端上下文超限会被单独分类。"""
+@pytest.mark.parametrize(
+    "attributes",
+    (
+        {"code": "context_length_exceeded"},
+        {"body": {"error": {"type": "context_window_exceeded"}}},
+    ),
+)
+async def test_client_classifies_context_overflow_by_structured_code(
+    attributes: dict[str, object],
+) -> None:
+    """测试服务端结构化上下文错误码会被单独分类。"""
+
+    class BadRequestError(Exception):
+        def __init__(self, message: str, **kwargs: object) -> None:
+            super().__init__(message)
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    class FailingCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            raise BadRequestError("上下文超过限制", **attributes)
+
+    failing_sdk = SimpleNamespace(
+        chat=SimpleNamespace(completions=FailingCompletions())
+    )
+    client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError) as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "context_overflow"
+
+
+@pytest.mark.asyncio
+async def test_client_does_not_guess_context_overflow_from_error_text() -> None:
+    """测试没有结构化错误码时不会按错误文本猜测上下文超限。"""
 
     class BadRequestError(Exception):
         pass
@@ -288,7 +322,7 @@ async def test_client_classifies_context_overflow_error() -> None:
     with pytest.raises(ModelClientError) as error_info:
         await _collect(client)
 
-    assert error_info.value.category == "context_overflow"
+    assert error_info.value.category == "invalid_request"
 
 
 @pytest.mark.asyncio
