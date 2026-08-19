@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .error_policy import AgentErrorPolicy
 from .errors import AgentError
@@ -43,6 +43,14 @@ class AgentLoopError(RuntimeError):
     """Agent Loop 无法继续执行时抛出的异常。"""
 
 
+class AgentLoopCancelled(asyncio.CancelledError):
+    """保存取消前已产生消息的 Agent Loop 取消异常。"""
+
+    def __init__(self, new_messages: tuple[Message, ...]) -> None:
+        super().__init__("Agent Loop 已取消")
+        self.new_messages = new_messages
+
+
 class AgentLoop:
     """负责请求模型、执行工具并把结果继续交给模型。"""
 
@@ -68,48 +76,67 @@ class AgentLoop:
 
         context = list(messages)
         new_messages: list[Message] = []
-        for _ in range(self._max_tool_rounds + 1):
-            text_parts: list[str] = []
-            tool_calls: list[ToolCall] = []
-            async for event in self._stream_model_events(
-                context,
-                tools=self._tool_manager.model_tools(),
-            ):
-                if on_event is not None:
-                    await on_event(event)
-                if isinstance(event, TextDelta):
-                    text_parts.append(event.content)
-                elif isinstance(event, ToolCallEvent):
-                    tool_calls.append(event.tool_call)
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        try:
+            for _ in range(self._max_tool_rounds + 1):
+                text_parts = []
+                tool_calls = []
+                async for event in self._stream_model_events(
+                    context,
+                    tools=self._tool_manager.model_tools(),
+                ):
+                    if isinstance(event, TextDelta):
+                        text_parts.append(event.content)
+                    elif isinstance(event, ToolCallEvent):
+                        tool_calls.append(event.tool_call)
+                    if on_event is not None:
+                        await on_event(event)
 
-            assistant_content = "".join(text_parts)
-            assistant_message = Message(
-                role="assistant",
-                content=assistant_content,
-                tool_calls=tuple(tool_calls),
-            )
-            context.append(assistant_message)
-            new_messages.append(assistant_message)
-            if not tool_calls:
-                return AgentRunResult(
-                    tuple(context),
-                    assistant_content,
-                    tuple(new_messages),
+                assistant_content = "".join(text_parts)
+                completed_tool_calls = tuple(tool_calls)
+                assistant_message = Message(
+                    role="assistant",
+                    content=assistant_content,
+                    tool_calls=completed_tool_calls,
                 )
+                context.append(assistant_message)
+                new_messages.append(assistant_message)
+                text_parts = []
+                tool_calls = []
+                if not completed_tool_calls:
+                    return AgentRunResult(
+                        tuple(context),
+                        assistant_content,
+                        tuple(new_messages),
+                    )
 
-            for tool_call in tool_calls:
-                result = await self._tool_manager.execute(tool_call)
-                tool_message = Message(
-                    role="tool",
-                    content=result.content,
-                    tool_call_id=tool_call.call_id,
+                for tool_call in completed_tool_calls:
+                    result = await self._tool_manager.execute(tool_call)
+                    tool_message = Message(
+                        role="tool",
+                        content=result.content,
+                        tool_call_id=tool_call.call_id,
+                    )
+                    context.append(tool_message)
+                    new_messages.append(tool_message)
+                    if on_event is not None:
+                        await on_event(ToolExecutionEvent(tool_call, result))
+
+            raise AgentLoopError("工具调用轮次超过限制")
+        except asyncio.CancelledError as exc:
+            if text_parts or tool_calls:
+                new_messages.append(
+                    Message(
+                        role="assistant",
+                        content="".join(text_parts),
+                        tool_calls=tuple(tool_calls),
+                        status="cancelled",
+                    )
                 )
-                context.append(tool_message)
-                new_messages.append(tool_message)
-                if on_event is not None:
-                    await on_event(ToolExecutionEvent(tool_call, result))
-
-        raise AgentLoopError("工具调用轮次超过限制")
+            else:
+                _mark_last_assistant_cancelled(new_messages)
+            raise AgentLoopCancelled(tuple(new_messages)) from exc
 
     async def _stream_model_events(
         self,
@@ -137,3 +164,12 @@ class AgentLoop:
                 attempt += 1
                 if decision.delay_seconds:
                     await asyncio.sleep(decision.delay_seconds)
+
+
+def _mark_last_assistant_cancelled(messages: list[Message]) -> None:
+    """将最后一条模型消息标记为取消状态。"""
+
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].role == "assistant":
+            messages[index] = replace(messages[index], status="cancelled")
+            return

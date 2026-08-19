@@ -1,8 +1,9 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 
 import pytest
 
-from core.agent_loop import AgentLoop, ToolExecutionEvent
+from core.agent_loop import AgentLoop, AgentLoopCancelled, ToolExecutionEvent
 from core.errors import AgentError
 from core.model import (
     Message,
@@ -162,3 +163,51 @@ async def test_agent_loop_does_not_retry_after_partial_model_output() -> None:
         )
 
     assert client.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_keeps_completed_tool_chain_when_cancelled(tmp_path) -> None:
+    """测试取消后仍保留已完成的工具调用和结果。"""
+
+    class BlockingClient(FakeModelClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+
+        async def stream_response(
+            self,
+            messages: Sequence[Message],
+            tools: Sequence[dict[str, object]] = (),
+        ) -> AsyncIterator[ModelEvent]:
+            self.requests.append(list(messages))
+            if len(self.requests) == 1:
+                yield ToolCallEvent(
+                    ToolCall("call-1", "read_file", {"path": "README.md"})
+                )
+                return
+            self.started.set()
+            await asyncio.Event().wait()
+            yield TextDelta("不会返回")
+
+    (tmp_path / "README.md").write_text("项目说明", encoding="utf-8")
+    client = BlockingClient()
+    manager = ToolManager()
+    manager.register_local(*create_read_file_tool(tmp_path))
+    task = asyncio.create_task(
+        AgentLoop(client, manager).run([Message(role="user", content="读取说明")])
+    )
+    await client.started.wait()
+    task.cancel()
+
+    with pytest.raises(AgentLoopCancelled) as error:
+        await task
+
+    assert error.value.new_messages == (
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "README.md"}),),
+            status="cancelled",
+        ),
+        Message(role="tool", content="项目说明", tool_call_id="call-1"),
+    )

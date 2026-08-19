@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 
-from .agent_loop import AgentLoop, AgentLoopError
+from .agent_loop import AgentLoop, AgentLoopCancelled, AgentLoopError
 from .errors import AgentError
 from .screen import ChatScreen
 from .status import StatusInfo
@@ -62,6 +62,7 @@ async def run_chat(
                 if awaiting_response_after_tool:
                     response_index = screen.add_entry("assistant", "")
                     awaiting_response_after_tool = False
+                    response_parts.clear()
                 response_parts.append(event.content)
                 screen.append_to_entry(response_index, event.content)
             elif isinstance(event, ToolCallEvent):
@@ -91,10 +92,19 @@ async def run_chat(
                     "⚠ Context summary failed; recent history only",
                 )
             result = await agent_loop.run(context_result.messages, on_event=handle_event)
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             # 取消时保留已生成的部分回复，供下一轮继续参考
+            cancelled_messages = (
+                exc.new_messages if isinstance(exc, AgentLoopCancelled) else ()
+            )
+            _persist_new_messages(session, cancelled_messages)
             response = "".join(response_parts)
-            if response:
+            if response and not any(
+                message.role == "assistant"
+                and message.content == response
+                and message.status == "cancelled"
+                for message in cancelled_messages
+            ):
                 session.add_message(
                     Message(
                         role="assistant",
