@@ -75,12 +75,14 @@ class Session:
 
         return list(self._compactions)
 
-    def add_compaction(self, compaction: CompactionRecord) -> None:
-        """持久化并追加一条上下文压缩记录"""
+    def add_compaction(self, compaction: CompactionRecord) -> bool:
+        """仅在消息写入完成后持久化并追加压缩记录"""
 
-        self._persistence.flush()
+        if not self._persistence.flush():
+            return False
         self._store.append_compaction(self.session_id, compaction)
         self._compactions.append(compaction)
+        return True
 
     def flush_persistence(self) -> bool:
         """等待当前消息队列写入完成并返回持久化状态"""

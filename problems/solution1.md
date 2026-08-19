@@ -26,7 +26,7 @@
 
 验收：模拟写入失败、重新创建 Session 后，pending 消息可以恢复
 
-完成记录：新增 Session 专属 pending JSONL，持久化失败消息会落盘，`Session.restore` 会尝试迁移并恢复 pending 消息，相关测试通过（32 passed）
+完成记录：新增 Session 专属 pending JSONL，持久化失败消息会落盘，`Session.restore` 会尝试迁移并恢复 pending 消息；主日志每次追加后会刷新并同步到磁盘，且消息未成功写入主日志时不会追加压缩记录，相关测试通过（33 passed）
 
 ## 问题 3 方案：处理 JSONL 尾部损坏（已完成）
 

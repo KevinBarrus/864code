@@ -167,6 +167,24 @@ def test_session_add_compaction_updates_runtime_and_store(tmp_path: Path) -> Non
     assert SessionStore(tmp_path).load_compactions(session.session_id) == [compaction]
 
 
+def test_session_skips_compaction_when_message_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试消息未写入主日志时不会追加压缩记录。"""
+
+    def fail_append(self, session_id: str, message: Message) -> None:
+        raise OSError("JSONL 不可写入")
+
+    monkeypatch.setattr(SessionStore, "append_message", fail_append)
+    session = Session(tmp_path)
+    session.add_user_message("待保存消息")
+
+    assert not session.add_compaction(CompactionRecord("摘要", 0, 100))
+    assert session.get_compactions() == []
+    assert SessionStore(tmp_path).load_compactions(session.session_id) == []
+
+
 class SummaryClient:
     """为恢复测试提供固定的结构化摘要。"""
 

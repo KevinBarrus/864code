@@ -1,6 +1,7 @@
 """负责会话消息的 JSONL 文件读写。"""
 
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -99,17 +100,13 @@ class SessionStore:
     ) -> None:
         """将一次上下文压缩记录追加到指定会话的 JSONL 文件。"""
 
-        session_path = self._session_path(session_id)
-        session_path.parent.mkdir(parents=True, exist_ok=True)
         record = {
             "type": "compaction",
             "summary": compaction.summary,
             "first_kept_message_index": compaction.first_kept_message_index,
             "tokens_before": compaction.tokens_before,
         }
-        with session_path.open("a", encoding="utf-8") as file:
-            json.dump(record, file, ensure_ascii=False)
-            file.write("\n")
+        self._append_record(session_id, record)
 
     def load_messages(self, session_id: str) -> list[Message]:
         """按文件顺序读取指定会话的全部消息。"""
@@ -189,6 +186,8 @@ class SessionStore:
         with path.open("a", encoding="utf-8") as file:
             json.dump(record, file, ensure_ascii=False)
             file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
 
     @staticmethod
     def _read_records(path: Path) -> list[tuple[int, object]]:
