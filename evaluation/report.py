@@ -67,7 +67,7 @@ def render_report(
   </section>
   <h2>场景结果</h2>
   <table>
-    <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>失败阶段</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
+    <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>错误类别</th><th>失败阶段</th><th>错误详情</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
   <h2>失败断言</h2>
@@ -90,7 +90,9 @@ def _result_row(result: EvaluationResult) -> str:
         f"<tr><td>{escape(result.scenario)}</td>"
         f"<td>{_evaluation_type_label(result.evaluation_type)}</td>"
         f"<td class=\"{status_class}\">{status}</td>"
+        f"<td>{escape(result.error_category or '-')}</td>"
         f"<td>{escape(result.error_stage or '-')}</td>"
+        f"<td>{escape(result.error_message or '-')}</td>"
         f"<td>{result.duration_ms:.2f} ms</td>"
         f"<td>{result.model_requests}</td><td>{result.tool_calls}</td>"
         f"<td>{result.retries}</td><td>{result.compactions}</td></tr>"

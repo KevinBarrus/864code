@@ -13,7 +13,9 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
             EvaluationResult(
                 scenario="demo",
                 duration_ms=12,
+                error_category="configuration",
                 error_stage="agent-loop",
+                error_message="ConfigError: <MODEL_NAME> is missing",
                 assertions=(EvaluationAssertion("done", True),),
             )
         ]
@@ -25,7 +27,9 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
     assert "P50 耗时" in html
     assert "P95 耗时" in html
     assert "demo" in html
+    assert "configuration" in html
     assert "agent-loop" in html
+    assert "ConfigError: &lt;MODEL_NAME&gt; is missing" in html
     assert "通过" in html
 
 
