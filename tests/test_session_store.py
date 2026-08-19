@@ -54,6 +54,43 @@ def test_load_messages_restores_history_in_order(tmp_path: Path) -> None:
     assert store.load_messages(session_id) == expected
 
 
+def test_load_messages_ignores_incomplete_tail_record(tmp_path: Path) -> None:
+    """测试最后一条未完成 JSONL 记录不会阻止历史恢复。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '{"type":"message","role":"user","content":"历史"}\n'
+        '{"type":"message","role":"assistant","content":"未完成',
+        encoding="utf-8",
+    )
+
+    assert store.load_messages(session_id) == [
+        Message(role="user", content="历史")
+    ]
+
+
+def test_load_compactions_ignores_incomplete_tail_record(tmp_path: Path) -> None:
+    """测试压缩记录文件最后一条未完成记录可以被忽略。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '{"type":"compaction","summary":"摘要",'
+        '"first_kept_message_index":1,"tokens_before":10}\n'
+        '{"type":"compaction","summary":"未完成',
+        encoding="utf-8",
+    )
+
+    assert store.load_compactions(session_id) == [
+        CompactionRecord("摘要", 1, 10)
+    ]
+
+
 def test_compaction_record_is_persisted_and_loaded_separately(tmp_path: Path) -> None:
     """测试压缩记录与消息记录共存但分开读取。"""
 

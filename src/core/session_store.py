@@ -115,45 +115,21 @@ class SessionStore:
         """按文件顺序读取指定会话的全部消息。"""
 
         session_path = self._session_path(session_id)
-        if not session_path.exists():
-            return []
-
         messages: list[Message] = []
-        with session_path.open(encoding="utf-8") as file:
-            for line_number, line in enumerate(file, start=1):
-                if not line.strip():
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise SessionStoreError(
-                        f"第 {line_number} 行不是有效 JSON"
-                    ) from exc
-                if isinstance(record, dict) and record.get("type") == "compaction":
-                    continue
-                messages.append(self._message_from_record(record, line_number))
+        for line_number, record in self._read_records(session_path):
+            if isinstance(record, dict) and record.get("type") == "compaction":
+                continue
+            messages.append(self._message_from_record(record, line_number))
         return messages
 
     def load_compactions(self, session_id: str) -> list[CompactionRecord]:
         """按文件顺序读取指定会话的上下文压缩记录。"""
 
         session_path = self._session_path(session_id)
-        if not session_path.exists():
-            return []
-
         compactions: list[CompactionRecord] = []
-        with session_path.open(encoding="utf-8") as file:
-            for line_number, line in enumerate(file, start=1):
-                if not line.strip():
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    raise SessionStoreError(
-                        f"第 {line_number} 行不是有效 JSON"
-                    ) from exc
-                if isinstance(record, dict) and record.get("type") == "compaction":
-                    compactions.append(self._compaction_from_record(record, line_number))
+        for line_number, record in self._read_records(session_path):
+            if isinstance(record, dict) and record.get("type") == "compaction":
+                compactions.append(self._compaction_from_record(record, line_number))
         return compactions
 
     def list_sessions(self) -> list[SessionSummary]:
@@ -213,6 +189,27 @@ class SessionStore:
         with path.open("a", encoding="utf-8") as file:
             json.dump(record, file, ensure_ascii=False)
             file.write("\n")
+
+    @staticmethod
+    def _read_records(path: Path) -> list[tuple[int, object]]:
+        """读取 JSONL 记录并忽略最后一条未完成记录。"""
+
+        if not path.exists():
+            return []
+        records: list[tuple[int, object]] = []
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                records.append((line_number, json.loads(line)))
+            except json.JSONDecodeError as exc:
+                if line_number == len(lines) and not line.endswith("\n"):
+                    continue
+                raise SessionStoreError(
+                    f"第 {line_number} 行不是有效 JSON"
+                ) from exc
+        return records
 
     @staticmethod
     def _message_record(message: Message) -> dict[str, object]:
