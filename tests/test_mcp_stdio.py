@@ -20,7 +20,7 @@ for line in sys.stdin:
     if method == "initialize":
         result = {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "test"}}
     elif method == "tools/list":
-        result = {"tools": [{"name": "remote_echo", "description": "回显", "inputSchema": {"type": "object"}}]}
+        result = {"tools": [{"name": "remote_echo", "description": "回显", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True, "idempotentHint": True}}]}
     elif method == "tools/call":
         result = {"content": [{"type": "text", "text": request["params"]["arguments"]["text"]}]}
     else:
@@ -47,5 +47,7 @@ async def test_stdio_provider_lists_and_calls_tools(tmp_path: Path) -> None:
 
     assert definitions[0].name == "remote_echo"
     assert definitions[0].provider_id == "test-server"
+    assert definitions[0].permission == "read"
+    assert definitions[0].idempotent is True
     assert result.content == "hello"
     assert result.is_error is False

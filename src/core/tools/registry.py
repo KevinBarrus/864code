@@ -67,24 +67,34 @@ class ToolRegistry:
     def __init__(self) -> None:
         """创建空的统一工具注册表。"""
 
-        self._tools: dict[str, ToolBinding] = {}
+        self._tools_by_name: dict[str, ToolBinding] = {}
+        self._tools_by_route: dict[tuple[str, str, str], ToolBinding] = {}
 
     def register(self, binding: ToolBinding) -> None:
         """注册一个工具绑定，模型可见名称必须全局唯一。"""
 
-        name = binding.definition.name
+        definition = binding.definition
+        name = definition.name
         if binding.definition.source not in {"local", "mcp"}:
             raise ToolRegistrationError("工具来源不受支持")
-        if name in self._tools:
+        route_key = (
+            definition.source,
+            definition.provider_id,
+            definition.provider_tool_name or definition.name,
+        )
+        if route_key in self._tools_by_route:
+            raise ToolRegistrationError(f"工具路由已注册：{route_key[2]}")
+        if name in self._tools_by_name:
             raise ToolRegistrationError(f"工具已注册：{name}")
-        self._tools[name] = binding
+        self._tools_by_name[name] = binding
+        self._tools_by_route[route_key] = binding
 
     def get(self, name: str) -> ToolBinding | None:
         """根据模型可见名称查找工具绑定。"""
 
-        return self._tools.get(name)
+        return self._tools_by_name.get(name)
 
     def definitions(self) -> list[ToolDefinition]:
         """返回所有来源的工具定义。"""
 
-        return [tool.definition for tool in self._tools.values()]
+        return [tool.definition for tool in self._tools_by_name.values()]

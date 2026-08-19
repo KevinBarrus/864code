@@ -55,14 +55,18 @@ class StdioMcpProvider(McpToolProvider):
                 raise McpProtocolError("MCP 工具缺少有效名称")
             if not isinstance(description, str) or not isinstance(schema, dict):
                 raise McpProtocolError(f"MCP 工具定义无效：{name}")
+            annotations = raw_tool.get("annotations", {})
+            if not isinstance(annotations, Mapping):
+                raise McpProtocolError(f"MCP 工具 annotations 无效：{name}")
+            read_only = annotations.get("readOnlyHint") is True
             definitions.append(
                 ToolDefinition(
                     name=name,
                     description=description,
                     parameters=schema,
                     source="mcp",
-                    permission="write",
-                    idempotent=False,
+                    permission="read" if read_only else "write",
+                    idempotent=annotations.get("idempotentHint") is True,
                     provider_id=self._provider_id,
                 )
             )

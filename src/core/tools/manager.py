@@ -1,6 +1,7 @@
 """统一调度已注册工具。"""
 
 import asyncio
+from dataclasses import replace
 
 from ..errors import AgentError
 from ..model import ToolCall, ToolResult
@@ -44,9 +45,20 @@ class ToolManager:
 
         mcp_registry = McpToolRegistry()
         for definition in await provider.list_tools():
-            mcp_registry.register(definition, provider)
+            model_name = f"mcp_{definition.provider_id}_{definition.name}"
+            mcp_registry.register(
+                replace(
+                    definition,
+                    name=model_name,
+                    provider_tool_name=definition.name,
+                ),
+                provider,
+            )
         for definition in mcp_registry.definitions():
-            binding = mcp_registry.get(definition.name)
+            binding = mcp_registry.get(
+                definition.provider_id,
+                definition.provider_tool_name or definition.name,
+            )
             assert isinstance(binding, RegisteredMcpTool)
             self._registry.register(binding)
 

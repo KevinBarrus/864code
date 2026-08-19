@@ -31,6 +31,7 @@ class ToolDefinition:
     idempotent: bool
     capability: str | None = None
     provider_id: str = "builtin"
+    provider_tool_name: str | None = None
 
     @property
     def route(self) -> ToolRoute:

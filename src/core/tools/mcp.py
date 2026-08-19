@@ -32,7 +32,13 @@ class RegisteredMcpTool:
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """调用 MCP 提供者并返回统一工具结果。"""
 
-        return await self.provider.call_tool(tool_call)
+        return await self.provider.call_tool(
+            ToolCall(
+                call_id=tool_call.call_id,
+                name=self.definition.provider_tool_name or self.definition.name,
+                arguments=tool_call.arguments,
+            )
+        )
 
 
 class McpToolRegistry:
@@ -41,25 +47,28 @@ class McpToolRegistry:
     def __init__(self) -> None:
         """创建空的 MCP 工具注册表。"""
 
-        self._tools: dict[str, RegisteredMcpTool] = {}
+        self._tools: dict[tuple[str, str], RegisteredMcpTool] = {}
 
     def register(
         self,
         definition: ToolDefinition,
         provider: McpToolProvider,
     ) -> None:
-        """注册一个 MCP 工具，重复名称直接拒绝。"""
+        """按 Provider 和原始工具名注册一个 MCP 工具。"""
 
         if definition.source != "mcp":
             raise McpToolRegistrationError("MCP 注册表只能注册 mcp 工具")
-        if definition.name in self._tools:
-            raise McpToolRegistrationError(f"工具已注册：{definition.name}")
-        self._tools[definition.name] = RegisteredMcpTool(definition, provider)
+        if not definition.provider_id or definition.provider_id == "builtin":
+            raise McpToolRegistrationError("MCP 工具缺少有效 provider_id")
+        key = (definition.provider_id, definition.provider_tool_name or definition.name)
+        if key in self._tools:
+            raise McpToolRegistrationError(f"工具已注册：{key[1]}")
+        self._tools[key] = RegisteredMcpTool(definition, provider)
 
-    def get(self, name: str) -> RegisteredMcpTool | None:
-        """根据名称查找 MCP 工具。"""
+    def get(self, provider_id: str, name: str) -> RegisteredMcpTool | None:
+        """根据 Provider 和原始工具名查找 MCP 工具。"""
 
-        return self._tools.get(name)
+        return self._tools.get((provider_id, name))
 
     def definitions(self) -> list[ToolDefinition]:
         """返回已注册的 MCP 工具定义。"""

@@ -29,7 +29,11 @@ class FakeMcpProvider:
         return ToolResult(tool_call.call_id, "完成")
 
 
-def _definition(source: str = "mcp", name: str = "remote_tool") -> ToolDefinition:
+def _definition(
+    source: str = "mcp",
+    name: str = "remote_tool",
+    provider_id: str = "test-server",
+) -> ToolDefinition:
     """构造测试用 MCP 工具定义。"""
 
     return ToolDefinition(
@@ -39,6 +43,7 @@ def _definition(source: str = "mcp", name: str = "remote_tool") -> ToolDefinitio
         source=source,  # type: ignore[arg-type]
         permission="read",
         idempotent=True,
+        provider_id=provider_id,
     )
 
 
@@ -59,8 +64,8 @@ def test_mcp_registry_registers_and_lists_tools() -> None:
 
     registry.register(definition, provider)
 
-    assert registry.get(definition.name) is not None
-    assert registry.get(definition.name).provider is provider
+    assert registry.get("filesystem_server", definition.name) is not None
+    assert registry.get("filesystem_server", definition.name).provider is provider
     assert registry.definitions() == [definition]
     assert definition.route == ToolRoute("mcp", "filesystem_server")
 
@@ -125,5 +130,36 @@ async def test_tool_manager_discovers_mcp_provider_tools() -> None:
     await manager.register_mcp_provider(FakeMcpProvider())
 
     assert [definition.name for definition in manager.list_definitions()] == [
-        "remote_tool"
+        "mcp_test-server_remote_tool"
     ]
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_routes_same_tool_name_to_its_mcp_provider() -> None:
+    """测试两个 MCP Provider 的同名工具可以分别注册和执行。"""
+
+    class NamedProvider:
+        def __init__(self, provider_id: str) -> None:
+            self.provider_id = provider_id
+            self.calls: list[str] = []
+
+        async def list_tools(self) -> Sequence[ToolDefinition]:
+            return [_definition(name="search", provider_id=self.provider_id)]
+
+        async def call_tool(self, tool_call: ToolCall) -> ToolResult:
+            self.calls.append(tool_call.name)
+            return ToolResult(tool_call.call_id, self.provider_id)
+
+    first = NamedProvider("first")
+    second = NamedProvider("second")
+    manager = ToolManager()
+    await manager.register_mcp_provider(first)
+    await manager.register_mcp_provider(second)
+
+    first_result = await manager.execute(ToolCall("call-1", "mcp_first_search", {}))
+    second_result = await manager.execute(ToolCall("call-2", "mcp_second_search", {}))
+
+    assert first_result.content == "first"
+    assert second_result.content == "second"
+    assert first.calls == ["search"]
+    assert second.calls == ["search"]
