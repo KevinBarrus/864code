@@ -91,6 +91,28 @@ def test_render_report_marks_small_sample_percentiles_as_observations() -> None:
     assert "请求 P95（观察值）" in real_task_section
 
 
+def test_render_report_lists_all_failed_assertions() -> None:
+    """测试同一场景的多个失败原因都会显示。"""
+
+    html = render_report(
+        [
+            EvaluationResult(
+                scenario="failed-task",
+                duration_ms=10,
+                assertions=(
+                    EvaluationAssertion("file-content", False, "文件内容不正确"),
+                    EvaluationAssertion("tool-order", False, "工具顺序不正确"),
+                ),
+            )
+        ]
+    )
+
+    assert "file-content" in html
+    assert "文件内容不正确" in html
+    assert "tool-order" in html
+    assert "工具顺序不正确" in html
+
+
 def test_render_report_contains_baseline_regression() -> None:
     """测试报告包含 baseline 回归结果"""
 

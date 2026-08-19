@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .baseline import RegressionReport
 from .metrics import calculate_metrics
-from .models import EvaluationResult
+from .models import EvaluationAssertion, EvaluationResult
 
 
 MIN_STABLE_SAMPLE_COUNT = 20
@@ -92,7 +92,7 @@ def _evaluation_section(
     rows = "\n".join(_result_row(result) for result in results)
     rows = rows or "<tr><td colspan=11>暂无结果</td></tr>"
     failures = "\n".join(
-        _failure_row(result)
+        _failure_row(result, assertion)
         for result in results
         for assertion in result.assertions
         if not assertion.passed
@@ -160,10 +160,9 @@ def _evaluation_type_label(evaluation_type: str) -> str:
     return labels[evaluation_type]
 
 
-def _failure_row(result: EvaluationResult) -> str:
-    """生成失败断言的 HTML 行"""
+def _failure_row(result: EvaluationResult, assertion: EvaluationAssertion) -> str:
+    """生成一条失败断言的 HTML 行。"""
 
-    assertion = next(assertion for assertion in result.assertions if not assertion.passed)
     return (
         f"<tr><td>{escape(result.scenario)}</td>"
         f"<td>{escape(assertion.name)}</td>"
