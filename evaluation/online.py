@@ -31,7 +31,75 @@ from .baseline import compare_baseline, create_baseline, load_baseline, write_ba
 from .report import generate_report
 from .storage import append_result
 
-ONLINE_SCENARIO_VERSION = "1"
+ONLINE_SCENARIO_VERSION = "2"
+
+
+@dataclass(frozen=True)
+class _OnlineFileTask:
+    """描述一条使用真实模型执行的确定性文件任务。"""
+
+    name: str
+    prompt: str
+    initial_files: tuple[tuple[str, str], ...]
+    expected_files: tuple[tuple[str, str], ...]
+    unchanged_files: tuple[tuple[str, str], ...]
+    required_reads: tuple[str, ...]
+    required_edits: tuple[str, ...]
+    reply_keywords: tuple[str, ...]
+    failed_read_path: str | None = None
+
+
+ONLINE_FILE_TASKS = (
+    _OnlineFileTask(
+        name="online_single_file_edit",
+        prompt=(
+            "请先读取 note.txt，再将其中的 before 改为 after。"
+            "不要修改 keep.txt。完成后说明 note.txt 已完成修改"
+        ),
+        initial_files=(("note.txt", "before\n"), ("keep.txt", "keep\n")),
+        expected_files=(("note.txt", "after\n"),),
+        unchanged_files=(("keep.txt", "keep\n"),),
+        required_reads=("note.txt",),
+        required_edits=("note.txt",),
+        reply_keywords=("note.txt", "完成"),
+    ),
+    _OnlineFileTask(
+        name="online_multi_file_edit",
+        prompt=(
+            "请先分别读取 config.txt 和 note.txt，再将 config.txt 中的 "
+            "old-config 改为 new-config、note.txt 中的 old-note 改为 new-note。"
+            "不要修改 keep.txt。完成后说明 config.txt 和 note.txt 已完成修改"
+        ),
+        initial_files=(
+            ("config.txt", "old-config\n"),
+            ("note.txt", "old-note\n"),
+            ("keep.txt", "keep\n"),
+        ),
+        expected_files=(
+            ("config.txt", "new-config\n"),
+            ("note.txt", "new-note\n"),
+        ),
+        unchanged_files=(("keep.txt", "keep\n"),),
+        required_reads=("config.txt", "note.txt"),
+        required_edits=("config.txt", "note.txt"),
+        reply_keywords=("config.txt", "note.txt", "完成"),
+    ),
+    _OnlineFileTask(
+        name="online_tool_failure_recovery",
+        prompt=(
+            "请先尝试读取不存在的 missing.txt。收到工具错误后，读取 note.txt，"
+            "再将其中的 before 改为 after。不要修改 keep.txt。完成后说明 "
+            "note.txt 已完成修改"
+        ),
+        initial_files=(("note.txt", "before\n"), ("keep.txt", "keep\n")),
+        expected_files=(("note.txt", "after\n"),),
+        unchanged_files=(("keep.txt", "keep\n"),),
+        required_reads=("note.txt",),
+        required_edits=("note.txt",),
+        reply_keywords=("note.txt", "完成"),
+        failed_read_path="missing.txt",
+    ),
+)
 
 
 class TimedModelClient:
@@ -152,28 +220,40 @@ def _error_category(error: Exception) -> str:
 
 
 async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
-    """在临时工作区执行一条真实模型主链路冒烟评测"""
+    """兼容原入口，执行单文件真实任务。"""
 
-    state = _OnlineRunState("online_main_smoke", "real-task")
-    return await _run_with_diagnostics(state, _run_online_smoke(state, env_path))
+    return await run_online_file_task(ONLINE_FILE_TASKS[0], env_path)
 
 
-async def _run_online_smoke(
+async def run_online_file_task(
+    task: _OnlineFileTask,
+    env_path: Path | None = None,
+) -> EvaluationResult:
+    """在独立工作区执行一条真实文件任务并保留诊断结果。"""
+
+    state = _OnlineRunState(task.name, "real-task")
+    return await _run_with_diagnostics(state, _run_online_file_task(state, task, env_path))
+
+
+async def _run_online_file_task(
     state: _OnlineRunState,
+    task: _OnlineFileTask,
     env_path: Path | None,
 ) -> EvaluationResult:
-    """执行真实模型主链路并持续更新诊断状态。"""
+    """执行真实文件任务并持续更新诊断状态。"""
 
     state.stage = "load-settings"
     settings = load_settings(env_path)
     with tempfile.TemporaryDirectory(prefix="864code-online-") as directory:
         workspace = Path(directory)
-        target = workspace / "note.txt"
-        target.write_text("before\n", encoding="utf-8")
+        for path, content in task.initial_files:
+            (workspace / path).write_text(content, encoding="utf-8")
         client = TimedModelClient(OpenAICompatibleClient(settings))
         state.client = client
 
-        async def approve_write(definition, tool_call):
+        async def approve_write(definition, tool_call, allow_session):
+            """允许评测任务执行单次文件编辑。"""
+
             return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
         manager = ToolManager(
@@ -187,13 +267,11 @@ async def _run_online_smoke(
             message_to_record(
                 Message(
                     role="user",
-                    content="请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果",
+                    content=task.prompt,
                 )
             )
         )
-        session.add_user_message(
-            "请先读取 note.txt，然后把内容从 before 改成 after，完成后告诉我结果"
-        )
+        session.add_user_message(task.prompt)
 
         async def collect_event(event: object) -> None:
             events.append(event_to_record(event))
@@ -213,18 +291,27 @@ async def _run_online_smoke(
         restored.close()
 
         tool_events = [event for event in events if event["type"] == "tool_result"]
-        tool_names = [event["name"] for event in tool_events]
         events.append(message_to_record(Message(role="assistant", content=result.final_content)))
-        assertions = (
+        assertions = [
             EvaluationAssertion(
                 "file-content",
-                target.read_text(encoding="utf-8").strip() == "after",
-                "真实模型没有完成文件修改",
+                _files_match(workspace, task.expected_files),
+                "真实模型没有完成预期文件修改",
             ),
             EvaluationAssertion(
                 "tool-chain",
-                "read_file" in tool_names and "edit_file" in tool_names,
-                "真实模型没有完成读取和编辑工具调用",
+                _has_expected_tool_order(events, task),
+                "真实模型没有按先读取后编辑的顺序调用目标工具",
+            ),
+            EvaluationAssertion(
+                "unrelated-files",
+                _files_match(workspace, task.unchanged_files),
+                "真实模型修改了无关文件",
+            ),
+            EvaluationAssertion(
+                "final-response",
+                _contains_keywords(result.final_content, task.reply_keywords),
+                "最终回复缺少任务完成关键信息",
             ),
             EvaluationAssertion(
                 "session-restore",
@@ -236,9 +323,17 @@ async def _run_online_smoke(
                 persistence_ok,
                 "真实 Session Flush 失败",
             ),
-        )
+        ]
+        if task.failed_read_path is not None:
+            assertions.append(
+                EvaluationAssertion(
+                    "tool-failure-recovery",
+                    _has_recovered_failed_read(events, task),
+                    "工具失败后没有按要求恢复并继续执行",
+                )
+            )
         return EvaluationResult(
-            scenario="online_main_smoke",
+            scenario=task.name,
             duration_ms=(perf_counter() - started_at) * 1000,
             evaluation_type="real-task",
             model_requests=len(client.requests),
@@ -250,8 +345,84 @@ async def _run_online_smoke(
             persistence_degraded=not persistence_ok,
             model_request_durations_ms=tuple(client.durations_ms),
             events=tuple(events),
-            assertions=assertions,
+            assertions=tuple(assertions),
         )
+
+
+def _files_match(workspace: Path, expected_files: tuple[tuple[str, str], ...]) -> bool:
+    """检查一组文件是否完全符合任务预期内容。"""
+
+    return all(
+        (workspace / path).is_file()
+        and (workspace / path).read_text(encoding="utf-8") == content
+        for path, content in expected_files
+    )
+
+
+def _has_expected_tool_order(
+    events: Sequence[dict[str, object]],
+    task: _OnlineFileTask,
+) -> bool:
+    """确认所有目标文件先被读取，再被编辑。"""
+
+    calls = [event for event in events if event.get("type") == "tool_call"]
+    read_positions = _tool_positions(calls, "read_file", task.required_reads)
+    edit_positions = _tool_positions(calls, "edit_file", task.required_edits)
+    return (
+        len(read_positions) == len(task.required_reads)
+        and len(edit_positions) == len(task.required_edits)
+        and max(read_positions) < min(edit_positions)
+    )
+
+
+def _has_recovered_failed_read(
+    events: Sequence[dict[str, object]],
+    task: _OnlineFileTask,
+) -> bool:
+    """确认指定读取失败后才继续执行正确的读取和编辑。"""
+
+    assert task.failed_read_path is not None
+    calls = [event for event in events if event.get("type") == "tool_call"]
+    failed_positions = _tool_positions(calls, "read_file", (task.failed_read_path,))
+    if not failed_positions:
+        return False
+    failed_call = calls[failed_positions[0]]
+    failed_call_id = failed_call.get("call_id")
+    failed_result = any(
+        event.get("type") == "tool_result"
+        and event.get("call_id") == failed_call_id
+        and event.get("is_error") is True
+        for event in events
+    )
+    recovered_reads = _tool_positions(calls, "read_file", task.required_reads)
+    return failed_result and recovered_reads and failed_positions[0] < min(recovered_reads)
+
+
+def _tool_positions(
+    calls: Sequence[dict[str, object]],
+    tool_name: str,
+    paths: tuple[str, ...],
+) -> list[int]:
+    """返回每个指定路径首次由目标工具调用的位置。"""
+
+    positions: list[int] = []
+    for path in paths:
+        for index, call in enumerate(calls):
+            arguments = call.get("arguments")
+            if (
+                call.get("name") == tool_name
+                and isinstance(arguments, dict)
+                and arguments.get("path") == path
+            ):
+                positions.append(index)
+                break
+    return positions
+
+
+def _contains_keywords(content: str, keywords: tuple[str, ...]) -> bool:
+    """检查最终回复是否包含任务要求的全部关键词。"""
+
+    return all(keyword.casefold() in content.casefold() for keyword in keywords)
 
 
 async def run_online_suite(
@@ -265,41 +436,46 @@ async def run_online_suite(
         raise ValueError("在线评测重复次数必须大于 0")
     results: list[EvaluationResult] = []
     runners = {
-        "main": run_online_smoke,
         "context-compaction": run_online_compaction_smoke,
         "network-error": run_online_network_error_smoke,
     }
-    if scenario not in runners:
+    if scenario != "main" and scenario not in runners:
         raise ValueError(f"不支持的在线评测场景：{scenario}")
     for repetition in range(1, repetitions + 1):
-        try:
-            result = await runners[scenario](env_path)
-        except Exception as error:
-            result = EvaluationResult(
-                scenario=f"online_{scenario}",
-                duration_ms=0,
-                evaluation_type="online-special",
-                error_category=_error_category(error),
-                error_stage="suite",
-                error_message=f"{type(error).__name__}: {error}",
-                events=(
-                    {
-                        "type": "evaluation_error",
-                        "category": _error_category(error),
-                        "stage": "suite",
-                        "exception_type": type(error).__name__,
-                        "message": str(error),
-                    },
-                ),
-                assertions=(
-                    EvaluationAssertion(
-                        "online-evaluation-error",
-                        False,
-                        f"在线评测在 suite 失败：{type(error).__name__}: {error}",
+        tasks = ONLINE_FILE_TASKS if scenario == "main" else (None,)
+        for task in tasks:
+            try:
+                result = (
+                    await run_online_file_task(task, env_path)
+                    if task is not None
+                    else await runners[scenario](env_path)
+                )
+            except Exception as error:
+                result = EvaluationResult(
+                    scenario=task.name if task is not None else f"online_{scenario}",
+                    duration_ms=0,
+                    evaluation_type="real-task" if task is not None else "online-special",
+                    error_category=_error_category(error),
+                    error_stage="suite",
+                    error_message=f"{type(error).__name__}: {error}",
+                    events=(
+                        {
+                            "type": "evaluation_error",
+                            "category": _error_category(error),
+                            "stage": "suite",
+                            "exception_type": type(error).__name__,
+                            "message": str(error),
+                        },
                     ),
-                ),
-            )
-        results.append(replace(result, repetition=repetition))
+                    assertions=(
+                        EvaluationAssertion(
+                            "online-evaluation-error",
+                            False,
+                            f"在线评测在 suite 失败：{type(error).__name__}: {error}",
+                        ),
+                    ),
+                )
+            results.append(replace(result, repetition=repetition))
     return results
 
 

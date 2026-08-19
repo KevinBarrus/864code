@@ -1,10 +1,15 @@
 import pytest
 
-from core.config import ConfigError
-from core.model import Message, TextDelta
+from core.config import ConfigError, Settings
+from core.model import Message, TextDelta, ToolCall, ToolCallEvent
 from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
-from evaluation.online import TimedModelClient, run_online_suite
+from evaluation.online import (
+    ONLINE_FILE_TASKS,
+    TimedModelClient,
+    run_online_file_task,
+    run_online_suite,
+)
 
 
 @pytest.mark.asyncio
@@ -38,27 +43,128 @@ async def test_timed_model_client_records_summary_request_duration() -> None:
 async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
     monkeypatch,
 ) -> None:
-    """测试在线评测套件会完成全部重复运行"""
+    """测试在线主任务会运行全部文件任务并保留失败。"""
 
-    calls = 0
+    calls: list[str] = []
 
-    async def fake_run(env_path=None):
-        nonlocal calls
-        calls += 1
-        if calls == 2:
+    async def fake_run(task, env_path=None):
+        calls.append(task.name)
+        if task.name == "online_multi_file_edit":
             raise RuntimeError("模拟在线失败")
         return EvaluationResult(
-            scenario="online_main_smoke",
+            scenario=task.name,
             duration_ms=10,
+            evaluation_type="real-task",
             assertions=(EvaluationAssertion("ok", True),),
         )
 
-    monkeypatch.setattr("evaluation.online.run_online_smoke", fake_run)
+    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run)
 
-    results = await run_online_suite(repetitions=3)
+    results = await run_online_suite(repetitions=1)
 
-    assert [result.repetition for result in results] == [1, 2, 3]
+    assert calls == [task.name for task in ONLINE_FILE_TASKS]
+    assert [result.repetition for result in results] == [1, 1, 1]
     assert [result.passed for result in results] == [True, False, True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("task", "responses"),
+    [
+        (
+            ONLINE_FILE_TASKS[0],
+            [
+                [ToolCallEvent(ToolCall("read", "read_file", {"path": "note.txt"}))],
+                [
+                    ToolCallEvent(
+                        ToolCall(
+                            "edit",
+                            "edit_file",
+                            {
+                                "path": "note.txt",
+                                "old_content": "before\n",
+                                "new_content": "after\n",
+                            },
+                        )
+                    )
+                ],
+                [TextDelta("note.txt 已完成修改")],
+            ],
+        ),
+        (
+            ONLINE_FILE_TASKS[1],
+            [
+                [
+                    ToolCallEvent(ToolCall("read-config", "read_file", {"path": "config.txt"})),
+                    ToolCallEvent(ToolCall("read-note", "read_file", {"path": "note.txt"})),
+                ],
+                [
+                    ToolCallEvent(
+                        ToolCall(
+                            "edit-config",
+                            "edit_file",
+                            {
+                                "path": "config.txt",
+                                "old_content": "old-config\n",
+                                "new_content": "new-config\n",
+                            },
+                        )
+                    ),
+                    ToolCallEvent(
+                        ToolCall(
+                            "edit-note",
+                            "edit_file",
+                            {
+                                "path": "note.txt",
+                                "old_content": "old-note\n",
+                                "new_content": "new-note\n",
+                            },
+                        )
+                    ),
+                ],
+                [TextDelta("config.txt 和 note.txt 已完成修改")],
+            ],
+        ),
+        (
+            ONLINE_FILE_TASKS[2],
+            [
+                [ToolCallEvent(ToolCall("missing", "read_file", {"path": "missing.txt"}))],
+                [ToolCallEvent(ToolCall("read", "read_file", {"path": "note.txt"}))],
+                [
+                    ToolCallEvent(
+                        ToolCall(
+                            "edit",
+                            "edit_file",
+                            {
+                                "path": "note.txt",
+                                "old_content": "before\n",
+                                "new_content": "after\n",
+                            },
+                        )
+                    )
+                ],
+                [TextDelta("note.txt 已完成修改")],
+            ],
+        ),
+    ],
+)
+async def test_online_file_tasks_validate_expected_agent_behavior(
+    task,
+    responses,
+    monkeypatch,
+) -> None:
+    """测试三类真实任务均验证文件、工具顺序和最终回复。"""
+
+    client = FakeModelClient(responses)
+    monkeypatch.setattr(
+        "evaluation.online.load_settings",
+        lambda env_path=None: Settings("https://example.com", "test", "key"),
+    )
+    monkeypatch.setattr("evaluation.online.OpenAICompatibleClient", lambda settings: client)
+
+    result = await run_online_file_task(task)
+
+    assert result.passed
 
 
 @pytest.mark.asyncio
