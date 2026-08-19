@@ -166,6 +166,38 @@ def test_streaming_entry_update_does_not_rebuild_conversation_layout(
     assert control.text == "第一段第二段第三段"
 
 
+def test_adding_history_entries_syncs_conversation_layout_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试恢复历史时只进行一次对话布局同步。"""
+
+    screen = _create_screen(tmp_path)
+    sync_calls = 0
+    original_sync = screen._sync_conversation_view
+
+    def track_sync() -> None:
+        """记录批量恢复触发的布局同步次数。"""
+
+        nonlocal sync_calls
+        sync_calls += 1
+        original_sync()
+
+    monkeypatch.setattr(screen, "_sync_conversation_view", track_sync)
+
+    screen.add_history_entries(
+        [("user", "历史问题"), ("assistant", "历史回答"), ("tool", "工具结果")]
+    )
+
+    assert sync_calls == 1
+    assert [entry.content for entry in screen._conversation] == [
+        "历史问题",
+        "历史回答",
+        "工具结果",
+    ]
+    assert screen.conversation_view.follow_output
+
+
 def test_chat_screen_uses_natural_height_for_conversation_and_input(
     tmp_path: Path,
 ) -> None:

@@ -122,6 +122,9 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             self.entries.append((role, content))
             return len(self.entries) - 1
 
+        def add_history_entries(self, entries) -> None:
+            self.entries.extend(entries)
+
         def append_to_entry(self, index: int, content: str) -> None:
             role, current = self.entries[index]
             self.entries[index] = (role, current + content)

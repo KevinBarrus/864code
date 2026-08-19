@@ -40,6 +40,7 @@ class FakeScreen:
         """初始化假的界面对象"""
 
         self.entries: list[tuple[str, str]] = []
+        self.history_batches: list[list[tuple[str, str]]] = []
         self.conversation_view = FakeConversationView()
         self.application = FakeApplication()
         FakeScreen.last = self
@@ -49,6 +50,13 @@ class FakeScreen:
 
         self.entries.append((role, content))
         return len(self.entries) - 1
+
+    def add_history_entries(self, entries: list[tuple[str, str]]) -> None:
+        """记录恢复历史的批量追加调用。"""
+
+        self.history_batches.append(entries)
+        self.entries.extend(entries)
+        self.conversation_view.scroll_to_bottom()
 
     async def request_approval(self, definition, tool_call, allow_session=True) -> ApprovalResult:
         """模拟界面审批回调"""
@@ -90,6 +98,9 @@ async def test_run_chat_renders_restored_history(
     assert FakeScreen.last.entries == [
         ("user", "历史问题"),
         ("assistant", "历史回答"),
+    ]
+    assert FakeScreen.last.history_batches == [
+        [("user", "历史问题"), ("assistant", "历史回答")]
     ]
     assert FakeScreen.last.conversation_view.scrolled_to_bottom
 

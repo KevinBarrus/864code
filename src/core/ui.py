@@ -189,10 +189,9 @@ async def run_chat(
     agent_loop = AgentLoop(client, tool_manager)
 
     history = session.get_messages()
-    for message in history:
-        screen.add_entry(message.role, message.content)
-    if history:
-        screen.conversation_view.scroll_to_bottom()
+    screen.add_history_entries(
+        [(message.role, message.content) for message in history]
+    )
     try:
         await screen.application.run_async()
     finally:

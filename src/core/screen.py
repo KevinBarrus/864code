@@ -122,18 +122,37 @@ class ChatScreen:
     def add_entry(self, role: ConversationRole, content: str) -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
 
-        self._conversation.append(
-            ConversationEntry(
-                role,
-                content,
-                FormattedTextControl(content, focusable=False),
-            )
-        )
+        self._conversation.append(self._create_entry(role, content))
         self._sync_conversation_view()
         if role == "user":
             self.conversation_view.scroll_to_bottom()
         self.application.invalidate()
         return len(self._conversation) - 1
+
+    def add_history_entries(
+        self,
+        entries: list[tuple[ConversationRole, str]],
+    ) -> None:
+        """批量追加恢复历史，并只同步一次对话布局。"""
+
+        if not entries:
+            return
+        self._conversation.extend(
+            self._create_entry(role, content) for role, content in entries
+        )
+        self._sync_conversation_view()
+        self.conversation_view.scroll_to_bottom()
+        self.application.invalidate()
+
+    @staticmethod
+    def _create_entry(role: ConversationRole, content: str) -> ConversationEntry:
+        """创建保存独立文本控件的对话条目。"""
+
+        return ConversationEntry(
+            role,
+            content,
+            FormattedTextControl(content, focusable=False),
+        )
 
     def append_to_entry(self, index: int, content: str) -> None:
         """向指定的对话条目追加流式文本。"""
