@@ -135,6 +135,36 @@ def test_chat_screen_uses_scrollable_conversation_view(
     assert screen._render_entry(0) == "第一段回复\n第二段回复"
 
 
+def test_streaming_entry_update_does_not_rebuild_conversation_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试连续流式文本只更新目标条目控件。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("assistant", "第一段")
+    children = screen._conversation_content.children
+    control = children[index].content
+    sync_calls = 0
+    original_sync = screen._sync_conversation_view
+
+    def track_sync() -> None:
+        """记录不应发生的全量布局同步。"""
+
+        nonlocal sync_calls
+        sync_calls += 1
+        original_sync()
+
+    monkeypatch.setattr(screen, "_sync_conversation_view", track_sync)
+
+    screen.append_to_entry(index, "第二段")
+    screen.append_to_entry(index, "第三段")
+
+    assert sync_calls == 0
+    assert screen._conversation_content.children is children
+    assert control.text == "第一段第二段第三段"
+
+
 def test_chat_screen_uses_natural_height_for_conversation_and_input(
     tmp_path: Path,
 ) -> None:

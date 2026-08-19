@@ -42,6 +42,7 @@ class ConversationEntry:
 
     role: ConversationRole
     content: str
+    control: FormattedTextControl
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,13 @@ class ChatScreen:
     def add_entry(self, role: ConversationRole, content: str) -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
 
-        self._conversation.append(ConversationEntry(role, content))
+        self._conversation.append(
+            ConversationEntry(
+                role,
+                content,
+                FormattedTextControl(content, focusable=False),
+            )
+        )
         self._sync_conversation_view()
         if role == "user":
             self.conversation_view.scroll_to_bottom()
@@ -129,17 +136,22 @@ class ChatScreen:
         """向指定的对话条目追加流式文本。"""
 
         entry = self._conversation[index]
-        self._conversation[index] = replace(entry, content=entry.content + content)
-        self._sync_conversation_view()
+        self._set_entry_content(index, entry.content + content)
         self.application.invalidate()
 
     def set_entry_content(self, index: int, content: str) -> None:
         """替换指定对话条目的展示内容。"""
 
-        entry = self._conversation[index]
-        self._conversation[index] = replace(entry, content=content)
-        self._sync_conversation_view()
+        self._set_entry_content(index, content)
         self.application.invalidate()
+
+    def _set_entry_content(self, index: int, content: str) -> None:
+        """更新已有条目的内容和控件，不重建整个对话布局。"""
+
+        entry = self._conversation[index]
+        entry.control.text = content
+        entry.control.reset()
+        self._conversation[index] = replace(entry, content=content)
 
     def set_request_active(self, active: bool) -> None:
         """更新请求状态，避免模型响应期间重复提交。"""
@@ -401,10 +413,7 @@ class ChatScreen:
                 style = ""
             children.append(
                 Window(
-                    content=FormattedTextControl(
-                        lambda index=index: self._render_entry(index),
-                        focusable=False,
-                    ),
+                    content=entry.control,
                     style=style,
                     wrap_lines=True,
                     dont_extend_height=True,
