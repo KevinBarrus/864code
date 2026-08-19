@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.cursor_shapes import CursorShape
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import VerticalAlign
 from prompt_toolkit.layout.screen import WritePosition
 from prompt_toolkit.output import DummyOutput
@@ -305,6 +306,40 @@ def test_input_selection_can_be_copied_and_pasted(tmp_path: Path) -> None:
 
     assert screen.application.clipboard.get_data().text == "复制内容"
     assert screen.input_area.text == "复制内容复制内容"
+
+
+def test_submitted_input_is_saved_to_in_memory_history(tmp_path: Path) -> None:
+    """测试有效提交会写入本次运行的输入历史。"""
+
+    screen = ChatScreen(
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        on_submit=lambda prompt: None,
+    )
+    screen.input_area.text = "  第一条输入  "
+    key_binding = next(
+        binding
+        for binding in screen._key_bindings.bindings
+        if binding.keys[0].value == "c-m" and binding.filter()
+    )
+
+    class FakeApplication:
+        """避免测试启动真实后台任务。"""
+
+        def create_background_task(self, coroutine):
+            coroutine.close()
+            return None
+
+    class FakeEvent:
+        """提供提交按键处理器所需的最小应用对象。"""
+
+        app = FakeApplication()
+
+    key_binding.handler(FakeEvent())
+
+    assert isinstance(screen.input_area.buffer.history, InMemoryHistory)
+    assert list(screen.input_area.buffer.history.load_history_strings()) == [
+        "  第一条输入  "
+    ]
 
 
 def test_chat_screen_accepts_logo_provider(tmp_path: Path) -> None:

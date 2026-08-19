@@ -10,6 +10,7 @@ from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import (
@@ -76,6 +77,7 @@ class ChatScreen:
         self._approval_prompt: ApprovalPrompt | None = None
         self._status_message = ""
         self._conversation: list[ConversationEntry] = []
+        self._input_history = InMemoryHistory()
         self.input_area = TextArea(
             prompt="",
             multiline=True,
@@ -86,6 +88,7 @@ class ChatScreen:
             focus_on_click=True,
             style="class:input-area",
             get_line_prefix=self._get_input_line_prefix,
+            history=self._input_history,
         )
         self._conversation_content = HSplit(
             [],
@@ -316,6 +319,7 @@ class ChatScreen:
                 text=self.input_area.text,
                 cursor_position=self.input_area.buffer.cursor_position,
             )
+            self._input_history.append_string(self.input_area.text)
             self.input_area.text = ""
             self._request_task = event.app.create_background_task(
                 self._submit(prompt)
