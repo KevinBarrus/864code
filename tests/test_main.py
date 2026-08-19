@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from core import main
-from core.config import Settings
+from core.config import McpStdioSettings, Settings
 from core.context import ContextBudget
 from core.model import Message
 from core.session_store import SessionStore
@@ -64,7 +64,14 @@ async def test_run_resume_without_id_uses_picker(
     FakePicker.selected_id = session_id
     captured: dict[str, object] = {}
 
-    async def fake_run_chat(client, status, workspace, restored_id, context_budget) -> None:
+    async def fake_run_chat(
+        client,
+        status,
+        workspace,
+        restored_id,
+        context_budget,
+        mcp_provider=None,
+    ) -> None:
         """记录应用启动参数"""
 
         captured["workspace"] = workspace
@@ -114,7 +121,14 @@ async def test_run_resume_with_id_skips_picker(
 
             return None
 
-    async def fake_run_chat(client, status, workspace, restored_id, context_budget) -> None:
+    async def fake_run_chat(
+        client,
+        status,
+        workspace,
+        restored_id,
+        context_budget,
+        mcp_provider=None,
+    ) -> None:
         """记录应用启动参数"""
 
         captured["session_id"] = restored_id
@@ -135,3 +149,55 @@ async def test_run_resume_with_id_skips_picker(
         "session_id": session_id,
         "context_budget": ContextBudget(100_000, 16_000, 20_000),
     }
+
+
+@pytest.mark.asyncio
+async def test_run_creates_configured_stdio_mcp_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试启动层会创建并传递已配置的 MCP Provider。"""
+
+    monkeypatch.chdir(tmp_path)
+    captured: dict[str, object] = {}
+
+    class FakeProvider:
+        """记录启动层传入的 MCP 配置。"""
+
+        def __init__(self, command, provider_id, cwd) -> None:
+            self.command = command
+            self.provider_id = provider_id
+            self.cwd = cwd
+
+    async def fake_run_chat(
+        client,
+        status,
+        workspace,
+        restored_id,
+        context_budget,
+        mcp_provider=None,
+    ) -> None:
+        """记录传入应用层的 Provider。"""
+
+        captured["provider"] = mcp_provider
+
+    monkeypatch.setattr(
+        main,
+        "load_settings",
+        lambda: Settings(
+            "https://example.com",
+            "test",
+            "key",
+            mcp_stdio=McpStdioSettings("node", ("server.js",), "demo"),
+        ),
+    )
+    monkeypatch.setattr(main, "StdioMcpProvider", FakeProvider)
+    monkeypatch.setattr(main, "run_chat", fake_run_chat)
+
+    await main.run()
+
+    provider = captured["provider"]
+    assert isinstance(provider, FakeProvider)
+    assert provider.command == ("node", "server.js")
+    assert provider.provider_id == "demo"
+    assert provider.cwd == tmp_path.resolve()

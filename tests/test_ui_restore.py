@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from core import ui
-from core.model import Message
+from core.model import Message, ToolResult
 from core.session import Session
 from core.status import create_status_info
-from core.tools import ApprovalDecision, ApprovalResult
+from core.tools import ApprovalDecision, ApprovalResult, ToolDefinition
 
 
 class FakeApplication:
@@ -92,3 +92,60 @@ async def test_run_chat_renders_restored_history(
         ("assistant", "历史回答"),
     ]
     assert FakeScreen.last.conversation_view.scrolled_to_bottom
+
+
+@pytest.mark.asyncio
+async def test_run_chat_registers_and_closes_mcp_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试 MCP 工具会进入模型定义，并在界面退出时关闭。"""
+
+    captured: dict[str, object] = {}
+
+    class FakeProvider:
+        """提供一条可发现的远程只读工具。"""
+
+        closed = False
+
+        async def list_tools(self):
+            return [
+                ToolDefinition(
+                    name="remote_echo",
+                    description="远程回显",
+                    parameters={"type": "object"},
+                    source="mcp",
+                    permission="read",
+                    idempotent=True,
+                    provider_id="demo",
+                )
+            ]
+
+        async def call_tool(self, tool_call):
+            return ToolResult(tool_call.call_id, "完成")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    class CapturingAgentLoop:
+        """记录应用层注册后的模型工具定义。"""
+
+        def __init__(self, client, tool_manager) -> None:
+            captured["tools"] = tool_manager.model_tools()
+
+    provider = FakeProvider()
+    monkeypatch.setattr(ui, "ChatScreen", FakeScreen)
+    monkeypatch.setattr(ui, "AgentLoop", CapturingAgentLoop)
+
+    await ui.run_chat(
+        EmptyClient(),
+        create_status_info("test", "暂不可查询", tmp_path),
+        workspace=tmp_path,
+        mcp_provider=provider,  # type: ignore[arg-type]
+    )
+
+    assert any(
+        tool["function"]["name"] == "mcp_demo_remote_echo"
+        for tool in captured["tools"]
+    )
+    assert provider.closed

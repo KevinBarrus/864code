@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from core.config import ConfigError, load_settings
+from core.config import ConfigError, McpStdioSettings, load_settings
 
 
 def _write_env(tmp_path: Path, content: str) -> Path:
@@ -61,6 +61,43 @@ def test_load_settings_reads_request_timeout(tmp_path: Path) -> None:
     )
 
     assert load_settings(env_path).request_timeout_seconds == 45.5
+
+
+def test_load_settings_reads_optional_stdio_mcp_provider(tmp_path: Path) -> None:
+    """测试可选 stdio MCP Provider 配置会被完整读取。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MCP_STDIO_COMMAND=node\n"
+        'MCP_STDIO_ARGS=["server.js","--readonly"]\n'
+        "MCP_STDIO_PROVIDER_ID=demo\n",
+    )
+
+    assert load_settings(env_path).mcp_stdio == McpStdioSettings(
+        command="node",
+        arguments=("server.js", "--readonly"),
+        provider_id="demo",
+    )
+
+
+def test_load_settings_rejects_invalid_stdio_mcp_arguments(tmp_path: Path) -> None:
+    """测试 MCP 参数必须是 JSON 字符串数组。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MCP_STDIO_COMMAND=node\n"
+        "MCP_STDIO_ARGS=--server\n"
+        "MCP_STDIO_PROVIDER_ID=demo\n",
+    )
+
+    with pytest.raises(ConfigError, match="MCP_STDIO_ARGS"):
+        load_settings(env_path)
 
 
 def test_load_settings_rejects_missing_value(tmp_path: Path) -> None:

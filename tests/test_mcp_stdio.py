@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.model import ToolCall
-from core.tools import StdioMcpProvider
+from core.tools import StdioMcpProvider, ToolManager
 
 
 SERVER = r'''
@@ -49,5 +49,27 @@ async def test_stdio_provider_lists_and_calls_tools(tmp_path: Path) -> None:
     assert definitions[0].provider_id == "test-server"
     assert definitions[0].permission == "read"
     assert definitions[0].idempotent is True
+    assert result.content == "hello"
+    assert result.is_error is False
+
+
+@pytest.mark.asyncio
+async def test_stdio_provider_tools_are_available_through_tool_manager(
+    tmp_path: Path,
+) -> None:
+    """测试发现的 stdio MCP 工具可通过统一工具入口执行。"""
+
+    provider = StdioMcpProvider(
+        [sys.executable, "-u", "-c", SERVER],
+        provider_id="test-server",
+        cwd=tmp_path,
+    )
+    manager = ToolManager()
+    await manager.register_mcp_provider(provider)
+    result = await manager.execute(
+        ToolCall("call-1", "mcp_test-server_remote_echo", {"text": "hello"})
+    )
+    await provider.close()
+
     assert result.content == "hello"
     assert result.is_error is False

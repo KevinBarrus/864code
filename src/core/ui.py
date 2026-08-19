@@ -15,6 +15,7 @@ from .session import Session
 from .tools import (
     PermissionManager,
     ToolManager,
+    StdioMcpProvider,
     create_edit_file_tool,
     create_list_files_tool,
     create_read_file_tool,
@@ -33,6 +34,7 @@ async def run_chat(
     workspace: Path | None = None,
     session_id: str | None = None,
     context_budget: ContextBudget | None = None,
+    mcp_provider: StdioMcpProvider | None = None,
 ) -> None:
     """启动全屏界面，并处理模型的流式回复"""
 
@@ -168,6 +170,12 @@ async def run_chat(
         create_run_command_tool,
     ):
         tool_manager.register_local(*create_tool(session_workspace))
+    if mcp_provider is not None:
+        try:
+            await tool_manager.register_mcp_provider(mcp_provider)
+        except Exception:
+            await mcp_provider.close()
+            raise
     context_manager = ContextManager(
         context_budget or DEFAULT_CONTEXT_BUDGET,
         {
@@ -188,6 +196,8 @@ async def run_chat(
     try:
         await screen.application.run_async()
     finally:
+        if mcp_provider is not None:
+            await mcp_provider.close()
         if not session.close():
             screen.set_status_message("Session persistence degraded")
 

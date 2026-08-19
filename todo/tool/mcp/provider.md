@@ -1,18 +1,20 @@
-# MCP Provider 命令行配置
+# MCP Provider 后续增强
 
 ## 目标
 
-让用户可以通过配置文件或命令行配置 MCP Server，启动 864code 时自动发现并注册 MCP 工具
+让用户可以通过配置文件配置一个 stdio MCP Server，启动 864code 时自动发现并注册 MCP 工具
+
+## 已完成
+
+- `.env` 支持 `MCP_STDIO_COMMAND`、JSON 数组 `MCP_STDIO_ARGS` 和 `MCP_STDIO_PROVIDER_ID`
+- 启动时以当前工作区为工作目录创建 `StdioMcpProvider`
+- 应用层通过 `ToolManager.register_mcp_provider` 发现并注册工具
+- TUI 退出或注册失败时关闭 MCP 子进程
+- 配置、启动传递、工具发现和实际统一调用均有测试
 
 ## 待完成事项
 
-- 设计最小 MCP Server 配置格式
-- 支持配置启动命令、参数、工作目录和 `provider_id`
-- 启动时创建 `StdioMcpProvider`
-- 调用 `ToolManager.register_mcp_provider`
-- 处理 MCP Server 启动失败、退出和响应异常
 - 在 TUI 中区分本地工具和 MCP 工具的摘要
-- 增加配置加载和完整启动流程测试
 
 ## 暂不处理
 

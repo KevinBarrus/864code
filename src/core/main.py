@@ -15,6 +15,7 @@ from .session_picker import SessionPicker
 from .session_store import SessionStore
 from .session_store import SessionStoreError
 from .status import create_status_info
+from .tools import StdioMcpProvider
 from .ui import run_chat
 
 
@@ -34,6 +35,15 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
 
     settings = load_settings()
     client = OpenAICompatibleClient(settings)
+    mcp_provider = (
+        StdioMcpProvider(
+            (settings.mcp_stdio.command, *settings.mcp_stdio.arguments),
+            settings.mcp_stdio.provider_id,
+            cwd=workspace,
+        )
+        if settings.mcp_stdio is not None
+        else None
+    )
     balance = await UnavailableBalanceProvider().get_balance()
     status = create_status_info(settings.model_name, balance)
     await run_chat(
@@ -46,6 +56,7 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
             settings.reserve_tokens,
             settings.keep_recent_tokens,
         ),
+        mcp_provider=mcp_provider,
     )
 
 

@@ -1,5 +1,6 @@
 """加载并校验 864code 的运行配置。"""
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,15 @@ from dotenv import dotenv_values
 
 class ConfigError(ValueError):
     """配置文件缺失或配置项不合法时抛出的异常。"""
+
+
+@dataclass(frozen=True)
+class McpStdioSettings:
+    """描述一个可选 stdio MCP Provider 的启动配置。"""
+
+    command: str
+    arguments: tuple[str, ...]
+    provider_id: str
 
 
 @dataclass(frozen=True)
@@ -22,6 +32,7 @@ class Settings:
     reserve_tokens: int = 16_000
     keep_recent_tokens: int = 20_000
     request_timeout_seconds: float = 120.0
+    mcp_stdio: McpStdioSettings | None = None
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
@@ -43,6 +54,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         120.0,
         "MODEL_REQUEST_TIMEOUT_SECONDS",
     )
+    mcp_stdio = _optional_mcp_stdio_settings(values)
     if context_window <= 0:
         raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
@@ -61,6 +73,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         reserve_tokens=reserve_tokens,
         keep_recent_tokens=keep_recent_tokens,
         request_timeout_seconds=request_timeout_seconds,
+        mcp_stdio=mcp_stdio,
     )
 
 
@@ -92,6 +105,31 @@ def _optional_float(value: str | None, default: float, name: str) -> float:
         return float(value.strip())
     except ValueError as exc:
         raise ConfigError(f"{name} 必须是数字") from exc
+
+
+def _optional_mcp_stdio_settings(values: dict[str, str | None]) -> McpStdioSettings | None:
+    """读取可选单个 stdio MCP 配置，并校验参数 JSON 数组。"""
+
+    command = values.get("MCP_STDIO_COMMAND")
+    arguments = values.get("MCP_STDIO_ARGS")
+    provider_id = values.get("MCP_STDIO_PROVIDER_ID")
+    if not any(value is not None and value.strip() for value in (command, arguments, provider_id)):
+        return None
+
+    raw_arguments = arguments.strip() if arguments else "[]"
+    try:
+        parsed_arguments = json.loads(raw_arguments)
+    except json.JSONDecodeError as exc:
+        raise ConfigError("MCP_STDIO_ARGS 必须是 JSON 字符串数组") from exc
+    if not isinstance(parsed_arguments, list) or not all(
+        isinstance(argument, str) for argument in parsed_arguments
+    ):
+        raise ConfigError("MCP_STDIO_ARGS 必须是 JSON 字符串数组")
+    return McpStdioSettings(
+        command=_required_value(command, "MCP_STDIO_COMMAND"),
+        arguments=tuple(parsed_arguments),
+        provider_id=_required_value(provider_id, "MCP_STDIO_PROVIDER_ID"),
+    )
 
 
 def _find_env_file() -> Path:
