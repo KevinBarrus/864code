@@ -43,31 +43,54 @@ class SessionStore:
     def append_message(self, session_id: str, message: Message) -> None:
         """将一条消息追加到指定会话的 JSONL 文件。"""
 
-        session_path = self._session_path(session_id)
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        record = {
-            "type": "message",
-            "role": message.role,
-            "content": message.content,
-        }
-        if message.status != "completed":
-            record["status"] = message.status
-        if message.error_category is not None:
-            record["error_category"] = message.error_category
-        if message.tool_calls:
-            record["tool_calls"] = [
-                {
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "arguments": tool_call.arguments,
-                }
-                for tool_call in message.tool_calls
-            ]
-        if message.tool_call_id is not None:
-            record["tool_call_id"] = message.tool_call_id
-        with session_path.open("a", encoding="utf-8") as file:
-            json.dump(record, file, ensure_ascii=False)
-            file.write("\n")
+        self._append_record(session_id, self._message_record(message))
+
+    def append_pending_message(self, session_id: str, message: Message) -> None:
+        """将主日志写入失败的消息追加到 pending JSONL。"""
+
+        self._append_record(session_id, self._message_record(message), pending=True)
+
+    def load_pending_messages(self, session_id: str) -> list[Message]:
+        """读取指定会话尚未迁移到主日志的消息。"""
+
+        path = self._pending_path(session_id)
+        if not path.exists():
+            return []
+        messages: list[Message] = []
+        with path.open(encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise SessionStoreError(
+                        f"pending 第 {line_number} 行不是有效 JSON"
+                    ) from exc
+                messages.append(self._message_from_record(record, line_number))
+        return messages
+
+    def clear_pending_messages(self, session_id: str) -> None:
+        """删除已经迁移到主日志的 pending 文件。"""
+
+        self._pending_path(session_id).unlink(missing_ok=True)
+
+    def replace_pending_messages(
+        self,
+        session_id: str,
+        messages: list[Message],
+    ) -> None:
+        """用尚未迁移的消息重写 pending 文件。"""
+
+        path = self._pending_path(session_id)
+        if not messages:
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as file:
+            for message in messages:
+                json.dump(self._message_record(message), file, ensure_ascii=False)
+                file.write("\n")
 
     def append_compaction(
         self,
@@ -169,6 +192,53 @@ class SessionStore:
         except (ValueError, AttributeError) as exc:
             raise SessionStoreError("无效的 Session ID") from exc
         return self._sessions_dir / f"{normalized_id}.jsonl"
+
+    def _pending_path(self, session_id: str) -> Path:
+        """生成指定会话的 pending 文件路径。"""
+
+        self._session_path(session_id)
+        return self._sessions_dir / f".{session_id}.pending.jsonl"
+
+    def _append_record(
+        self,
+        session_id: str,
+        record: dict[str, object],
+        *,
+        pending: bool = False,
+    ) -> None:
+        """将一条 JSON 记录追加到主日志或 pending 日志。"""
+
+        path = self._pending_path(session_id) if pending else self._session_path(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            json.dump(record, file, ensure_ascii=False)
+            file.write("\n")
+
+    @staticmethod
+    def _message_record(message: Message) -> dict[str, object]:
+        """将模型消息转换为 JSONL 记录。"""
+
+        record: dict[str, object] = {
+            "type": "message",
+            "role": message.role,
+            "content": message.content,
+        }
+        if message.status != "completed":
+            record["status"] = message.status
+        if message.error_category is not None:
+            record["error_category"] = message.error_category
+        if message.tool_calls:
+            record["tool_calls"] = [
+                {
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "arguments": tool_call.arguments,
+                }
+                for tool_call in message.tool_calls
+            ]
+        if message.tool_call_id is not None:
+            record["tool_call_id"] = message.tool_call_id
+        return record
 
     @staticmethod
     def _message_from_record(record: object, line_number: int) -> Message:

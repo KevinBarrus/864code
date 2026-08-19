@@ -16,7 +16,7 @@
 
 完成记录：`AgentRunResult` 已明确返回 `new_messages`，UI 已改为直接持久化本轮新增消息，相关测试通过（5 passed）
 
-## 问题 2 方案：让 Session 持久化可恢复
+## 问题 2 方案：让 Session 持久化可恢复（已完成）
 
 - 保留当前 JSONL 主文件作为顺序日志
 - 为最终写入失败的消息增加同目录 pending 日志
@@ -25,6 +25,8 @@
 - 只有消息成功写入主日志后才追加压缩记录
 
 验收：模拟写入失败、重新创建 Session 后，pending 消息可以恢复
+
+完成记录：新增 Session 专属 pending JSONL，持久化失败消息会落盘，`Session.restore` 会尝试迁移并恢复 pending 消息，相关测试通过（32 passed）
 
 ## 问题 3 方案：处理 JSONL 尾部损坏
 

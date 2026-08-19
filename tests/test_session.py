@@ -58,6 +58,35 @@ def test_session_keeps_runtime_message_when_persistence_fails(
     assert session._persistence.pending_messages == (message,)
 
 
+def test_restore_recovers_message_from_pending_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试重新恢复 Session 时会迁移 pending 消息。"""
+
+    original_append = SessionStore.append_message
+    should_fail = True
+
+    def append_message(self, session_id: str, message: Message) -> None:
+        if should_fail:
+            raise OSError("JSONL 不可写入")
+        original_append(self, session_id, message)
+
+    monkeypatch.setattr(SessionStore, "append_message", append_message)
+    session = Session(tmp_path)
+    message = Message(role="assistant", content="待恢复消息")
+    session.add_message(message)
+    assert not session.flush_persistence()
+    assert session.close() is False
+
+    should_fail = False
+    restored = Session.restore(tmp_path, session.session_id)
+
+    assert restored.get_messages() == [message]
+    assert SessionStore(tmp_path).load_pending_messages(session.session_id) == []
+    assert SessionStore(tmp_path).load_messages(session.session_id) == [message]
+
+
 def test_restore_rebuilds_session_memory(tmp_path: Path) -> None:
     """测试可以从 JSONL 恢复完整的会话记忆"""
 

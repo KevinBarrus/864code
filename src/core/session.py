@@ -21,7 +21,10 @@ class Session:
         self._store = SessionStore(workspace)
         self._compactions: list[CompactionRecord] = []
         self._persistence = SessionPersistenceQueue(
-            lambda message: self._store.append_message(self.session_id, message)
+            lambda message: self._store.append_message(self.session_id, message),
+            persist_pending=lambda message: self._store.append_pending_message(
+                self.session_id, message
+            ),
         )
 
     @classmethod
@@ -29,7 +32,20 @@ class Session:
         """从已有 JSONL 文件恢复一个会话"""
 
         session = cls(workspace, session_id)
-        for message in session._store.load_messages(session.session_id):
+        messages = session._store.load_messages(session.session_id)
+        pending_messages = session._store.load_pending_messages(session.session_id)
+        recovered_count = 0
+        for message in pending_messages:
+            try:
+                session._store.append_message(session.session_id, message)
+            except Exception:
+                break
+            recovered_count += 1
+        session._store.replace_pending_messages(
+            session.session_id,
+            pending_messages[recovered_count:],
+        )
+        for message in [*messages, *pending_messages]:
             session._add_to_memory(message)
         session._compactions = session._store.load_compactions(session.session_id)
         return session

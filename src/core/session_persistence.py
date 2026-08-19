@@ -10,18 +10,25 @@ from .model import Message
 
 
 PersistMessage = Callable[[Message], None]
+PersistPendingMessage = Callable[[Message], None]
 _STOP = object()
 
 
 class SessionPersistenceQueue:
     """异步追加消息，并在持久化失败后保留未写入消息。"""
 
-    def __init__(self, persist_message: PersistMessage, max_retries: int = 2) -> None:
+    def __init__(
+        self,
+        persist_message: PersistMessage,
+        max_retries: int = 2,
+        persist_pending: PersistPendingMessage | None = None,
+    ) -> None:
         """创建后台写入线程和有界重试策略。"""
 
         if max_retries < 0:
             raise ValueError("持久化重试次数不能小于 0")
         self._persist_message = persist_message
+        self._persist_pending = persist_pending or (lambda message: None)
         self._max_retries = max_retries
         self._queue: Queue[Message | object] = Queue()
         self._pending: list[Message] = []
@@ -97,3 +104,7 @@ class SessionPersistenceQueue:
                     with self._lock:
                         self._degraded = True
                         self._pending.append(item)
+                    try:
+                        self._persist_pending(item)
+                    except Exception:
+                        pass
