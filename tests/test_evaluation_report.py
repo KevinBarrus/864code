@@ -41,6 +41,8 @@ def test_render_report_contains_baseline_regression() -> None:
     )
 
     assert "新增失败" in html
+    assert "指标回归" in html
+    assert "配置不匹配" in html
     assert "task#1" in html
     assert "回归门禁：失败" in html
 

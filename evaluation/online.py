@@ -31,6 +31,8 @@ from .baseline import compare_baseline, create_baseline, load_baseline, write_ba
 from .report import generate_report
 from .storage import append_result
 
+ONLINE_SCENARIO_VERSION = "1"
+
 
 class TimedModelClient:
     """记录真实模型请求耗时的客户端包装器"""
@@ -344,6 +346,16 @@ def main() -> int:
         print("在线评测会发起真实模型请求，请添加 --confirm 后运行")
         return 2
 
+    settings = load_settings(args.env)
+    metadata = {
+        "model_name": settings.model_name,
+        "base_url": settings.base_url,
+        "context_window": str(settings.context_window),
+        "reserve_tokens": str(settings.reserve_tokens),
+        "keep_recent_tokens": str(settings.keep_recent_tokens),
+        "scenario": args.scenario,
+        "scenario_version": ONLINE_SCENARIO_VERSION,
+    }
     results = asyncio.run(
         run_online_suite(
             args.env,
@@ -357,9 +369,13 @@ def main() -> int:
         append_result(args.output, result)
     regression = None
     if args.baseline.exists():
-        regression = compare_baseline(results, load_baseline(args.baseline))
+        regression = compare_baseline(
+            results,
+            load_baseline(args.baseline),
+            metadata,
+        )
     elif all(result.passed for result in results):
-        write_baseline(args.baseline, create_baseline(results))
+        write_baseline(args.baseline, create_baseline(results, metadata))
     generate_report(args.report, results, regression)
     passed = sum(result.passed for result in results)
     print(f"online evaluation: {passed}/{len(results)} repetitions passed")
