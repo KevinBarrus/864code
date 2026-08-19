@@ -194,6 +194,82 @@ async def test_client_times_out_when_stream_hangs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_allows_long_stream_with_active_chunks() -> None:
+    """测试持续输出的长流不会被累计时长中断。"""
+
+    class DelayedStream:
+        def __init__(self) -> None:
+            self._chunks = iter(("一", "二", "三", "四"))
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.sleep(0.02)
+            try:
+                content = next(self._chunks)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+            return SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=content))]
+            )
+
+    class DelayedCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            return DelayedStream()
+
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        first_byte_timeout_seconds=0.06,
+        stream_idle_timeout_seconds=0.06,
+    )
+    delayed_sdk = SimpleNamespace(chat=SimpleNamespace(completions=DelayedCompletions()))
+    client = OpenAICompatibleClient(settings, delayed_sdk)  # type: ignore[arg-type]
+
+    assert await _collect(client) == "一二三四"
+
+
+@pytest.mark.asyncio
+async def test_client_times_out_when_stream_becomes_idle() -> None:
+    """测试两个流式分片之间超时会停止请求。"""
+
+    class IdleStream:
+        def __init__(self) -> None:
+            self._calls = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            self._calls += 1
+            await asyncio.sleep(0.01 if self._calls == 1 else 0.08)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="片段"))]
+            )
+
+    class IdleCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            return IdleStream()
+
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        first_byte_timeout_seconds=0.04,
+        stream_idle_timeout_seconds=0.04,
+    )
+    idle_sdk = SimpleNamespace(chat=SimpleNamespace(completions=IdleCompletions()))
+    client = OpenAICompatibleClient(settings, idle_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError, match="模型请求超时") as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "timeout"
+
+
+@pytest.mark.asyncio
 async def test_client_classifies_context_overflow_error() -> None:
     """测试服务端上下文超限会被单独分类。"""
 

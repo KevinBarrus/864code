@@ -50,7 +50,7 @@ def test_load_settings_reads_optional_context_budget(tmp_path: Path) -> None:
 
 
 def test_load_settings_reads_request_timeout(tmp_path: Path) -> None:
-    """测试模型请求超时可以通过配置调整。"""
+    """测试旧请求超时会作为两类超时的兼容默认值。"""
 
     env_path = _write_env(
         tmp_path,
@@ -60,7 +60,30 @@ def test_load_settings_reads_request_timeout(tmp_path: Path) -> None:
         "MODEL_REQUEST_TIMEOUT_SECONDS=45.5\n",
     )
 
-    assert load_settings(env_path).request_timeout_seconds == 45.5
+    settings = load_settings(env_path)
+
+    assert settings.request_timeout_seconds == 45.5
+    assert settings.first_byte_timeout_seconds == 45.5
+    assert settings.stream_idle_timeout_seconds == 45.5
+
+
+def test_load_settings_reads_separate_stream_timeouts(tmp_path: Path) -> None:
+    """测试首包和流式空闲超时可以独立配置。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MODEL_REQUEST_TIMEOUT_SECONDS=45.5\n"
+        "MODEL_FIRST_BYTE_TIMEOUT_SECONDS=12\n"
+        "MODEL_STREAM_IDLE_TIMEOUT_SECONDS=34\n",
+    )
+
+    settings = load_settings(env_path)
+
+    assert settings.first_byte_timeout_seconds == 12
+    assert settings.stream_idle_timeout_seconds == 34
 
 
 def test_load_settings_reads_optional_stdio_mcp_provider(tmp_path: Path) -> None:

@@ -32,6 +32,8 @@ class Settings:
     reserve_tokens: int = 16_000
     keep_recent_tokens: int = 20_000
     request_timeout_seconds: float = 120.0
+    first_byte_timeout_seconds: float = 120.0
+    stream_idle_timeout_seconds: float = 120.0
     mcp_stdio: McpStdioSettings | None = None
 
 
@@ -54,6 +56,16 @@ def load_settings(env_path: Path | None = None) -> Settings:
         120.0,
         "MODEL_REQUEST_TIMEOUT_SECONDS",
     )
+    first_byte_timeout_seconds = _optional_float(
+        values.get("MODEL_FIRST_BYTE_TIMEOUT_SECONDS"),
+        request_timeout_seconds,
+        "MODEL_FIRST_BYTE_TIMEOUT_SECONDS",
+    )
+    stream_idle_timeout_seconds = _optional_float(
+        values.get("MODEL_STREAM_IDLE_TIMEOUT_SECONDS"),
+        request_timeout_seconds,
+        "MODEL_STREAM_IDLE_TIMEOUT_SECONDS",
+    )
     mcp_stdio = _optional_mcp_stdio_settings(values)
     if context_window <= 0:
         raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
@@ -63,6 +75,10 @@ def load_settings(env_path: Path | None = None) -> Settings:
         raise ConfigError("MODEL_KEEP_RECENT_TOKENS 必须大于 0")
     if request_timeout_seconds <= 0:
         raise ConfigError("MODEL_REQUEST_TIMEOUT_SECONDS 必须大于 0")
+    if first_byte_timeout_seconds <= 0:
+        raise ConfigError("MODEL_FIRST_BYTE_TIMEOUT_SECONDS 必须大于 0")
+    if stream_idle_timeout_seconds <= 0:
+        raise ConfigError("MODEL_STREAM_IDLE_TIMEOUT_SECONDS 必须大于 0")
     _validate_base_url(base_url)
 
     return Settings(
@@ -73,6 +89,8 @@ def load_settings(env_path: Path | None = None) -> Settings:
         reserve_tokens=reserve_tokens,
         keep_recent_tokens=keep_recent_tokens,
         request_timeout_seconds=request_timeout_seconds,
+        first_byte_timeout_seconds=first_byte_timeout_seconds,
+        stream_idle_timeout_seconds=stream_idle_timeout_seconds,
         mcp_stdio=mcp_stdio,
     )
 

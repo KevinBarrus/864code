@@ -39,11 +39,15 @@ class OpenAICompatibleClient:
         """根据配置创建客户端，也允许注入测试客户端。"""
 
         self._model_name = settings.model_name
-        self._request_timeout_seconds = settings.request_timeout_seconds
+        self._first_byte_timeout_seconds = settings.first_byte_timeout_seconds
+        self._stream_idle_timeout_seconds = settings.stream_idle_timeout_seconds
         self._client = client or AsyncOpenAI(
             api_key=settings.api_key,
             base_url=settings.base_url,
-            timeout=self._request_timeout_seconds,
+            timeout=max(
+                self._first_byte_timeout_seconds,
+                self._stream_idle_timeout_seconds,
+            ),
         )
 
     async def stream_chat(
@@ -73,29 +77,48 @@ class OpenAICompatibleClient:
             request["tools"] = list(tools)
 
         try:
-            async with asyncio.timeout(self._request_timeout_seconds):
-                stream = await self._client.chat.completions.create(
-                    **request,
-                )
-                tool_calls: dict[int, _ToolCallBuffer] = {}
-                async for chunk in stream:
-                    if not chunk.choices:
-                        continue
-                    delta = chunk.choices[0].delta
-                    content = delta.content
-                    if content:
-                        yield TextDelta(content)
-                    for tool_call_delta in getattr(delta, "tool_calls", None) or ():
-                        _append_tool_call_delta(tool_calls, tool_call_delta)
+            tool_calls: dict[int, _ToolCallBuffer] = {}
+            async for chunk in self._stream_chunks(request):
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                content = delta.content
+                if content:
+                    yield TextDelta(content)
+                for tool_call_delta in getattr(delta, "tool_calls", None) or ():
+                    _append_tool_call_delta(tool_calls, tool_call_delta)
 
-                for index in sorted(tool_calls):
-                    yield ToolCallEvent(_build_tool_call(tool_calls[index], index))
+            for index in sorted(tool_calls):
+                yield ToolCallEvent(_build_tool_call(tool_calls[index], index))
         except asyncio.CancelledError:
             raise
         except ModelClientError:
             raise
         except Exception as exc:
             raise _to_model_error(exc) from exc
+
+    async def _stream_chunks(
+        self,
+        request: Mapping[str, object],
+    ) -> AsyncIterator[object]:
+        """按首包和分片空闲时间读取模型流。"""
+
+        async with asyncio.timeout(self._first_byte_timeout_seconds):
+            stream = await self._client.chat.completions.create(**request)
+            iterator = stream.__aiter__()
+            try:
+                chunk = await anext(iterator)
+            except StopAsyncIteration:
+                return
+        yield chunk
+
+        while True:
+            try:
+                async with asyncio.timeout(self._stream_idle_timeout_seconds):
+                    chunk = await anext(iterator)
+            except StopAsyncIteration:
+                return
+            yield chunk
 
 
 def _to_model_error(error: BaseException) -> ModelClientError:
