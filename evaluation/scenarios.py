@@ -193,7 +193,9 @@ async def run_file_edit_scenario(workspace) -> EvaluationResult:
         ]
     )
 
-    async def approve_write(definition, tool_call):
+    async def approve_write(definition, tool_call, allow_session):
+        """允许离线脚本中的单次文件编辑。"""
+
         return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
 
     manager = ToolManager(permission_manager=PermissionManager(approve_write))
@@ -323,12 +325,12 @@ async def run_compaction_restore_scenario(workspace) -> EvaluationResult:
 ## Critical Context
 保留任务目标和关键决策"""
     session = Session(workspace)
-    session.add_user_message("旧问题" + "x" * 160)
-    session.add_assistant_message("旧回答" + "x" * 160)
+    session.add_user_message("旧问题" + "x" * 2_000)
+    session.add_assistant_message("旧回答" + "x" * 2_000)
     session.add_user_message("新问题")
     session.add_assistant_message("新回答")
     client = FakeModelClient([[TextDelta(summary)]])
-    manager = ContextManager(ContextBudget(100, 20, 20))
+    manager = ContextManager(ContextBudget(1_000, 100, 100))
     started_at = perf_counter()
     events = [
         message_to_record(Message(role="user", content="旧问题和旧回答需要压缩"))

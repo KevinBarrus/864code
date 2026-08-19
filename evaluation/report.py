@@ -25,10 +25,6 @@ def render_report(
 ) -> str:
     """将评测结果转换为 HTML 文本"""
 
-    metrics = calculate_metrics(results)
-    rows = "\n".join(_result_row(result) for result in results)
-    failures = "\n".join(_failure_row(result) for result in results for assertion in result.assertions if not assertion.passed)
-    failures = failures or "<tr><td colspan=3>无失败断言</td></tr>"
     regression_html = _regression_section(regression)
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -48,10 +44,63 @@ def render_report(
 </head>
 <body>
   <h1>864code Evaluation Report</h1>
+  {_evaluation_section(
+      "核心链路回归",
+      "固定脚本验证模块协作，不衡量模型能力",
+      _results_of_type(results, "core-regression"),
+      "场景通过率",
+  )}
+  {_evaluation_section(
+      "真实任务评测",
+      "使用真实模型任务衡量 Agent 的任务完成能力",
+      _results_of_type(results, "real-task"),
+      "任务完成率",
+  )}
+  {_evaluation_section(
+      "在线专项",
+      "验证压缩、网络等指定运行时能力，不计入真实任务指标",
+      _results_of_type(results, "online-special"),
+      "场景通过率",
+  )}
+  {regression_html}
+</body>
+</html>
+"""
+
+
+def _results_of_type(
+    results: list[EvaluationResult],
+    evaluation_type: str,
+) -> list[EvaluationResult]:
+    """筛选同一来源的评测结果，避免不同性质指标混合。"""
+
+    return [result for result in results if result.evaluation_type == evaluation_type]
+
+
+def _evaluation_section(
+    title: str,
+    description: str,
+    results: list[EvaluationResult],
+    completion_label: str,
+) -> str:
+    """渲染一种评测来源的独立汇总、结果和失败断言。"""
+
+    metrics = calculate_metrics(results)
+    rows = "\n".join(_result_row(result) for result in results)
+    rows = rows or "<tr><td colspan=11>暂无结果</td></tr>"
+    failures = "\n".join(
+        _failure_row(result)
+        for result in results
+        for assertion in result.assertions
+        if not assertion.passed
+    )
+    failures = failures or "<tr><td colspan=3>无失败断言</td></tr>"
+    return f"""<section>
+  <h2>{escape(title)}</h2>
+  <p>{escape(description)}</p>
   <p>样本数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
-  <p>核心链路回归用于验证模块协作，真实任务评测才用于衡量模型完成任务的能力</p>
   <section class="metrics">
-    {_metric("任务完成率", _percent(metrics.task_completion_rate))}
+    {_metric(completion_label, _percent(metrics.task_completion_rate))}
     {_metric("断言通过率", _percent(metrics.assertion_pass_rate))}
     {_metric("工具成功率", _percent(metrics.tool_success_rate))}
     {_metric("工具恢复率", _percent(metrics.tool_recovery_rate))}
@@ -65,20 +114,17 @@ def render_report(
     {_metric("请求 P50", f"{metrics.p50_model_request_duration_ms:.2f} ms")}
     {_metric("请求 P95", f"{metrics.p95_model_request_duration_ms:.2f} ms")}
   </section>
-  <h2>场景结果</h2>
+  <h3>场景结果</h3>
   <table>
     <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>错误类别</th><th>失败阶段</th><th>错误详情</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
-  <h2>失败断言</h2>
+  <h3>失败断言</h3>
   <table>
     <thead><tr><th>场景</th><th>断言</th><th>原因</th></tr></thead>
     <tbody>{failures}</tbody>
   </table>
-  {regression_html}
-</body>
-</html>
-"""
+</section>"""
 
 
 def _result_row(result: EvaluationResult) -> str:

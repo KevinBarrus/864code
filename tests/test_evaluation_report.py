@@ -23,7 +23,7 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
 
     assert "任务完成率" in html
     assert "核心链路回归" in html
-    assert "真实任务评测才用于衡量模型完成任务的能力" in html
+    assert "固定脚本验证模块协作，不衡量模型能力" in html
     assert "P50 耗时" in html
     assert "P95 耗时" in html
     assert "demo" in html
@@ -31,6 +31,36 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
     assert "agent-loop" in html
     assert "ConfigError: &lt;MODEL_NAME&gt; is missing" in html
     assert "通过" in html
+
+
+def test_render_report_separates_regression_and_real_task_metrics() -> None:
+    """测试固定脚本结果不会混入真实任务指标。"""
+
+    html = render_report(
+        [
+            EvaluationResult(
+                scenario="offline-script",
+                duration_ms=10,
+                assertions=(EvaluationAssertion("done", True),),
+            ),
+            EvaluationResult(
+                scenario="online-task",
+                duration_ms=20,
+                evaluation_type="real-task",
+                assertions=(EvaluationAssertion("done", False),),
+            ),
+        ]
+    )
+
+    regression_section, real_task_section, _ = html.split("<h2>")[1:4]
+    assert "固定脚本验证模块协作，不衡量模型能力" in regression_section
+    assert "样本数：1，通过数：1" in regression_section
+    assert "offline-script" in regression_section
+    assert "online-task" not in regression_section
+    assert "使用真实模型任务衡量 Agent 的任务完成能力" in real_task_section
+    assert "样本数：1，通过数：0" in real_task_section
+    assert "online-task" in real_task_section
+    assert "offline-script" not in real_task_section
 
 
 def test_render_report_contains_baseline_regression() -> None:
