@@ -15,6 +15,12 @@ from .mcp import (
 )
 from .mcp_stdio import McpProtocolError, StdioMcpProvider
 from .mutation_tools import create_edit_file_tool, create_write_file_tool
+from .output_limits import (
+    MAX_TOOL_OUTPUT_BYTES,
+    MAX_TOOL_OUTPUT_LINES,
+    TRUNCATION_NOTICE,
+    limit_tool_output,
+)
 from .path_utils import WorkspacePathError, resolve_workspace_path
 from .permissions import (
     ApprovalDecision,
@@ -46,6 +52,8 @@ __all__ = [
     "McpToolRegistry",
     "RegisteredMcpTool",
     "McpProtocolError",
+    "MAX_TOOL_OUTPUT_BYTES",
+    "MAX_TOOL_OUTPUT_LINES",
     "StdioMcpProvider",
     "WorkspacePathError",
     "create_list_files_tool",
@@ -54,6 +62,8 @@ __all__ = [
     "create_run_command_tool",
     "create_search_files_tool",
     "create_write_file_tool",
+    "limit_tool_output",
     "resolve_workspace_path",
+    "TRUNCATION_NOTICE",
     "validate_tool_arguments",
 ]

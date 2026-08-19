@@ -8,7 +8,9 @@ from core.model import ToolCall
 from core.tools import (
     ApprovalDecision,
     ApprovalResult,
+    MAX_TOOL_OUTPUT_BYTES,
     PermissionManager,
+    TRUNCATION_NOTICE,
     ToolManager,
     create_edit_file_tool,
     create_run_command_tool,
@@ -108,3 +110,17 @@ async def test_run_command_marks_nonzero_exit_as_error(tmp_path: Path) -> None:
 
     assert result.is_error is True
     assert "退出码：2" in result.content
+
+
+@pytest.mark.asyncio
+async def test_run_command_truncates_large_output(tmp_path: Path) -> None:
+    """测试命令工具会限制返回给模型的输出。"""
+
+    manager = _manager(create_run_command_tool(tmp_path))
+    script = f"print('x' * {MAX_TOOL_OUTPUT_BYTES + 1})"
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+
+    result = await manager.execute(_call("run_command", {"command": command}))
+
+    assert result.content.endswith(TRUNCATION_NOTICE)
+    assert len(result.content.encode("utf-8")) <= MAX_TOOL_OUTPUT_BYTES

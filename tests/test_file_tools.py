@@ -4,6 +4,9 @@ import pytest
 
 from core.model import ToolCall
 from core.tools import (
+    MAX_TOOL_OUTPUT_BYTES,
+    MAX_TOOL_OUTPUT_LINES,
+    TRUNCATION_NOTICE,
     ToolManager,
     WorkspacePathError,
     create_list_files_tool,
@@ -44,6 +47,19 @@ async def test_read_file_returns_complete_text(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_read_file_truncates_large_output(tmp_path: Path) -> None:
+    """测试读取工具会限制返回给模型的文本大小。"""
+
+    (tmp_path / "large.txt").write_text("x" * (MAX_TOOL_OUTPUT_BYTES + 1))
+    manager = _manager(tmp_path, create_read_file_tool(tmp_path))
+
+    result = await manager.execute(_call("read_file", {"path": "large.txt"}))
+
+    assert result.content.endswith(TRUNCATION_NOTICE)
+    assert len(result.content.encode("utf-8")) <= MAX_TOOL_OUTPUT_BYTES
+
+
+@pytest.mark.asyncio
 async def test_list_files_returns_sorted_entries(tmp_path: Path) -> None:
     """测试目录列表按名称排序并标记子目录。"""
 
@@ -69,6 +85,18 @@ async def test_search_files_returns_matching_lines(tmp_path: Path) -> None:
     )
 
     assert result.content == "main.py:2: needle here"
+
+
+@pytest.mark.asyncio
+async def test_search_files_truncates_excessive_matches(tmp_path: Path) -> None:
+    """测试搜索工具会限制过多匹配结果。"""
+
+    (tmp_path / "matches.txt").write_text("needle\n" * (MAX_TOOL_OUTPUT_LINES + 1))
+    manager = _manager(tmp_path, create_search_files_tool(tmp_path))
+
+    result = await manager.execute(_call("search_files", {"pattern": "needle"}))
+
+    assert result.content.endswith(TRUNCATION_NOTICE)
 
 
 @pytest.mark.asyncio

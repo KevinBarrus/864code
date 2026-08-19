@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..model import ToolCall, ToolResult
 from .args import string_argument
+from .output_limits import limit_tool_output
 from .types import ToolDefinition, ToolHandler
 
 
@@ -29,6 +30,7 @@ def create_run_command_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandle
         output = _format_output(stdout, stderr)
         if process.returncode:
             output = f"退出码：{process.returncode}\n{output}"
+        output = limit_tool_output(output)
         return ToolResult(
             call_id=tool_call.call_id,
             content=output,

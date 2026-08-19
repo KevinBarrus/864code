@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..model import ToolCall, ToolResult
 from .args import optional_path, string_argument
+from .output_limits import limit_tool_output
 from .path_utils import resolve_workspace_path
 from .types import ToolDefinition, ToolHandler
 
@@ -17,7 +18,7 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
             raise ValueError("目标不是文件")
         return ToolResult(
             call_id=tool_call.call_id,
-            content=path.read_text(encoding="utf-8"),
+            content=limit_tool_output(path.read_text(encoding="utf-8")),
         )
 
     return (
@@ -52,7 +53,7 @@ def create_list_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
         )
         return ToolResult(
             call_id=tool_call.call_id,
-            content=content or "目录为空",
+            content=limit_tool_output(content) if content else "目录为空",
         )
 
     return (
@@ -98,7 +99,7 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
 
         return ToolResult(
             call_id=tool_call.call_id,
-            content="\n".join(matches) or "没有找到匹配内容",
+            content=limit_tool_output("\n".join(matches)) if matches else "没有找到匹配内容",
         )
 
     return (
