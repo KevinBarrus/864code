@@ -10,7 +10,7 @@ def test_policy_retries_network_errors_once() -> None:
     decision = AgentErrorPolicy().decide(make_error("network"))
 
     assert decision.action == "retry"
-    assert decision.max_attempts == 1
+    assert decision.max_attempts == 2
     assert decision.visible_message == "安全错误信息"
 
 
@@ -33,3 +33,18 @@ def test_policy_does_not_retry_authentication_errors() -> None:
 
     assert decision.action == "stop"
     assert decision.max_attempts == 0
+
+
+def test_policy_uses_retry_after_header_for_rate_limit() -> None:
+    """测试限流错误优先使用服务端 Retry-After。"""
+
+    error = make_error("rate_limit")
+    error.cause = type(
+        "RateLimitCause",
+        (),
+        {"response": type("Response", (), {"headers": {"retry-after": "3"}})()},
+    )()
+
+    decision = AgentErrorPolicy().decide(error)
+
+    assert decision.delay_seconds == 3

@@ -176,6 +176,45 @@ async def test_agent_loop_retries_model_network_error_once() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_loop_uses_exponential_backoff_and_retry_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试重试使用指数退避，并优先遵守服务端等待时间。"""
+
+    delays: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    class RetryClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_response(self, messages, tools=()):
+            self.calls += 1
+            if self.calls == 1:
+                raise AgentError("network", "model_request", "网络失败")
+            if self.calls == 2:
+                cause = type(
+                    "RateLimitCause",
+                    (),
+                    {"response": type("Response", (), {"headers": {"Retry-After": "3"}})()},
+                )()
+                raise AgentError("rate_limit", "model_request", "限流", cause=cause)
+            yield TextDelta("重试成功")
+
+    monkeypatch.setattr("core.agent_loop.asyncio.sleep", sleep)
+    monkeypatch.setattr("core.agent_loop.random.uniform", lambda start, end: 0)
+
+    result = await AgentLoop(RetryClient(), ToolManager()).run(
+        [Message(role="user", content="继续")]
+    )
+
+    assert result.final_content == "重试成功"
+    assert delays == [0.5, 3]
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_does_not_retry_after_partial_model_output() -> None:
     """测试模型已经输出内容后失败不会重复请求。"""
 

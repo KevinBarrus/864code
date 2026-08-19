@@ -1,6 +1,7 @@
 """实现模型和工具之间的最小执行循环。"""
 
 import asyncio
+import random
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 
@@ -30,6 +31,8 @@ class ToolExecutionEvent:
 AgentEvent = ModelEvent | ToolExecutionEvent
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
 ContextBuilder = Callable[[Sequence[Message], bool], Awaitable[ContextBuildResult]]
+RETRY_BASE_DELAY_SECONDS = 0.5
+RETRY_MAX_DELAY_SECONDS = 4.0
 
 
 @dataclass(frozen=True)
@@ -178,8 +181,7 @@ class AgentLoop:
                 ):
                     raise
                 attempt += 1
-                if decision.delay_seconds:
-                    await asyncio.sleep(decision.delay_seconds)
+                await asyncio.sleep(_retry_delay_seconds(decision, attempt))
 
 
 def _mark_last_assistant_cancelled(messages: list[Message]) -> None:
@@ -189,3 +191,12 @@ def _mark_last_assistant_cancelled(messages: list[Message]) -> None:
         if messages[index].role == "assistant":
             messages[index] = replace(messages[index], status="cancelled")
             return
+
+
+def _retry_delay_seconds(decision, attempt: int) -> float:
+    """优先使用服务端等待时间，否则计算带抖动的指数退避。"""
+
+    if decision.delay_seconds:
+        return decision.delay_seconds
+    delay = min(RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)), RETRY_MAX_DELAY_SECONDS)
+    return delay + random.uniform(0, delay * 0.1)
