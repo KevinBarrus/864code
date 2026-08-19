@@ -17,6 +17,7 @@ from core.context import (
     generate_context_summary,
     select_recent_messages,
 )
+from core.context import _fit_messages_to_budget, _has_valid_tool_chain, _split_oversized_latest_turn
 from core.model import Message, ModelClientError, ToolCall
 from core.session_store import CompactionRecord
 
@@ -164,6 +165,46 @@ def test_select_recent_messages_identifies_oversized_latest_turn() -> None:
 def test_select_recent_messages_rejects_non_positive_budget() -> None:
     with pytest.raises(ValueError):
         select_recent_messages([], max_tokens=0)
+
+
+def test_oversized_turn_never_keeps_orphan_tool_result() -> None:
+    """测试无法保留完整工具链时，后缀不会单独留下工具结果。"""
+
+    messages = [
+        Message(role="user", content="读取文件"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+        ),
+        Message(role="tool", content="x" * 1_000, tool_call_id="call-1"),
+    ]
+
+    prefix, suffix = _split_oversized_latest_turn(messages, max_tokens=1)
+
+    assert prefix == messages
+    assert suffix == []
+    assert _has_valid_tool_chain(suffix)
+
+
+def test_hard_budget_removes_unpaired_tool_call_after_dropping_result() -> None:
+    """测试硬裁剪删除工具结果时会同步移除对应调用。"""
+
+    result = _fit_messages_to_budget(
+        [
+            Message(role="user", content="读取文件"),
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
+            ),
+            Message(role="tool", content="x" * 1_000, tool_call_id="call-1"),
+        ],
+        max_tokens=4,
+    )
+
+    assert _has_valid_tool_chain(result)
+    assert all(message.role != "tool" for message in result)
 
 
 def test_context_manager_build_fallback_keeps_recent_messages_and_notice() -> None:

@@ -445,6 +445,7 @@ def _fit_messages_to_budget(
             shortened = _truncate_message(current, remaining)
             if shortened is None:
                 del result[index]
+                result = _remove_unpaired_tool_messages(result)
             else:
                 result[index] = shortened
             continue
@@ -511,7 +512,38 @@ def _split_oversized_latest_turn(
             and _has_valid_tool_chain(suffix)
         ):
             return latest_group[:start], suffix
-    return latest_group[:-1], latest_group[-1:]
+    return latest_group, []
+
+
+def _remove_unpaired_tool_messages(messages: Sequence[Message]) -> list[Message]:
+    """移除无法与工具结果配对的调用，避免发送无效工具链。"""
+
+    call_ids = {
+        tool_call.call_id
+        for message in messages
+        if message.role == "assistant"
+        for tool_call in message.tool_calls
+    }
+    result_ids = {
+        message.tool_call_id
+        for message in messages
+        if message.role == "tool" and message.tool_call_id is not None
+    }
+    result: list[Message] = []
+    for message in messages:
+        if message.role == "tool" and message.tool_call_id not in call_ids:
+            continue
+        if message.role == "assistant" and message.tool_calls:
+            message = replace(
+                message,
+                tool_calls=tuple(
+                    tool_call
+                    for tool_call in message.tool_calls
+                    if tool_call.call_id in result_ids
+                ),
+            )
+        result.append(message)
+    return result
 
 
 def _has_valid_tool_chain(messages: Sequence[Message]) -> bool:
