@@ -139,7 +139,7 @@ class SessionStore:
         for session_path in self._sessions_dir.glob("*.jsonl"):
             session_id = session_path.stem
             try:
-                messages = self.load_messages(session_id)
+                title = self._read_title(session_id)
             except SessionStoreError as exc:
                 raise SessionStoreError(
                     f"无法读取会话 {session_id}: {exc}"
@@ -148,7 +148,7 @@ class SessionStore:
             summaries.append(
                 SessionSummary(
                     session_id=session_id,
-                    title=self._create_title(messages, session_id),
+                    title=title,
                     updated_at=datetime.fromtimestamp(
                         session_path.stat().st_mtime,
                         tz=timezone.utc,
@@ -156,6 +156,37 @@ class SessionStore:
                 )
             )
         return sorted(summaries, key=lambda item: item.updated_at, reverse=True)
+
+    def _read_title(self, session_id: str) -> str:
+        """仅读取首条有效用户消息，避免为会话列表加载完整历史。"""
+
+        session_path = self._session_path(session_id)
+        if not session_path.exists():
+            return session_id[:8]
+
+        file_size = session_path.stat().st_size
+        with session_path.open("rb") as file:
+            line_number = 0
+            while line := file.readline():
+                line_number += 1
+                line = line.decode("utf-8")
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    if file.tell() == file_size and not line.endswith("\n"):
+                        break
+                    raise SessionStoreError(
+                        f"第 {line_number} 行不是有效 JSON"
+                    ) from exc
+
+                if isinstance(record, dict) and record.get("type") == "compaction":
+                    continue
+                message = self._message_from_record(record, line_number)
+                if message.role == "user":
+                    return self._create_title([message], session_id)
+        return session_id[:8]
 
     def _session_path(self, session_id: str) -> Path:
         """校验 Session ID 后生成对应文件路径。"""

@@ -286,6 +286,51 @@ def test_list_sessions_truncates_title_and_uses_id_for_empty_session(
     assert summaries[empty_id].title == empty_id[:8]
 
 
+def test_list_sessions_reads_only_until_first_user_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试会话列表不会为标题加载首条用户消息之后的历史。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '{"type":"message","role":"user","content":"首条标题"}\n'
+        'not-json\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        store,
+        "load_messages",
+        lambda session_id: pytest.fail("会话列表不应加载完整历史"),
+    )
+
+    summaries = store.list_sessions()
+
+    assert summaries[0].title == "首条标题"
+
+
+def test_list_sessions_ignores_incomplete_tail_before_any_user_message(
+    tmp_path: Path,
+) -> None:
+    """测试标题读取沿用最后一条未完成记录的恢复规则。"""
+
+    store = SessionStore(tmp_path)
+    session_id = str(uuid.uuid4())
+    path = tmp_path / ".864code" / "sessions" / f"{session_id}.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '{"type":"message","role":"assistant","content":"历史"}\n'
+        '{"type":"message","role":"user","content":"未完成',
+        encoding="utf-8",
+    )
+
+    assert store.list_sessions()[0].title == session_id[:8]
+
+
 def test_list_sessions_rejects_corrupted_file(tmp_path: Path) -> None:
     """测试损坏的会话文件会返回明确错误"""
 
