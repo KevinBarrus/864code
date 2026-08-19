@@ -32,9 +32,32 @@ class Settings:
     reserve_tokens: int = 16_000
     keep_recent_tokens: int = 20_000
     request_timeout_seconds: float = 120.0
-    first_byte_timeout_seconds: float = 120.0
-    stream_idle_timeout_seconds: float = 120.0
+    first_byte_timeout_seconds: float | None = None
+    stream_idle_timeout_seconds: float | None = None
     mcp_stdio: McpStdioSettings | None = None
+
+    def __post_init__(self) -> None:
+        """统一超时默认值并校验直接构造的配置。"""
+
+        first_byte_timeout = (
+            self.request_timeout_seconds
+            if self.first_byte_timeout_seconds is None
+            else self.first_byte_timeout_seconds
+        )
+        stream_idle_timeout = (
+            self.request_timeout_seconds
+            if self.stream_idle_timeout_seconds is None
+            else self.stream_idle_timeout_seconds
+        )
+        for name, value in (
+            ("MODEL_REQUEST_TIMEOUT_SECONDS", self.request_timeout_seconds),
+            ("MODEL_FIRST_BYTE_TIMEOUT_SECONDS", first_byte_timeout),
+            ("MODEL_STREAM_IDLE_TIMEOUT_SECONDS", stream_idle_timeout),
+        ):
+            if value <= 0:
+                raise ConfigError(f"{name} 必须大于 0")
+        object.__setattr__(self, "first_byte_timeout_seconds", first_byte_timeout)
+        object.__setattr__(self, "stream_idle_timeout_seconds", stream_idle_timeout)
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
@@ -58,12 +81,12 @@ def load_settings(env_path: Path | None = None) -> Settings:
     )
     first_byte_timeout_seconds = _optional_float(
         values.get("MODEL_FIRST_BYTE_TIMEOUT_SECONDS"),
-        request_timeout_seconds,
+        None,
         "MODEL_FIRST_BYTE_TIMEOUT_SECONDS",
     )
     stream_idle_timeout_seconds = _optional_float(
         values.get("MODEL_STREAM_IDLE_TIMEOUT_SECONDS"),
-        request_timeout_seconds,
+        None,
         "MODEL_STREAM_IDLE_TIMEOUT_SECONDS",
     )
     mcp_stdio = _optional_mcp_stdio_settings(values)
@@ -73,12 +96,6 @@ def load_settings(env_path: Path | None = None) -> Settings:
         raise ConfigError("MODEL_RESERVE_TOKENS 必须小于 MODEL_CONTEXT_WINDOW")
     if keep_recent_tokens <= 0:
         raise ConfigError("MODEL_KEEP_RECENT_TOKENS 必须大于 0")
-    if request_timeout_seconds <= 0:
-        raise ConfigError("MODEL_REQUEST_TIMEOUT_SECONDS 必须大于 0")
-    if first_byte_timeout_seconds <= 0:
-        raise ConfigError("MODEL_FIRST_BYTE_TIMEOUT_SECONDS 必须大于 0")
-    if stream_idle_timeout_seconds <= 0:
-        raise ConfigError("MODEL_STREAM_IDLE_TIMEOUT_SECONDS 必须大于 0")
     _validate_base_url(base_url)
 
     return Settings(
@@ -114,7 +131,11 @@ def _optional_int(value: str | None, default: int) -> int:
         raise ConfigError("上下文预算配置必须是整数") from exc
 
 
-def _optional_float(value: str | None, default: float, name: str) -> float:
+def _optional_float(
+    value: str | None,
+    default: float | None,
+    name: str,
+) -> float | None:
     """读取可选小数配置，未设置时使用默认值。"""
 
     if value is None or not value.strip():

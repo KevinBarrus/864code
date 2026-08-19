@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from core.config import ConfigError, McpStdioSettings, load_settings
+from core.config import ConfigError, McpStdioSettings, Settings, load_settings
 
 
 def _write_env(tmp_path: Path, content: str) -> Path:
@@ -65,6 +65,32 @@ def test_load_settings_reads_request_timeout(tmp_path: Path) -> None:
     assert settings.request_timeout_seconds == 45.5
     assert settings.first_byte_timeout_seconds == 45.5
     assert settings.stream_idle_timeout_seconds == 45.5
+
+
+def test_settings_direct_construction_uses_legacy_timeout_as_fallback() -> None:
+    """测试直接构造配置也会统一超时回退。"""
+
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        request_timeout_seconds=0.01,
+    )
+
+    assert settings.first_byte_timeout_seconds == 0.01
+    assert settings.stream_idle_timeout_seconds == 0.01
+
+
+def test_settings_rejects_invalid_direct_timeout() -> None:
+    """测试直接构造配置会校验超时值。"""
+
+    with pytest.raises(ConfigError, match="MODEL_STREAM_IDLE_TIMEOUT_SECONDS"):
+        Settings(
+            base_url="https://example.com/v1",
+            model_name="test-model",
+            api_key="test-key",
+            stream_idle_timeout_seconds=0,
+        )
 
 
 def test_load_settings_reads_separate_stream_timeouts(tmp_path: Path) -> None:
