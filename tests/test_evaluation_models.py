@@ -48,3 +48,4 @@ def test_evaluation_models_keep_scenario_and_actual_token_metadata() -> None:
     assert scenario.description == "测试会话恢复"
     assert result.estimated_tokens == 100
     assert result.actual_tokens == 80
+    assert result.evaluation_type == "core-regression"

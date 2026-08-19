@@ -6,7 +6,6 @@ from core.agent_loop import AgentLoop, ToolExecutionEvent
 from core.context import estimate_context_tokens
 from core.context import ContextBudget, ContextManager
 from core.errors import AgentError
-from core.memory import Memory
 from core.model import Message, TextDelta, ToolCall, ToolCallEvent
 from core.tools import (
     ApprovalDecision,
@@ -25,7 +24,7 @@ from .models import EvaluationAssertion, EvaluationResult, EvaluationScenario
 
 MEMORY_SCENARIO = EvaluationScenario(
     name="multi_turn_memory",
-    description="验证多轮请求会携带之前的对话历史",
+    description="验证 Session 重启后多轮请求会携带之前的对话历史",
 )
 
 FILE_EDIT_SCENARIO = EvaluationScenario(
@@ -48,9 +47,14 @@ MODEL_RETRY_SCENARIO = EvaluationScenario(
     description="验证模型网络错误会按策略有限重试",
 )
 
+CANCELLED_TOOL_RESTORE_SCENARIO = EvaluationScenario(
+    name="cancelled_tool_restore",
+    description="验证取消后的工具调用链可以从 Session 恢复",
+)
 
-async def run_memory_scenario() -> EvaluationResult:
-    """运行多轮记忆场景并返回结构化结果"""
+
+async def run_memory_scenario(workspace) -> EvaluationResult:
+    """运行 Session 重启后的多轮历史转发场景。"""
 
     client = FakeModelClient(
         [
@@ -58,7 +62,7 @@ async def run_memory_scenario() -> EvaluationResult:
             [TextDelta("根据之前的目标继续执行")],
         ]
     )
-    memory = Memory()
+    session = Session(workspace)
     loop = AgentLoop(client, ToolManager())
     started_at = perf_counter()
     events = [
@@ -67,25 +71,28 @@ async def run_memory_scenario() -> EvaluationResult:
         )
     ]
 
-    memory.add_user_message("项目目标是实现一个简洁的 Coding Agent")
+    session.add_user_message("项目目标是实现一个简洁的 Coding Agent")
     async def collect_first_event(event: object) -> None:
         events.append(event_to_record(event))
 
     first_result = await loop.run(
-        memory.get_messages(),
+        session.get_messages(),
         on_event=collect_first_event,
     )
-    memory.add_message(first_result.messages[-1])
-    events.append(message_to_record(first_result.messages[-1]))
+    for message in first_result.new_messages:
+        session.add_message(message)
+        events.append(message_to_record(message))
+    persistence_ok = session.flush_persistence() and session.close()
+    restored = Session.restore(workspace, session.session_id)
 
-    memory.add_user_message("继续执行")
+    restored.add_user_message("继续执行")
     events.append(message_to_record(Message(role="user", content="继续执行")))
 
     async def collect_second_event(event: object) -> None:
         events.append(event_to_record(event))
 
     second_result = await loop.run(
-        memory.get_messages(),
+        restored.get_messages(),
         on_event=collect_second_event,
     )
     events.append(message_to_record(second_result.messages[-1]))
@@ -104,7 +111,13 @@ async def run_memory_scenario() -> EvaluationResult:
             second_result.final_content == "根据之前的目标继续执行",
             "第二轮模型回复不符合预期",
         ),
+        EvaluationAssertion(
+            "session-restart",
+            persistence_ok,
+            "Session 重启前的消息没有完成持久化",
+        ),
     )
+    restored.close()
     return EvaluationResult(
         scenario=MEMORY_SCENARIO.name,
         duration_ms=(perf_counter() - started_at) * 1000,
@@ -112,7 +125,51 @@ async def run_memory_scenario() -> EvaluationResult:
         estimated_tokens=sum(
             len(message.content) // 4 for request in client.requests for message in request
         ),
+        persistence_degraded=not persistence_ok,
         events=tuple(events),
+        assertions=assertions,
+    )
+
+
+async def run_cancelled_tool_restore_scenario(workspace) -> EvaluationResult:
+    """运行取消工具链的 Session 恢复场景。"""
+
+    session = Session(workspace)
+    tool_call = ToolCall("read-1", "read_file", {"path": "note.txt"})
+    messages = [
+        Message(role="user", content="读取 note.txt"),
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(tool_call,),
+            status="cancelled",
+        ),
+        Message(role="tool", content="文件内容", tool_call_id=tool_call.call_id),
+    ]
+    started_at = perf_counter()
+    for message in messages:
+        session.add_message(message)
+    persistence_ok = session.flush_persistence() and session.close()
+    restored = Session.restore(workspace, session.session_id)
+    restored_messages = restored.get_messages()
+    restored.close()
+    assertions = (
+        EvaluationAssertion(
+            "cancelled-tool-chain-restored",
+            restored_messages == messages,
+            "取消后的工具调用链没有完整恢复",
+        ),
+        EvaluationAssertion(
+            "persistence",
+            persistence_ok,
+            "取消工具链持久化失败",
+        ),
+    )
+    return EvaluationResult(
+        scenario=CANCELLED_TOOL_RESTORE_SCENARIO.name,
+        duration_ms=(perf_counter() - started_at) * 1000,
+        persistence_degraded=not persistence_ok,
+        events=tuple(message_to_record(message) for message in messages),
         assertions=assertions,
     )
 

@@ -108,7 +108,7 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
             session.get_messages(),
             on_event=collect_event,
         )
-        for message in result.messages[len(session.get_messages()) :]:
+        for message in result.new_messages:
             session.add_message(message)
         persistence_ok = session.flush_persistence() and session.close()
         restored = Session.restore(workspace, session.session_id)
@@ -143,6 +143,7 @@ async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
         return EvaluationResult(
             scenario="online_main_smoke",
             duration_ms=(perf_counter() - started_at) * 1000,
+            evaluation_type="real-task",
             model_requests=len(client.requests),
             tool_calls=len(tool_events),
             tool_failures=sum(bool(event["is_error"]) for event in tool_events),
@@ -238,6 +239,7 @@ async def run_online_compaction_smoke(
         return EvaluationResult(
             scenario="online_context_compaction",
             duration_ms=(perf_counter() - started_at) * 1000,
+            evaluation_type="online-special",
             model_requests=len(client.requests),
             compactions=int(result.compaction is not None),
             estimated_tokens=sum(
@@ -285,6 +287,7 @@ async def run_online_network_error_smoke(
     return EvaluationResult(
         scenario="online_network_error",
         duration_ms=(perf_counter() - started_at) * 1000,
+        evaluation_type="online-special",
         model_requests=len(client.requests),
         retries=max(0, len(client.requests) - 1),
         estimated_tokens=sum(

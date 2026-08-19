@@ -1,7 +1,10 @@
 """定义评测场景、断言和结果的数据结构"""
 
 from dataclasses import dataclass, field
+from typing import Literal
 from uuid import uuid4
+
+EvaluationType = Literal["core-regression", "real-task", "online-special"]
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,7 @@ class EvaluationResult:
 
     scenario: str
     duration_ms: float
+    evaluation_type: EvaluationType = "core-regression"
     run_id: str = field(default_factory=lambda: str(uuid4()))
     repetition: int = 1
     model_requests: int = 0

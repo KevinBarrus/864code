@@ -49,6 +49,7 @@ def render_report(
 <body>
   <h1>864code Evaluation Report</h1>
   <p>样本数：{metrics.scenario_count}，通过数：{metrics.passed_scenarios}</p>
+  <p>核心链路回归用于验证模块协作，真实任务评测才用于衡量模型完成任务的能力</p>
   <section class="metrics">
     {_metric("任务完成率", _percent(metrics.task_completion_rate))}
     {_metric("断言通过率", _percent(metrics.assertion_pass_rate))}
@@ -66,7 +67,7 @@ def render_report(
   </section>
   <h2>场景结果</h2>
   <table>
-    <thead><tr><th>场景</th><th>状态</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
+    <thead><tr><th>场景</th><th>类型</th><th>状态</th><th>耗时</th><th>模型请求</th><th>工具调用</th><th>重试</th><th>压缩</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
   <h2>失败断言</h2>
@@ -87,11 +88,23 @@ def _result_row(result: EvaluationResult) -> str:
     status_class = "pass" if result.passed else "fail"
     return (
         f"<tr><td>{escape(result.scenario)}</td>"
+        f"<td>{_evaluation_type_label(result.evaluation_type)}</td>"
         f"<td class=\"{status_class}\">{status}</td>"
         f"<td>{result.duration_ms:.2f} ms</td>"
         f"<td>{result.model_requests}</td><td>{result.tool_calls}</td>"
         f"<td>{result.retries}</td><td>{result.compactions}</td></tr>"
     )
+
+
+def _evaluation_type_label(evaluation_type: str) -> str:
+    """将评测类型转换为报告中的中文标签。"""
+
+    labels = {
+        "core-regression": "核心链路回归",
+        "real-task": "真实任务",
+        "online-special": "在线专项",
+    }
+    return labels[evaluation_type]
 
 
 def _failure_row(result: EvaluationResult) -> str:

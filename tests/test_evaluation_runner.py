@@ -17,7 +17,7 @@ async def test_run_offline_executes_all_scenarios_and_writes_outputs(
 
     results = await run_offline(results_path, report_path)
 
-    assert len(results) == 5
+    assert len(results) == 6
     assert all(result.passed for result in results)
-    assert len(load_results(results_path)) == 5
+    assert len(load_results(results_path)) == 6
     assert report_path.exists()

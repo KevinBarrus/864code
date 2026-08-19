@@ -34,6 +34,7 @@ def _result_to_record(result: EvaluationResult) -> dict[str, object]:
     return {
         "run_id": result.run_id,
         "scenario": result.scenario,
+        "evaluation_type": result.evaluation_type,
         "repetition": result.repetition,
         "passed": result.passed,
         "duration_ms": result.duration_ms,
@@ -69,6 +70,7 @@ def _result_from_record(record: object) -> EvaluationResult:
     return EvaluationResult(
         scenario=_required_string(record, "scenario"),
         duration_ms=_required_number(record, "duration_ms"),
+        evaluation_type=_evaluation_type(record.get("evaluation_type", "core-regression")),
         run_id=str(record.get("run_id", "legacy")),
         repetition=_required_int_or_default(record, "repetition", 1),
         model_requests=_required_int(record, "model_requests"),
@@ -114,6 +116,14 @@ def _required_string(record: dict[str, object], key: str) -> str:
     value = record.get(key)
     if not isinstance(value, str):
         raise ValueError(f"评测结果字段无效：{key}")
+    return value
+
+
+def _evaluation_type(value: object) -> str:
+    """读取兼容旧结果的评测类型。"""
+
+    if value not in {"core-regression", "real-task", "online-special"}:
+        raise ValueError("评测结果字段无效：evaluation_type")
     return value
 
 

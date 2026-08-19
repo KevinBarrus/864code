@@ -8,6 +8,7 @@ from pathlib import Path
 from .report import generate_report
 from .scenarios import (
     run_compaction_restore_scenario,
+    run_cancelled_tool_restore_scenario,
     run_file_edit_scenario,
     run_memory_scenario,
     run_model_retry_scenario,
@@ -17,17 +18,18 @@ from .storage import append_result
 
 
 async def run_offline(output_path: Path, report_path: Path):
-    """在临时工作区执行五类离线场景并生成结果文件"""
+    """在临时工作区执行核心链路回归场景并生成结果文件"""
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("", encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="864code-evaluation-") as directory:
         workspace = Path(directory)
         results = [
-            await run_memory_scenario(),
+            await run_memory_scenario(workspace),
             await run_file_edit_scenario(workspace),
             await run_tool_recovery_scenario(workspace),
             await run_compaction_restore_scenario(workspace),
+            await run_cancelled_tool_restore_scenario(workspace),
             await run_model_retry_scenario(),
         ]
     for result in results:

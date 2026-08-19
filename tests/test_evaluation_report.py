@@ -19,6 +19,8 @@ def test_render_report_contains_metrics_and_scenario_status() -> None:
     )
 
     assert "任务完成率" in html
+    assert "核心链路回归" in html
+    assert "真实任务评测才用于衡量模型完成任务的能力" in html
     assert "P50 耗时" in html
     assert "P95 耗时" in html
     assert "demo" in html
