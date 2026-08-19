@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
@@ -160,6 +161,36 @@ async def test_client_classifies_timeout_error() -> None:
 
     assert error_info.value.category == "timeout"
     assert error_info.value.retryable
+
+
+@pytest.mark.asyncio
+async def test_client_times_out_when_stream_hangs() -> None:
+    """测试流式请求挂起时会在配置时间后返回超时错误。"""
+
+    class SlowStream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.Event().wait()
+
+    class SlowCompletions:
+        async def create(self, **kwargs: object) -> AsyncIterator[object]:
+            return SlowStream()
+
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        request_timeout_seconds=0.01,
+    )
+    slow_sdk = SimpleNamespace(chat=SimpleNamespace(completions=SlowCompletions()))
+    client = OpenAICompatibleClient(settings, slow_sdk)  # type: ignore[arg-type]
+
+    with pytest.raises(ModelClientError, match="模型请求超时") as error_info:
+        await _collect(client)
+
+    assert error_info.value.category == "timeout"
 
 
 @pytest.mark.asyncio

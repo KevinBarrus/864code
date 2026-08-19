@@ -49,6 +49,20 @@ def test_load_settings_reads_optional_context_budget(tmp_path: Path) -> None:
     assert settings.keep_recent_tokens == 12000
 
 
+def test_load_settings_reads_request_timeout(tmp_path: Path) -> None:
+    """测试模型请求超时可以通过配置调整。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MODEL_REQUEST_TIMEOUT_SECONDS=45.5\n",
+    )
+
+    assert load_settings(env_path).request_timeout_seconds == 45.5
+
+
 def test_load_settings_rejects_missing_value(tmp_path: Path) -> None:
     """测试缺少 API Key 时会抛出明确的配置异常。"""
 

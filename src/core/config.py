@@ -21,6 +21,7 @@ class Settings:
     context_window: int = 100_000
     reserve_tokens: int = 16_000
     keep_recent_tokens: int = 20_000
+    request_timeout_seconds: float = 120.0
 
 
 def load_settings(env_path: Path | None = None) -> Settings:
@@ -37,12 +38,19 @@ def load_settings(env_path: Path | None = None) -> Settings:
     context_window = _optional_int(values.get("MODEL_CONTEXT_WINDOW"), 100_000)
     reserve_tokens = _optional_int(values.get("MODEL_RESERVE_TOKENS"), 16_000)
     keep_recent_tokens = _optional_int(values.get("MODEL_KEEP_RECENT_TOKENS"), 20_000)
+    request_timeout_seconds = _optional_float(
+        values.get("MODEL_REQUEST_TIMEOUT_SECONDS"),
+        120.0,
+        "MODEL_REQUEST_TIMEOUT_SECONDS",
+    )
     if context_window <= 0:
         raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
         raise ConfigError("MODEL_RESERVE_TOKENS 必须小于 MODEL_CONTEXT_WINDOW")
     if keep_recent_tokens <= 0:
         raise ConfigError("MODEL_KEEP_RECENT_TOKENS 必须大于 0")
+    if request_timeout_seconds <= 0:
+        raise ConfigError("MODEL_REQUEST_TIMEOUT_SECONDS 必须大于 0")
     _validate_base_url(base_url)
 
     return Settings(
@@ -52,6 +60,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         context_window=context_window,
         reserve_tokens=reserve_tokens,
         keep_recent_tokens=keep_recent_tokens,
+        request_timeout_seconds=request_timeout_seconds,
     )
 
 
@@ -72,6 +81,17 @@ def _optional_int(value: str | None, default: int) -> int:
         return int(value.strip())
     except ValueError as exc:
         raise ConfigError("上下文预算配置必须是整数") from exc
+
+
+def _optional_float(value: str | None, default: float, name: str) -> float:
+    """读取可选小数配置，未设置时使用默认值。"""
+
+    if value is None or not value.strip():
+        return default
+    try:
+        return float(value.strip())
+    except ValueError as exc:
+        raise ConfigError(f"{name} 必须是数字") from exc
 
 
 def _find_env_file() -> Path:
