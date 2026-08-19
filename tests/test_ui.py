@@ -11,6 +11,7 @@ from core.model import Message
 from core.model import ModelClientError
 from core.screen import ChatScreen
 from core.session import Session
+from core.session_store import SessionStore
 from core.status import create_status_info
 
 
@@ -145,12 +146,20 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
         client,
         create_status_info("test-model", "暂不可查询", tmp_path),
         workspace=tmp_path,
+        session_id="00000000-0000-0000-0000-000000000001",
     )
 
     assert len(client.requests) == 2
+    assert client.requests[0][0] == Message(role="system", content=ui.AGENT_SYSTEM_PROMPT)
     assert any(
         message.content == CONTEXT_FALLBACK_NOTICE
         for message in client.requests[1]
+    )
+    assert all(
+        message.role != "system"
+        for message in SessionStore(tmp_path).load_messages(
+            "00000000-0000-0000-0000-000000000001"
+        )
     )
 
 

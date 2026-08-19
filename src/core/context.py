@@ -86,19 +86,27 @@ class ContextManager:
         budget: ContextBudget,
         tool_capabilities: Mapping[str, str] | None = None,
         model_tools: Sequence[Mapping[str, object]] = (),
+        system_prompt: str | None = None,
     ) -> None:
         """创建上下文管理器。"""
 
         self._budget = budget
         self._tool_capabilities = dict(tool_capabilities or {})
         self._model_tools = tuple(model_tools)
+        self._base_system_messages = (
+            (Message(role="system", content=system_prompt),)
+            if system_prompt
+            else ()
+        )
 
     @property
     def _message_budget(self) -> int:
         """返回扣除协议和工具定义后的消息可用预算。"""
 
-        return self._budget.compaction_threshold - estimate_request_fixed_tokens(
-            self._model_tools
+        return (
+            self._budget.compaction_threshold
+            - estimate_request_fixed_tokens(self._model_tools)
+            - _estimate_messages(self._base_system_messages, MESSAGE_PROTOCOL_TOKENS)
         )
 
     def _ensure_message_budget(self) -> None:
@@ -116,7 +124,15 @@ class ContextManager:
     def _estimate(self, messages: Sequence[Message]) -> int:
         """估算携带当前工具定义的完整模型请求。"""
 
-        return estimate_model_request_tokens(messages, self._model_tools)
+        return estimate_model_request_tokens(
+            self._with_base_system_messages(messages),
+            self._model_tools,
+        )
+
+    def _with_base_system_messages(self, messages: Sequence[Message]) -> list[Message]:
+        """为运行时模型请求添加不持久化的基础系统提示词。"""
+
+        return [*self._base_system_messages, *messages]
 
     def build(self, messages: Sequence[Message]) -> list[Message]:
         """返回未超出预算的消息副本，超出预算时要求先压缩。"""
@@ -125,7 +141,7 @@ class ContextManager:
         self._ensure_message_budget()
         if self._estimate(message_list) > self._budget.compaction_threshold:
             raise ContextCompactionRequired("上下文超出预算，需要先执行压缩")
-        return message_list
+        return self._with_base_system_messages(message_list)
 
     def build_fallback(self, messages: Sequence[Message]) -> list[Message]:
         """摘要失败时生成不持久化的规则化上下文。"""
@@ -149,8 +165,7 @@ class ContextManager:
             self._message_budget,
             message_overhead_tokens=MESSAGE_PROTOCOL_TOKENS,
         )
-        self.build(result)
-        return result
+        return self.build(result)
 
     async def build_for_model(
         self,
@@ -233,7 +248,7 @@ class ContextManager:
                     original_system_messages + [summary_message] + oversized_suffix
                 )
                 try:
-                    self.build(compacted_messages)
+                    compacted_messages = self.build(compacted_messages)
                 except ContextCompactionRequired:
                     return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
                 compaction = CompactionRecord(
@@ -287,7 +302,7 @@ class ContextManager:
                 original_system_messages + [summary_message] + recent_conversation
             )
             try:
-                self.build(compacted_messages)
+                compacted_messages = self.build(compacted_messages)
             except ContextCompactionRequired:
                 return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
             return ContextBuildResult(compacted_messages, compaction)

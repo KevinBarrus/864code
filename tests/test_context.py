@@ -106,6 +106,24 @@ def test_context_manager_returns_copy_when_context_is_within_budget() -> None:
     assert result is not messages
 
 
+def test_context_manager_adds_runtime_system_prompt_without_mutating_history() -> None:
+    """测试基础系统提示词只进入模型请求，不属于会话历史。"""
+
+    messages = [Message(role="user", content="检查项目")]
+    manager = ContextManager(
+        ContextBudget(100, 10, 50),
+        system_prompt="你是 Coding Agent",
+    )
+
+    result = manager.build(messages)
+
+    assert result == [
+        Message(role="system", content="你是 Coding Agent"),
+        Message(role="user", content="检查项目"),
+    ]
+    assert messages == [Message(role="user", content="检查项目")]
+
+
 def test_context_manager_requires_compaction_when_context_exceeds_budget() -> None:
     manager = ContextManager(ContextBudget(10, 2, 5))
 

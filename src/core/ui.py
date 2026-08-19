@@ -10,6 +10,7 @@ from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
 from .model import Message, ModelClient, TextDelta, ToolCallEvent
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
+from .prompts import load_prompt
 from .session import Session
 from .tools import (
     PermissionManager,
@@ -21,6 +22,9 @@ from .tools import (
     create_search_files_tool,
     create_write_file_tool,
 )
+
+
+AGENT_SYSTEM_PROMPT = load_prompt("agent")
 
 
 async def run_chat(
@@ -172,6 +176,7 @@ async def run_chat(
             if definition.capability is not None
         },
         model_tools=tool_manager.model_tools(),
+        system_prompt=AGENT_SYSTEM_PROMPT,
     )
     agent_loop = AgentLoop(client, tool_manager)
 
