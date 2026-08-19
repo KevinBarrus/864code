@@ -71,6 +71,9 @@ CONTEXT_FALLBACK_NOTICE = (
     "Earlier conversation history was omitted because automatic summarization failed. "
     "Use the retained recent messages and inspect files again when necessary."
 )
+SUMMARY_OMITTED_NOTICE = (
+    "Earlier source messages were omitted to keep the summary request within budget."
+)
 REQUEST_PROTOCOL_TOKENS = 3
 MESSAGE_PROTOCOL_TOKENS = 4
 
@@ -103,6 +106,12 @@ class ContextManager:
 
         if self._message_budget <= 0:
             raise ContextCompactionRequired("工具定义已耗尽可用上下文预算")
+
+    @property
+    def _summary_input_budget(self) -> int:
+        """返回摘要请求可使用的独立输入预算。"""
+
+        return max(1, self._message_budget // 2)
 
     def _estimate(self, messages: Sequence[Message]) -> int:
         """估算携带当前工具定义的完整模型请求。"""
@@ -195,9 +204,19 @@ class ContextManager:
                     summaries = []
                     history = _summary_source(old_messages, compactions)
                     if history:
-                        summaries.append(await generate_context_summary(client, history))
+                        summaries.append(
+                            await generate_context_summary(
+                                client,
+                                history,
+                                max_input_tokens=self._summary_input_budget,
+                            )
+                        )
                     summaries.append(
-                        await generate_context_summary(client, oversized_prefix)
+                        await generate_context_summary(
+                            client,
+                            oversized_prefix,
+                            max_input_tokens=self._summary_input_budget,
+                        )
                     )
                 except ContextSummaryError:
                     return ContextBuildResult(self.build_fallback(messages), fallback_used=True)
@@ -242,6 +261,7 @@ class ContextManager:
                 summary = await generate_context_summary(
                     client,
                     _summary_source(omitted, compactions),
+                    max_input_tokens=self._summary_input_budget,
                 )
                 summary = _add_file_operation_sections(
                     summary,
@@ -526,20 +546,27 @@ async def generate_context_summary(
     client: ModelClient,
     messages: Sequence[Message],
     max_retries: int = 1,
+    max_input_tokens: int | None = None,
 ) -> str:
     """请求模型生成结构化上下文摘要，失败后按次数重试。"""
 
-    prompt = _serialize_messages(messages)
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
+        system_prompt = (
+            SUMMARY_SYSTEM_PROMPT
+            if attempt == 0
+            else SUMMARY_RETRY_SYSTEM_PROMPT
+        )
+        source_messages = _limit_summary_source(
+            messages,
+            max_input_tokens,
+            system_prompt,
+        )
+        prompt = _serialize_messages(source_messages)
         summary_messages = [
             Message(
                 role="system",
-                content=(
-                    SUMMARY_SYSTEM_PROMPT
-                    if attempt == 0
-                    else SUMMARY_RETRY_SYSTEM_PROMPT
-                ),
+                content=system_prompt,
             ),
             Message(role="user", content=f"<conversation>\n{prompt}\n</conversation>"),
         ]
@@ -555,6 +582,34 @@ async def generate_context_summary(
         except (ContextSummaryError, ModelClientError) as exc:
             last_error = exc
     raise ContextSummaryError("上下文摘要请求失败") from last_error
+
+
+def _limit_summary_source(
+    messages: Sequence[Message],
+    max_input_tokens: int | None,
+    system_prompt: str,
+) -> list[Message]:
+    """在摘要模型预算内保留最近完整历史并标记省略内容。"""
+
+    if max_input_tokens is None:
+        return list(messages)
+
+    wrapper_tokens = estimate_text_tokens("<conversation>\n\n</conversation>")
+    source_budget = max_input_tokens - estimate_text_tokens(system_prompt) - wrapper_tokens
+    if source_budget <= 0:
+        raise ContextSummaryError("摘要输入预算不足")
+    if estimate_context_tokens(messages) <= source_budget:
+        return list(messages)
+
+    notice = Message(role="system", content=SUMMARY_OMITTED_NOTICE)
+    remaining_budget = source_budget - estimate_message_tokens(notice)
+    if remaining_budget <= 0:
+        shortened_notice = _truncate_message(notice, source_budget)
+        return [shortened_notice] if shortened_notice is not None else []
+
+    selected = select_recent_messages(messages, remaining_budget)
+    result = [notice, *selected]
+    return _fit_messages_to_budget(result, source_budget)
 
 
 def _serialize_messages(messages: Sequence[Message]) -> str:

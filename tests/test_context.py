@@ -9,6 +9,7 @@ from core.context import (
     ContextManager,
     ContextSummaryError,
     CONTEXT_FALLBACK_NOTICE,
+    SUMMARY_OMITTED_NOTICE,
     estimate_context_tokens,
     estimate_model_request_tokens,
     estimate_message_tokens,
@@ -249,6 +250,29 @@ async def test_generate_context_summary_returns_structured_summary() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_context_summary_limits_oversized_source() -> None:
+    """测试摘要请求会省略过旧历史并遵守独立输入预算。"""
+
+    client = FakeSummaryClient([SUMMARY])
+    await generate_context_summary(
+        client,
+        [
+            Message(role="user", content="旧消息" + "x" * 1_000),
+            Message(role="assistant", content="旧回复" + "x" * 1_000),
+            Message(role="user", content="最新问题"),
+            Message(role="assistant", content="最新回复"),
+        ],
+        max_input_tokens=200,
+    )
+
+    request = client.messages[0]
+    assert estimate_context_tokens(request) <= 200
+    assert SUMMARY_OMITTED_NOTICE in request[1].content
+    assert "最新问题" in request[1].content
+    assert "旧消息" not in request[1].content
+
+
+@pytest.mark.asyncio
 async def test_generate_context_summary_retries_after_model_error() -> None:
     client = FakeSummaryClient([ModelClientError("网络错误"), SUMMARY])
 
@@ -280,10 +304,10 @@ async def test_generate_context_summary_raises_after_retries() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_build_for_model_uses_summary_when_over_budget() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(70, 10, 20))
+    manager = ContextManager(ContextBudget(340, 20, 100))
     messages = [
-        Message(role="user", content="旧问题" + "x" * 64),
-        Message(role="assistant", content="旧回答" + "x" * 64),
+        Message(role="user", content="旧问题" + "x" * 1_000),
+        Message(role="assistant", content="旧回答" + "x" * 1_000),
         Message(role="user", content="新问题"),
         Message(role="assistant", content="新回答"),
     ]
@@ -299,11 +323,11 @@ async def test_context_manager_build_for_model_uses_summary_when_over_budget() -
 @pytest.mark.asyncio
 async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
     client = FakeSummaryClient([SUMMARY, SUMMARY])
-    manager = ContextManager(ContextBudget(120, 20, 10))
+    manager = ContextManager(ContextBudget(700, 100, 100))
     messages = [
-        Message(role="user", content="旧问题" + "x" * 160),
-        Message(role="assistant", content="旧回答" + "x" * 160),
-        Message(role="user", content="新问题" + "x" * 80),
+        Message(role="user", content="旧问题" + "x" * 1_600),
+        Message(role="assistant", content="旧回答" + "x" * 1_600),
+        Message(role="user", content="新问题" + "x" * 800),
         Message(role="assistant", content="新回答"),
     ]
 
@@ -318,7 +342,7 @@ async def test_context_manager_summarizes_oversized_turn_prefix() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_keeps_tool_chain_together_in_oversized_prefix() -> None:
     client = FakeSummaryClient([SUMMARY, SUMMARY])
-    manager = ContextManager(ContextBudget(120, 20, 8))
+    manager = ContextManager(ContextBudget(700, 100, 100))
     messages = [
         Message(role="user", content="旧问题"),
         Message(role="assistant", content="旧回答"),
@@ -328,7 +352,7 @@ async def test_context_manager_keeps_tool_chain_together_in_oversized_prefix() -
             content="",
             tool_calls=(ToolCall("call-1", "read_file", {"path": "a.txt"}),),
         ),
-        Message(role="tool", content="文件内容" + "x" * 300, tool_call_id="call-1"),
+        Message(role="tool", content="文件内容" + "x" * 3_000, tool_call_id="call-1"),
         Message(role="assistant", content="读取完成"),
     ]
 
@@ -346,11 +370,11 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
     client = FakeSummaryClient(
         [ModelClientError("网络错误"), ModelClientError("网络错误")]
     )
-    budget = ContextBudget(32, 10, 10)
+    budget = ContextBudget(340, 20, 100)
     manager = ContextManager(budget)
     messages = [
-        Message(role="user", content="旧问题"),
-        Message(role="assistant", content="旧回答"),
+        Message(role="user", content="旧问题" + "x" * 1_000),
+        Message(role="assistant", content="旧回答" + "x" * 1_000),
         Message(role="user", content="新问题"),
         Message(role="assistant", content="新回答"),
     ]
@@ -400,12 +424,12 @@ async def test_context_manager_marks_fallback_result() -> None:
 @pytest.mark.asyncio
 async def test_second_compaction_boundary_uses_full_session_history() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(100, 20, 20))
+    manager = ContextManager(ContextBudget(500, 100, 200))
     messages = [
-        Message(role="user", content="第一轮" + "x" * 64),
-        Message(role="assistant", content="第一轮回复" + "x" * 64),
-        Message(role="user", content="第二轮" + "x" * 128),
-        Message(role="assistant", content="第二轮回复" + "x" * 128),
+        Message(role="user", content="第一轮" + "x" * 1_000),
+        Message(role="assistant", content="第一轮回复" + "x" * 1_000),
+        Message(role="user", content="第二轮" + "x" * 2_000),
+        Message(role="assistant", content="第二轮回复" + "x" * 2_000),
         Message(role="user", content="第三轮"),
         Message(role="assistant", content="第三轮回复"),
     ]
@@ -423,11 +447,11 @@ async def test_second_compaction_boundary_uses_full_session_history() -> None:
 async def test_repeated_compaction_keeps_latest_cumulative_summary() -> None:
     first_summary = SUMMARY.replace("目标", "第一轮目标")
     second_summary = SUMMARY.replace("目标", "第二轮目标")
-    budget = ContextBudget(100, 20, 30)
+    budget = ContextBudget(550, 100, 400)
     manager = ContextManager(budget)
     messages = [
-        Message(role="user", content="旧问题" + "x" * 160),
-        Message(role="assistant", content="旧回答" + "x" * 160),
+        Message(role="user", content="旧问题" + "x" * 1_600),
+        Message(role="assistant", content="旧回答" + "x" * 1_600),
         Message(role="user", content="保留的问题"),
         Message(role="assistant", content="保留的回答"),
     ]
@@ -440,8 +464,8 @@ async def test_repeated_compaction_keeps_latest_cumulative_summary() -> None:
 
     messages.extend(
         [
-            Message(role="user", content="新的问题" + "x" * 16),
-            Message(role="assistant", content="新的回答" + "x" * 16),
+            Message(role="user", content="新的问题" + "x" * 750),
+            Message(role="assistant", content="新的回答" + "x" * 750),
         ]
     )
     second_client = FakeSummaryClient([second_summary])
@@ -484,11 +508,11 @@ async def test_context_manager_uses_latest_restored_compaction() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_returns_compaction_record_after_summary() -> None:
     client = FakeSummaryClient([SUMMARY])
-    budget = ContextBudget(70, 10, 20)
+    budget = ContextBudget(340, 20, 100)
     manager = ContextManager(budget)
     messages = [
-        Message(role="user", content="旧问题" + "x" * 64),
-        Message(role="assistant", content="旧回答" + "x" * 64),
+        Message(role="user", content="旧问题" + "x" * 1_000),
+        Message(role="assistant", content="旧回答" + "x" * 1_000),
         Message(role="user", content="新问题"),
         Message(role="assistant", content="新回答"),
     ]
@@ -525,7 +549,7 @@ async def test_context_manager_falls_back_when_summary_still_exceeds_budget() ->
 async def test_context_manager_accumulates_file_operations_in_summary() -> None:
     client = FakeSummaryClient([SUMMARY])
     manager = ContextManager(
-        ContextBudget(100, 20, 20),
+        ContextBudget(600, 100, 100),
         {"read_file": "file.read", "write_file": "file.write"},
     )
     messages = [
@@ -538,7 +562,7 @@ async def test_context_manager_accumulates_file_operations_in_summary() -> None:
                 ToolCall("write-1", "write_file", {"path": "src/app.py"}),
             ),
         ),
-        Message(role="tool", content="x" * 400, tool_call_id="read-1"),
+        Message(role="tool", content="x" * 3_000, tool_call_id="read-1"),
         Message(role="tool", content="已写入", tool_call_id="write-1"),
         Message(role="assistant", content="处理完成"),
     ]
