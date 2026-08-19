@@ -1,6 +1,8 @@
 """实现本地命令执行工具。"""
 
 import asyncio
+import os
+import signal
 from pathlib import Path
 
 from ..model import ToolCall, ToolResult
@@ -8,9 +10,17 @@ from .args import string_argument
 from .output_limits import limit_tool_output
 from .types import ToolDefinition, ToolHandler
 
+COMMAND_TIMEOUT_SECONDS = 60.0
 
-def create_run_command_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]:
+
+def create_run_command_tool(
+    workspace: Path,
+    timeout_seconds: float = COMMAND_TIMEOUT_SECONDS,
+) -> tuple[ToolDefinition, ToolHandler]:
     """创建以工作区为当前目录的命令执行工具。"""
+
+    if timeout_seconds <= 0:
+        raise ValueError("命令超时时间必须大于 0")
 
     async def run_command(tool_call: ToolCall) -> ToolResult:
         command = string_argument(tool_call, "command")
@@ -19,12 +29,23 @@ def create_run_command_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandle
             cwd=workspace.resolve(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout_seconds,
+            )
+        except TimeoutError:
+            await _stop_process_group(process)
+            return ToolResult(
+                call_id=tool_call.call_id,
+                content=f"命令执行超时（{timeout_seconds:g} 秒）",
+                is_error=True,
+                error_category="tool_execution",
+            )
         except asyncio.CancelledError:
-            process.terminate()
-            await process.wait()
+            await _stop_process_group(process)
             raise
 
         output = _format_output(stdout, stderr)
@@ -63,3 +84,30 @@ def _format_output(stdout: bytes, stderr: bytes) -> str:
     if stderr:
         parts.append(f"错误输出：\n{stderr.decode(errors='replace').rstrip()}")
     return "\n".join(parts) or "命令执行成功"
+
+
+async def _stop_process_group(process: asyncio.subprocess.Process) -> None:
+    """终止命令进程及其仍在运行的子进程。"""
+
+    if process.returncode is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+    else:
+        process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=1)
+        return
+    except TimeoutError:
+        pass
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    else:
+        process.kill()
+    await process.wait()

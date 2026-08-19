@@ -5,7 +5,7 @@ from .file_tools import (
     create_read_file_tool,
     create_search_files_tool,
 )
-from .command_tool import create_run_command_tool
+from .command_tool import COMMAND_TIMEOUT_SECONDS, create_run_command_tool
 from .manager import ToolManager
 from .mcp import (
     McpToolProvider,
@@ -40,6 +40,7 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalHandler",
     "ApprovalResult",
+    "COMMAND_TIMEOUT_SECONDS",
     "PermissionDenied",
     "PermissionManager",
     "ToolDefinition",

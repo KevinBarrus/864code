@@ -1,9 +1,11 @@
+import asyncio
 import shlex
 import sys
 from pathlib import Path
 
 import pytest
 
+from core.tools import command_tool
 from core.model import ToolCall
 from core.tools import (
     ApprovalDecision,
@@ -124,3 +126,66 @@ async def test_run_command_truncates_large_output(tmp_path: Path) -> None:
 
     assert result.content.endswith(TRUNCATION_NOTICE)
     assert len(result.content.encode("utf-8")) <= MAX_TOOL_OUTPUT_BYTES
+
+
+@pytest.mark.asyncio
+async def test_run_command_returns_timeout_error(tmp_path: Path) -> None:
+    """测试命令超时会返回结构化工具错误。"""
+
+    manager = _manager(create_run_command_tool(tmp_path, timeout_seconds=0.1))
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote('import time; time.sleep(1)')}"
+
+    result = await manager.execute(_call("run_command", {"command": command}))
+
+    assert result.is_error is True
+    assert result.error_category == "tool_execution"
+    assert "超时" in result.content
+
+
+@pytest.mark.asyncio
+async def test_run_command_cancellation_stops_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试取消命令时会终止独立的子进程组。"""
+
+    class HangingProcess:
+        pid = 123
+        returncode: int | None = None
+
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            self.started.set()
+            await asyncio.Event().wait()
+            return b"", b""
+
+        async def wait(self) -> int:
+            self.returncode = 0
+            return 0
+
+    process = HangingProcess()
+    kwargs: dict[str, object] = {}
+    signals: list[int] = []
+
+    async def create_process(*args, **received_kwargs):
+        kwargs.update(received_kwargs)
+        return process
+
+    monkeypatch.setattr(command_tool.asyncio, "create_subprocess_shell", create_process)
+    monkeypatch.setattr(
+        command_tool.os,
+        "killpg",
+        lambda process_id, value: signals.append(value),
+    )
+    _, handler = create_run_command_tool(tmp_path)
+    task = asyncio.create_task(handler(_call("run_command", {"command": "sleep 10"})))
+    await process.started.wait()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert kwargs["start_new_session"] is True
+    assert signals == [command_tool.signal.SIGTERM]
