@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 import pytest
 
 from core.agent_loop import AgentLoop, AgentLoopCancelled, ToolExecutionEvent
+from core.context import ContextBuildResult
 from core.errors import AgentError
 from core.model import (
     Message,
@@ -72,6 +73,46 @@ async def test_agent_loop_executes_tool_and_continues_model_request(
     assert any(isinstance(event, ToolExecutionEvent) for event in events)
     assert len(client.requests) == 2
     assert client.tools[0][0]["function"]["name"] == "read_file"  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_rebuilds_context_after_tool_result(tmp_path) -> None:
+    """测试每轮工具结果都会在下一次模型请求前重建上下文。"""
+
+    (tmp_path / "README.md").write_text("项目说明", encoding="utf-8")
+    client = FakeModelClient()
+    manager = ToolManager()
+    manager.register_local(*create_read_file_tool(tmp_path))
+    build_inputs: list[list[Message]] = []
+
+    async def build_context(messages, force_compaction: bool) -> ContextBuildResult:
+        assert force_compaction is False
+        build_inputs.append(list(messages))
+        if len(build_inputs) == 2:
+            return ContextBuildResult(
+                [
+                    Message(role="system", content="已压缩的历史"),
+                    *messages[-2:],
+                ]
+            )
+        return ContextBuildResult(list(messages))
+
+    result = await AgentLoop(client, manager).run(
+        [Message(role="user", content="读取说明")],
+        build_context=build_context,
+    )
+
+    assert [len(messages) for messages in build_inputs] == [1, 3]
+    assert client.requests[1][0] == Message(role="system", content="已压缩的历史")
+    assert result.messages[-3:] == (
+        Message(
+            role="assistant",
+            content="",
+            tool_calls=(ToolCall("call-1", "read_file", {"path": "README.md"}),),
+        ),
+        Message(role="tool", content="项目说明", tool_call_id="call-1"),
+        Message(role="assistant", content="文件已经读取"),
+    )
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 
+from .context import ContextBuildResult
 from .error_policy import AgentErrorPolicy
 from .errors import AgentError
 from .model import (
@@ -28,6 +29,7 @@ class ToolExecutionEvent:
 
 AgentEvent = ModelEvent | ToolExecutionEvent
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
+ContextBuilder = Callable[[Sequence[Message], bool], Awaitable[ContextBuildResult]]
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class AgentLoop:
         self,
         messages: Sequence[Message],
         on_event: EventHandler | None = None,
+        build_context: ContextBuilder | None = None,
     ) -> AgentRunResult:
         """执行一轮模型—工具循环并返回完整上下文。"""
 
@@ -82,16 +85,29 @@ class AgentLoop:
             for _ in range(self._max_tool_rounds + 1):
                 text_parts = []
                 tool_calls = []
-                async for event in self._stream_model_events(
-                    context,
-                    tools=self._tool_manager.model_tools(),
-                ):
-                    if isinstance(event, TextDelta):
-                        text_parts.append(event.content)
-                    elif isinstance(event, ToolCallEvent):
-                        tool_calls.append(event.tool_call)
-                    if on_event is not None:
-                        await on_event(event)
+                request_messages = context
+                for force_compaction in (False, True):
+                    if build_context is not None:
+                        context_result = await build_context(
+                            context,
+                            force_compaction,
+                        )
+                        request_messages = context_result.messages
+                    try:
+                        async for event in self._stream_model_events(
+                            request_messages,
+                            tools=self._tool_manager.model_tools(),
+                        ):
+                            if isinstance(event, TextDelta):
+                                text_parts.append(event.content)
+                            elif isinstance(event, ToolCallEvent):
+                                tool_calls.append(event.tool_call)
+                            if on_event is not None:
+                                await on_event(event)
+                        break
+                    except AgentError as exc:
+                        if exc.category != "context_overflow" or force_compaction:
+                            raise
 
                 assistant_content = "".join(text_parts)
                 completed_tool_calls = tuple(tool_calls)

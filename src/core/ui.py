@@ -52,6 +52,23 @@ async def run_chat(
 
         # 用户消息必须先进入会话，模型才能在本轮请求中看到它
         session.add_user_message(prompt)
+        new_compactions = []
+        fallback_used = False
+
+        async def build_context(messages, force_compaction: bool):
+            """按完整运行时历史构建下一次模型请求上下文。"""
+
+            nonlocal fallback_used
+            result = await context_manager.build_for_model_result(
+                client,
+                messages,
+                [*session.get_compactions(), *new_compactions],
+                force_compaction=force_compaction,
+            )
+            if result.compaction is not None:
+                new_compactions.append(result.compaction)
+            fallback_used = fallback_used or result.fallback_used
+            return result
 
         async def handle_event(event) -> None:
             """将模型事件转换为回复文本或简短工具活动条目。"""
@@ -79,35 +96,18 @@ async def run_chat(
 
         try:
             # 由 Agent Loop 负责模型与工具循环，界面只消费文本事件
-            for force_compaction in (False, True):
-                context_result = await context_manager.build_for_model_result(
-                    client,
-                    session.get_messages(),
-                    session.get_compactions(),
-                    force_compaction=force_compaction,
-                )
-                if context_result.compaction is not None:
-                    session.add_compaction(context_result.compaction)
-                if context_result.fallback_used:
-                    screen.add_entry(
-                        "tool",
-                        "⚠ Context summary failed; recent history only",
-                    )
-                try:
-                    result = await agent_loop.run(
-                        context_result.messages,
-                        on_event=handle_event,
-                    )
-                    break
-                except AgentError as exc:
-                    if exc.category != "context_overflow" or force_compaction:
-                        raise
+            result = await agent_loop.run(
+                session.get_messages(),
+                on_event=handle_event,
+                build_context=build_context,
+            )
         except asyncio.CancelledError as exc:
             # 取消时保留已生成的部分回复，供下一轮继续参考
             cancelled_messages = (
                 exc.new_messages if isinstance(exc, AgentLoopCancelled) else ()
             )
             _persist_new_messages(session, cancelled_messages)
+            _persist_compactions(session, new_compactions)
             response = "".join(response_parts)
             if response and not any(
                 message.role == "assistant"
@@ -141,6 +141,12 @@ async def run_chat(
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息
             _persist_new_messages(session, result.new_messages)
+            _persist_compactions(session, new_compactions)
+            if fallback_used:
+                screen.add_entry(
+                    "tool",
+                    "⚠ Context summary failed; recent history only",
+                )
             _update_persistence_status(screen, session)
 
     screen = ChatScreen(status, on_submit=handle_submit)
@@ -191,6 +197,13 @@ def _persist_new_messages(session: Session, messages: tuple[Message, ...]) -> No
 
     for message in messages:
         session.add_message(message)
+
+
+def _persist_compactions(session: Session, compactions) -> None:
+    """在本轮消息写入后追加对应的压缩记录。"""
+
+    for compaction in compactions:
+        session.add_compaction(compaction)
 
 
 def _tool_result_summary(event: ToolExecutionEvent) -> str:
