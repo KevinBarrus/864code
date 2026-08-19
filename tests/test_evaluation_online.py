@@ -5,6 +5,7 @@ from core.model import Message, TextDelta, ToolCall, ToolCallEvent
 from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
 from evaluation.online import (
+    DEFAULT_ONLINE_REPETITIONS,
     ONLINE_FILE_TASKS,
     TimedModelClient,
     run_online_file_task,
@@ -65,6 +66,29 @@ async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
     assert calls == [task.name for task in ONLINE_FILE_TASKS]
     assert [result.repetition for result in results] == [1, 1, 1]
     assert [result.passed for result in results] == [True, False, True]
+
+
+@pytest.mark.asyncio
+async def test_online_suite_default_repetitions_reach_performance_sample_count(
+    monkeypatch,
+) -> None:
+    """测试默认主套件会生成至少二十个性能样本。"""
+
+    async def fake_run(task, env_path=None):
+        return EvaluationResult(
+            scenario=task.name,
+            duration_ms=10,
+            evaluation_type="real-task",
+            assertions=(EvaluationAssertion("ok", True),),
+        )
+
+    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run)
+
+    results = await run_online_suite()
+
+    assert DEFAULT_ONLINE_REPETITIONS == 7
+    assert len(results) == DEFAULT_ONLINE_REPETITIONS * len(ONLINE_FILE_TASKS)
+    assert len(results) >= 20
 
 
 @pytest.mark.asyncio

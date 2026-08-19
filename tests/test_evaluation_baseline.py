@@ -4,6 +4,7 @@ from evaluation.baseline import (
     compare_baseline,
     create_baseline,
     load_baseline,
+    needs_performance_baseline_refresh,
     write_baseline,
 )
 from evaluation.models import EvaluationAssertion, EvaluationResult
@@ -65,7 +66,7 @@ def test_baseline_detects_missing_runs() -> None:
 
 
 def test_baseline_detects_metric_regressions() -> None:
-    """测试小样本仍拦截成功率和模型请求数回归。"""
+    """测试小样本不拦截性能指标回归。"""
 
     baseline = create_baseline(
         [
@@ -93,9 +94,9 @@ def test_baseline_detects_metric_regressions() -> None:
         baseline,
     )
 
-    assert report.metric_regressions == ("平均模型请求数增加超过 25%",)
+    assert report.metric_regressions == ()
     assert report.metric_observations == ("总上下文压缩次数增加",)
-    assert not report.passed
+    assert report.passed
 
 
 def test_baseline_ignores_small_sample_p95_noise() -> None:
@@ -119,19 +120,40 @@ def test_baseline_ignores_small_sample_p95_noise() -> None:
 
 
 def test_baseline_rejects_large_sample_p95_regression() -> None:
-    """测试足够样本下明显的 P95 延迟回归仍会失败。"""
+    """测试足够样本下明显的性能回归仍会失败。"""
 
     baseline = create_baseline(
-        [_result("task", index, True, duration_ms=100) for index in range(1, 21)]
+        [
+            _result("task", index, True, duration_ms=100, model_requests=2)
+            for index in range(1, 21)
+        ]
     )
 
     report = compare_baseline(
-        [_result("task", index, True, duration_ms=130) for index in range(1, 21)],
+        [
+            _result("task", index, True, duration_ms=130, model_requests=3)
+            for index in range(1, 21)
+        ],
         baseline,
     )
 
-    assert report.metric_regressions == ("P95 延迟增加超过 25%",)
+    assert report.metric_regressions == (
+        "P95 延迟增加超过 25%",
+        "平均模型请求数增加超过 25%",
+    )
     assert not report.passed
+
+
+def test_stable_results_refresh_insufficient_performance_baseline() -> None:
+    """测试稳定样本会替换旧的小样本性能 baseline。"""
+
+    baseline = create_baseline(
+        [_result("task", index, True) for index in range(1, 19)]
+    )
+    current = [_result("task", index, True) for index in range(1, 22)]
+
+    assert needs_performance_baseline_refresh(current, baseline)
+    assert not needs_performance_baseline_refresh(current[:18], baseline)
 
 
 def test_baseline_rejects_different_evaluation_metadata() -> None:

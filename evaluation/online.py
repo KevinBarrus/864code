@@ -27,11 +27,18 @@ from core.tools import (
 
 from .models import EvaluationAssertion, EvaluationResult
 from .events import event_to_record, message_to_record
-from .baseline import compare_baseline, create_baseline, load_baseline, write_baseline
+from .baseline import (
+    compare_baseline,
+    create_baseline,
+    load_baseline,
+    needs_performance_baseline_refresh,
+    write_baseline,
+)
 from .report import generate_report
 from .storage import append_result
 
 ONLINE_SCENARIO_VERSION = "2"
+DEFAULT_ONLINE_REPETITIONS = 7
 
 
 @dataclass(frozen=True)
@@ -427,7 +434,7 @@ def _contains_keywords(content: str, keywords: tuple[str, ...]) -> bool:
 
 async def run_online_suite(
     env_path: Path | None = None,
-    repetitions: int = 6,
+    repetitions: int = DEFAULT_ONLINE_REPETITIONS,
     scenario: str = "main",
 ) -> list[EvaluationResult]:
     """重复执行在线主链路并保留单次失败结果"""
@@ -634,8 +641,8 @@ def main() -> int:
     parser.add_argument(
         "--repetitions",
         type=int,
-        default=6,
-        help="在线主链路重复次数，默认 6 次",
+        default=DEFAULT_ONLINE_REPETITIONS,
+        help="在线主链路重复次数，默认 7 次",
     )
     parser.add_argument(
         "--scenario",
@@ -686,11 +693,18 @@ def main() -> int:
         append_result(args.output, result)
     regression = None
     if args.baseline.exists():
+        baseline = load_baseline(args.baseline)
         regression = compare_baseline(
             results,
-            load_baseline(args.baseline),
+            baseline,
             metadata,
         )
+        if (
+            regression.passed
+            and all(result.passed for result in results)
+            and needs_performance_baseline_refresh(results, baseline)
+        ):
+            write_baseline(args.baseline, create_baseline(results, metadata))
     elif all(result.passed for result in results):
         write_baseline(args.baseline, create_baseline(results, metadata))
     generate_report(args.report, results, regression)

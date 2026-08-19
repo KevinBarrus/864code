@@ -97,6 +97,18 @@ def compare_baseline(
     )
 
 
+def needs_performance_baseline_refresh(
+    current: list[EvaluationResult],
+    baseline: dict[str, object],
+) -> bool:
+    """判断稳定样本能否替换不足样本的旧 baseline。"""
+
+    return (
+        len(current) >= MIN_PERFORMANCE_SAMPLE_COUNT
+        and _baseline_sample_count(baseline) < MIN_PERFORMANCE_SAMPLE_COUNT
+    )
+
+
 def write_baseline(path: Path, baseline: dict[str, object]) -> None:
     """将 baseline 写入 JSON 文件"""
 
@@ -174,13 +186,13 @@ def _compare_metrics(
             and current_metrics.p95_duration_ms > previous_p95 * MAX_P95_DURATION_RATIO
         ):
             regressions.append("P95 延迟增加超过 25%")
-    previous_requests = baseline_metrics.get("average_model_requests")
-    if (
-        isinstance(previous_requests, (int, float))
-        and current_metrics.average_model_requests
-        > previous_requests * MAX_AVERAGE_MODEL_REQUEST_RATIO
-    ):
-        regressions.append("平均模型请求数增加超过 25%")
+        previous_requests = baseline_metrics.get("average_model_requests")
+        if (
+            isinstance(previous_requests, (int, float))
+            and current_metrics.average_model_requests
+            > previous_requests * MAX_AVERAGE_MODEL_REQUEST_RATIO
+        ):
+            regressions.append("平均模型请求数增加超过 25%")
     previous_compactions = baseline_metrics.get("total_compactions")
     if (
         isinstance(previous_compactions, int)
@@ -194,7 +206,7 @@ def _has_stable_performance_samples(
     current: list[EvaluationResult],
     baseline: dict[str, object],
 ) -> bool:
-    """仅在当前和 baseline 均有足够样本时比较 P95。"""
+    """仅在当前和 baseline 均有足够样本时比较性能指标。"""
 
     return (
         len(current) >= MIN_PERFORMANCE_SAMPLE_COUNT
