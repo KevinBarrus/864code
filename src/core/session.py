@@ -20,6 +20,8 @@ class Session:
         self._memory = Memory()
         self._store = SessionStore(workspace)
         self._compactions: list[CompactionRecord] = []
+        self._transient_compactions: list[CompactionRecord] = []
+        self._compaction_persistence_degraded = False
         self._persistence = SessionPersistenceQueue(
             lambda message: self._store.append_message(self.session_id, message),
             persist_pending=lambda message: self._store.append_pending_message(
@@ -73,14 +75,17 @@ class Session:
     def get_compactions(self) -> list[CompactionRecord]:
         """返回当前会话的压缩记录副本"""
 
-        return list(self._compactions)
+        return [*self._compactions, *self._transient_compactions]
 
     def add_compaction(self, compaction: CompactionRecord) -> bool:
-        """仅在消息写入完成后持久化并追加压缩记录"""
+        """持久化压缩记录，失败时仅保留当前进程内状态。"""
 
         if not self._persistence.flush():
-            return False
-        self._store.append_compaction(self.session_id, compaction)
+            return self._retain_transient_compaction(compaction)
+        try:
+            self._store.append_compaction(self.session_id, compaction)
+        except OSError:
+            return self._retain_transient_compaction(compaction)
         self._compactions.append(compaction)
         return True
 
@@ -98,7 +103,7 @@ class Session:
     def persistence_degraded(self) -> bool:
         """返回当前会话是否出现持久化降级"""
 
-        return self._persistence.degraded
+        return self._persistence.degraded or self._compaction_persistence_degraded
 
     def _append_message(self, message: Message) -> None:
         """先更新运行时记忆，再交给后台队列持久化"""
@@ -110,3 +115,10 @@ class Session:
         """将已有消息按角色追加到运行时记忆"""
 
         self._memory.add_message(message)
+
+    def _retain_transient_compaction(self, compaction: CompactionRecord) -> bool:
+        """保留未落盘压缩记录，供当前进程后续请求复用。"""
+
+        self._transient_compactions.append(compaction)
+        self._compaction_persistence_degraded = True
+        return False

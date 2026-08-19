@@ -167,11 +167,11 @@ def test_session_add_compaction_updates_runtime_and_store(tmp_path: Path) -> Non
     assert SessionStore(tmp_path).load_compactions(session.session_id) == [compaction]
 
 
-def test_session_skips_compaction_when_message_persistence_fails(
+def test_session_keeps_transient_compaction_when_message_persistence_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """测试消息未写入主日志时不会追加压缩记录。"""
+    """测试消息未写入主日志时仍保留本进程压缩记录。"""
 
     def fail_append(self, session_id: str, message: Message) -> None:
         raise OSError("JSONL 不可写入")
@@ -180,9 +180,29 @@ def test_session_skips_compaction_when_message_persistence_fails(
     session = Session(tmp_path)
     session.add_user_message("待保存消息")
 
-    assert not session.add_compaction(CompactionRecord("摘要", 0, 100))
-    assert session.get_compactions() == []
+    compaction = CompactionRecord("摘要", 0, 100)
+    assert not session.add_compaction(compaction)
+    assert session.get_compactions() == [compaction]
+    assert session.persistence_degraded
     assert SessionStore(tmp_path).load_compactions(session.session_id) == []
+
+
+def test_session_keeps_transient_compaction_when_compaction_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试压缩记录写入失败时当前进程仍可复用该记录。"""
+
+    def fail_append(self, session_id: str, compaction: CompactionRecord) -> None:
+        raise OSError("JSONL 不可写入")
+
+    monkeypatch.setattr(SessionStore, "append_compaction", fail_append)
+    session = Session(tmp_path)
+    compaction = CompactionRecord("摘要", 0, 100)
+
+    assert not session.add_compaction(compaction)
+    assert session.get_compactions() == [compaction]
+    assert session.persistence_degraded
 
 
 class SummaryClient:
@@ -207,11 +227,11 @@ async def test_restore_rebuilds_context_after_compaction(tmp_path: Path) -> None
     """测试压缩记录持久化后，恢复会话可以重建相同模型上下文。"""
 
     session = Session(tmp_path)
-    session.add_user_message("旧问题" + "x" * 160)
-    session.add_assistant_message("旧回答" + "x" * 160)
+    session.add_user_message("旧问题" + "x" * 1_000)
+    session.add_assistant_message("旧回答" + "x" * 1_000)
     session.add_user_message("新问题")
     session.add_assistant_message("新回答")
-    budget = ContextBudget(100, 20, 20)
+    budget = ContextBudget(340, 20, 100)
     manager = ContextManager(budget)
 
     first_result = await manager.build_for_model_result(
@@ -246,12 +266,12 @@ async def test_restore_keeps_file_operation_sections_in_context(tmp_path: Path) 
         )
     )
     session.add_message(
-        Message(role="tool", content="x" * 400, tool_call_id="read-1")
+        Message(role="tool", content="x" * 3_000, tool_call_id="read-1")
     )
     session.add_message(Message(role="tool", content="已写入", tool_call_id="write-1"))
     session.add_assistant_message("处理完成")
     manager = ContextManager(
-        ContextBudget(100, 20, 20),
+        ContextBudget(600, 100, 100),
         {"read_file": "file.read", "write_file": "file.write"},
     )
 

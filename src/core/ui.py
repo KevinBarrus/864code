@@ -107,7 +107,8 @@ async def run_chat(
                 exc.new_messages if isinstance(exc, AgentLoopCancelled) else ()
             )
             _persist_new_messages(session, cancelled_messages)
-            _persist_compactions(session, new_compactions)
+            if not _persist_compactions(session, new_compactions):
+                screen.set_status_message("Session persistence degraded")
             response = "".join(response_parts)
             if response and not any(
                 message.role == "assistant"
@@ -141,7 +142,8 @@ async def run_chat(
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息
             _persist_new_messages(session, result.new_messages)
-            _persist_compactions(session, new_compactions)
+            if not _persist_compactions(session, new_compactions):
+                screen.set_status_message("Session persistence degraded")
             if fallback_used:
                 screen.add_entry(
                     "tool",
@@ -199,11 +201,13 @@ def _persist_new_messages(session: Session, messages: tuple[Message, ...]) -> No
         session.add_message(message)
 
 
-def _persist_compactions(session: Session, compactions) -> None:
-    """在本轮消息写入后追加对应的压缩记录。"""
+def _persist_compactions(session: Session, compactions) -> bool:
+    """在本轮消息写入后追加对应压缩记录并返回持久化状态。"""
 
+    persisted = True
     for compaction in compactions:
-        session.add_compaction(compaction)
+        persisted = session.add_compaction(compaction) and persisted
+    return persisted
 
 
 def _tool_result_summary(event: ToolExecutionEvent) -> str:
