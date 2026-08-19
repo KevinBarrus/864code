@@ -71,6 +71,8 @@ CONTEXT_FALLBACK_NOTICE = (
     "Earlier conversation history was omitted because automatic summarization failed. "
     "Use the retained recent messages and inspect files again when necessary."
 )
+REQUEST_PROTOCOL_TOKENS = 3
+MESSAGE_PROTOCOL_TOKENS = 4
 
 
 class ContextManager:
@@ -80,36 +82,66 @@ class ContextManager:
         self,
         budget: ContextBudget,
         tool_capabilities: Mapping[str, str] | None = None,
+        model_tools: Sequence[Mapping[str, object]] = (),
     ) -> None:
         """创建上下文管理器。"""
 
         self._budget = budget
         self._tool_capabilities = dict(tool_capabilities or {})
+        self._model_tools = tuple(model_tools)
+
+    @property
+    def _message_budget(self) -> int:
+        """返回扣除协议和工具定义后的消息可用预算。"""
+
+        return self._budget.compaction_threshold - estimate_request_fixed_tokens(
+            self._model_tools
+        )
+
+    def _ensure_message_budget(self) -> None:
+        """确保工具定义未单独耗尽模型上下文。"""
+
+        if self._message_budget <= 0:
+            raise ContextCompactionRequired("工具定义已耗尽可用上下文预算")
+
+    def _estimate(self, messages: Sequence[Message]) -> int:
+        """估算携带当前工具定义的完整模型请求。"""
+
+        return estimate_model_request_tokens(messages, self._model_tools)
 
     def build(self, messages: Sequence[Message]) -> list[Message]:
         """返回未超出预算的消息副本，超出预算时要求先压缩。"""
 
         message_list = list(messages)
-        if estimate_context_tokens(message_list) > self._budget.compaction_threshold:
+        self._ensure_message_budget()
+        if self._estimate(message_list) > self._budget.compaction_threshold:
             raise ContextCompactionRequired("上下文超出预算，需要先执行压缩")
         return message_list
 
     def build_fallback(self, messages: Sequence[Message]) -> list[Message]:
         """摘要失败时生成不持久化的规则化上下文。"""
 
+        self._ensure_message_budget()
         selected = select_recent_messages(
             messages,
             min(
                 self._budget.keep_recent_tokens,
-                self._budget.compaction_threshold,
+                self._message_budget,
             ),
+            message_overhead_tokens=MESSAGE_PROTOCOL_TOKENS,
         )
         system_count = sum(message.role == "system" for message in selected)
         selected.insert(
             system_count,
             Message(role="system", content=CONTEXT_FALLBACK_NOTICE),
         )
-        return _fit_messages_to_budget(selected, self._budget.compaction_threshold)
+        result = _fit_messages_to_budget(
+            selected,
+            self._message_budget,
+            message_overhead_tokens=MESSAGE_PROTOCOL_TOKENS,
+        )
+        self.build(result)
+        return result
 
     async def build_for_model(
         self,
@@ -135,13 +167,18 @@ class ContextManager:
         original_system_messages = [
             message for message in original_messages if message.role == "system"
         ]
+        self._ensure_message_budget()
         try:
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
-            recent = select_recent_messages(messages, self._budget.keep_recent_tokens)
+            recent = select_recent_messages(messages, min(
+                self._budget.keep_recent_tokens,
+                self._message_budget,
+            ), message_overhead_tokens=MESSAGE_PROTOCOL_TOKENS)
             oversized_prefix, oversized_suffix = _split_oversized_latest_turn(
                 messages,
-                self._budget.keep_recent_tokens,
+                min(self._budget.keep_recent_tokens, self._message_budget),
+                message_overhead_tokens=MESSAGE_PROTOCOL_TOKENS,
             )
             if oversized_prefix:
                 latest_group_ids = {id(message) for message in oversized_prefix + oversized_suffix}
@@ -183,7 +220,7 @@ class ContextManager:
                         original_messages,
                         oversized_suffix,
                     ),
-                    tokens_before=estimate_context_tokens(messages),
+                    tokens_before=self._estimate(messages),
                 )
                 return ContextBuildResult(compacted_messages, compaction)
 
@@ -221,7 +258,7 @@ class ContextManager:
             compaction = CompactionRecord(
                 summary=summary,
                 first_kept_message_index=first_kept_message_index,
-                tokens_before=estimate_context_tokens(messages),
+                tokens_before=self._estimate(messages),
             )
             compacted_messages = (
                 original_system_messages + [summary_message] + recent_conversation
@@ -327,6 +364,7 @@ def _first_message_index(
 def select_recent_messages(
     messages: Sequence[Message],
     max_tokens: int,
+    message_overhead_tokens: int = 0,
 ) -> list[Message]:
     """保留系统消息和预算内的最近完整对话单元。"""
 
@@ -342,7 +380,7 @@ def select_recent_messages(
     selected_groups: list[list[Message]] = []
     selected_tokens = 0
     for group in reversed(groups):
-        group_tokens = estimate_context_tokens(group)
+        group_tokens = _estimate_messages(group, message_overhead_tokens)
         if selected_groups and selected_tokens + group_tokens > max_tokens:
             break
         selected_groups.append(group)
@@ -357,11 +395,12 @@ def select_recent_messages(
 def _fit_messages_to_budget(
     messages: Sequence[Message],
     max_tokens: int,
+    message_overhead_tokens: int = 0,
 ) -> list[Message]:
     """在硬预算内尽量保留系统消息和最近对话。"""
 
     result = list(messages)
-    while estimate_context_tokens(result) > max_tokens:
+    while _estimate_messages(result, message_overhead_tokens) > max_tokens:
         conversation_indices = [
             index for index, message in enumerate(result) if message.role != "system"
         ]
@@ -377,7 +416,8 @@ def _fit_messages_to_budget(
             index = conversation_indices[-1]
             current = result[index]
             remaining = max_tokens - (
-                estimate_context_tokens(result) - estimate_message_tokens(current)
+                _estimate_messages(result, message_overhead_tokens)
+                - estimate_message_tokens(current)
             )
             shortened = _truncate_message(current, remaining)
             if shortened is None:
@@ -389,7 +429,8 @@ def _fit_messages_to_budget(
         index = len(result) - 1
         current = result[index]
         remaining = max_tokens - (
-            estimate_context_tokens(result) - estimate_message_tokens(current)
+            _estimate_messages(result, message_overhead_tokens)
+            - estimate_message_tokens(current)
         )
         shortened = _truncate_message(current, remaining)
         if shortened is None:
@@ -425,6 +466,7 @@ def _truncate_message(message: Message, max_tokens: int) -> Message | None:
 def _split_oversized_latest_turn(
     messages: Sequence[Message],
     max_tokens: int,
+    message_overhead_tokens: int = 0,
 ) -> tuple[list[Message], list[Message]]:
     """将超出最近预算的最新轮次拆为前缀和后缀。"""
 
@@ -436,13 +478,13 @@ def _split_oversized_latest_turn(
         return [], []
 
     latest_group = groups[-1]
-    if estimate_context_tokens(latest_group) <= max_tokens:
+    if _estimate_messages(latest_group, message_overhead_tokens) <= max_tokens:
         return [], latest_group
 
     for start in range(len(latest_group) - 1, -1, -1):
         suffix = latest_group[start:]
         if (
-            estimate_context_tokens(suffix) <= max_tokens
+            _estimate_messages(suffix, message_overhead_tokens) <= max_tokens
             and _has_valid_tool_chain(suffix)
         ):
             return latest_group[:start], suffix
@@ -556,3 +598,32 @@ def estimate_context_tokens(messages: Sequence[Message]) -> int:
     """估算消息列表的总 Token 数。"""
 
     return sum(estimate_message_tokens(message) for message in messages)
+
+
+def _estimate_messages(
+    messages: Sequence[Message],
+    message_overhead_tokens: int,
+) -> int:
+    """估算消息内容及每条消息的协议开销。"""
+
+    return estimate_context_tokens(messages) + len(messages) * message_overhead_tokens
+
+
+def estimate_request_fixed_tokens(tools: Sequence[Mapping[str, object]] = ()) -> int:
+    """估算模型请求中与消息无关的协议和工具定义开销。"""
+
+    tools_json = json.dumps(tools, ensure_ascii=False, sort_keys=True)
+    return REQUEST_PROTOCOL_TOKENS + ceil(len(tools_json) / 4)
+
+
+def estimate_model_request_tokens(
+    messages: Sequence[Message],
+    tools: Sequence[Mapping[str, object]] = (),
+) -> int:
+    """估算完整模型请求的消息、协议和工具定义开销。"""
+
+    return (
+        estimate_request_fixed_tokens(tools)
+        + len(messages) * MESSAGE_PROTOCOL_TOKENS
+        + estimate_context_tokens(messages)
+    )

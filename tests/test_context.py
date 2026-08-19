@@ -10,6 +10,7 @@ from core.context import (
     ContextSummaryError,
     CONTEXT_FALLBACK_NOTICE,
     estimate_context_tokens,
+    estimate_model_request_tokens,
     estimate_message_tokens,
     generate_context_summary,
     select_recent_messages,
@@ -62,6 +63,30 @@ def test_estimate_context_tokens_sums_messages() -> None:
     ]
 
     assert estimate_context_tokens(messages) == 3
+
+
+def test_context_manager_counts_tool_schema_and_message_protocol() -> None:
+    """测试完整模型请求会计算工具定义和消息协议开销。"""
+
+    tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+    messages = [Message(role="user", content="你好")]
+    manager = ContextManager(ContextBudget(30, 5, 10), model_tools=tools)
+
+    assert estimate_model_request_tokens(messages, tools) > estimate_context_tokens(messages)
+    with pytest.raises(ContextCompactionRequired):
+        manager.build(messages)
+
+
+def test_context_manager_fallback_honors_full_request_budget() -> None:
+    """测试 fallback 会为工具定义和消息协议预留预算。"""
+
+    tools = [{"type": "function", "function": {"name": "read_file", "parameters": {}}}]
+    budget = ContextBudget(80, 10, 20)
+    manager = ContextManager(budget, model_tools=tools)
+
+    result = manager.build_fallback([Message(role="user", content="x" * 500)])
+
+    assert estimate_model_request_tokens(result, tools) <= budget.compaction_threshold
 
 
 def test_context_manager_returns_copy_when_context_is_within_budget() -> None:
@@ -250,7 +275,7 @@ async def test_generate_context_summary_raises_after_retries() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_build_for_model_uses_summary_when_over_budget() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(42, 10, 2))
+    manager = ContextManager(ContextBudget(64, 10, 20))
     messages = [
         Message(role="user", content="旧问题" + "x" * 64),
         Message(role="assistant", content="旧回答" + "x" * 64),
@@ -316,7 +341,8 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
     client = FakeSummaryClient(
         [ModelClientError("网络错误"), ModelClientError("网络错误")]
     )
-    manager = ContextManager(ContextBudget(4, 1, 2))
+    budget = ContextBudget(32, 10, 10)
+    manager = ContextManager(budget)
     messages = [
         Message(role="user", content="旧问题"),
         Message(role="assistant", content="旧回答"),
@@ -328,7 +354,7 @@ async def test_context_manager_build_for_model_uses_fallback_after_summary_failu
 
     assert result[0].role == "system"
     assert result[0].content.startswith(CONTEXT_FALLBACK_NOTICE[:4])
-    assert estimate_context_tokens(result) <= 3
+    assert estimate_model_request_tokens(result) <= budget.compaction_threshold
     assert client.calls == 2
 
 
@@ -344,7 +370,7 @@ def test_context_manager_fallback_honors_budget_for_oversized_system_message() -
         ]
     )
 
-    assert estimate_context_tokens(result) <= budget.compaction_threshold
+    assert estimate_model_request_tokens(result) <= budget.compaction_threshold
 
 
 @pytest.mark.asyncio
@@ -352,7 +378,7 @@ async def test_context_manager_marks_fallback_result() -> None:
     client = FakeSummaryClient(
         [ModelClientError("网络错误"), ModelClientError("网络错误")]
     )
-    manager = ContextManager(ContextBudget(4, 1, 2))
+    manager = ContextManager(ContextBudget(32, 10, 10))
     messages = [
         Message(role="user", content="旧问题"),
         Message(role="assistant", content="旧回答"),
@@ -369,7 +395,7 @@ async def test_context_manager_marks_fallback_result() -> None:
 @pytest.mark.asyncio
 async def test_second_compaction_boundary_uses_full_session_history() -> None:
     client = FakeSummaryClient([SUMMARY])
-    manager = ContextManager(ContextBudget(50, 10, 10))
+    manager = ContextManager(ContextBudget(80, 20, 20))
     messages = [
         Message(role="user", content="第一轮" + "x" * 64),
         Message(role="assistant", content="第一轮回复" + "x" * 64),
@@ -392,7 +418,7 @@ async def test_second_compaction_boundary_uses_full_session_history() -> None:
 async def test_repeated_compaction_keeps_latest_cumulative_summary() -> None:
     first_summary = SUMMARY.replace("目标", "第一轮目标")
     second_summary = SUMMARY.replace("目标", "第二轮目标")
-    budget = ContextBudget(50, 10, 10)
+    budget = ContextBudget(80, 20, 20)
     manager = ContextManager(budget)
     messages = [
         Message(role="user", content="旧问题" + "x" * 160),
@@ -453,7 +479,7 @@ async def test_context_manager_uses_latest_restored_compaction() -> None:
 @pytest.mark.asyncio
 async def test_context_manager_returns_compaction_record_after_summary() -> None:
     client = FakeSummaryClient([SUMMARY])
-    budget = ContextBudget(42, 10, 2)
+    budget = ContextBudget(64, 10, 20)
     manager = ContextManager(budget)
     messages = [
         Message(role="user", content="旧问题" + "x" * 64),

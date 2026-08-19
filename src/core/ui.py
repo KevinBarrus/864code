@@ -153,6 +153,7 @@ async def run_chat(
             for definition in tool_manager.list_definitions()
             if definition.capability is not None
         },
+        model_tools=tool_manager.model_tools(),
     )
     agent_loop = AgentLoop(client, tool_manager)
 
