@@ -89,6 +89,27 @@ async def test_edit_file_requires_expected_old_content(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_edit_file_replaces_substring_preserving_surrounding_content(
+    tmp_path: Path,
+) -> None:
+    """测试编辑工具按子串替换并保留其余内容（如末尾换行）。"""
+
+    path = tmp_path / "a.txt"
+    path.write_text("before\n", encoding="utf-8")
+    manager = _manager(create_edit_file_tool(tmp_path))
+
+    result = await manager.execute(
+        _call(
+            "edit_file",
+            {"path": "a.txt", "old_content": "before", "new_content": "after"},
+        )
+    )
+
+    assert result.is_error is False
+    assert path.read_text(encoding="utf-8") == "after\n"
+
+
+@pytest.mark.asyncio
 async def test_run_command_returns_stdout_and_exit_error(tmp_path: Path) -> None:
     """测试命令工具返回标准输出和非零退出错误。"""
 
