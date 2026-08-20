@@ -4,7 +4,12 @@ from dataclasses import dataclass, field
 from typing import Literal
 from uuid import uuid4
 
-EvaluationType = Literal["core-regression", "real-task", "online-special"]
+EvaluationType = Literal[
+    "core-regression",
+    "real-task",
+    "online-special",
+    "code-correctness",
+]
 
 
 @dataclass(frozen=True)

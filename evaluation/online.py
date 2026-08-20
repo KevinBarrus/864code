@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import sys
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -22,7 +23,10 @@ from core.tools import (
     PermissionManager,
     ToolManager,
     create_edit_file_tool,
+    create_list_files_tool,
     create_read_file_tool,
+    create_run_command_tool,
+    create_write_file_tool,
 )
 
 from .models import EvaluationAssertion, EvaluationResult
@@ -37,7 +41,7 @@ from .baseline import (
 from .report import generate_report
 from .storage import append_result
 
-ONLINE_SCENARIO_VERSION = "2"
+ONLINE_SCENARIO_VERSION = "3"
 DEFAULT_ONLINE_REPETITIONS = 7
 
 
@@ -105,6 +109,68 @@ ONLINE_FILE_TASKS = (
         required_edits=("note.txt",),
         reply_keywords=("note.txt", "完成"),
         failed_read_path="missing.txt",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class _OnlineCodeTask:
+    """描述一条以独立 pytest 结果验证代码正确性的真实任务。"""
+
+    name: str
+    prompt: str
+    initial_files: tuple[tuple[str, str], ...]
+    test_file: str
+    required_reads: tuple[str, ...]
+    required_edits: tuple[str, ...]
+    reply_keywords: tuple[str, ...]
+    unrelated_files: tuple[tuple[str, str], ...] = ()
+
+
+ONLINE_CODE_TASKS = (
+    _OnlineCodeTask(
+        name="online_code_fix_bug",
+        prompt=(
+            "请先读取 math_utils.py 和 test_math_utils.py，找到 add 函数的错误并修复，"
+            "使 test_math_utils.py 的测试通过。可以运行 pytest 验证结果。"
+            "不要修改 test_math_utils.py 和 notes.txt。"
+        ),
+        initial_files=(
+            ("math_utils.py", "def add(left, right):\n    return left - right\n"),
+            (
+                "test_math_utils.py",
+                "from math_utils import add\n\n\ndef test_add_returns_sum():\n    assert add(2, 3) == 5\n",
+            ),
+            ("notes.txt", "不要修改\n"),
+        ),
+        test_file="test_math_utils.py",
+        required_reads=("math_utils.py",),
+        required_edits=("math_utils.py",),
+        reply_keywords=("math_utils.py", "完成"),
+        unrelated_files=(("notes.txt", "不要修改\n"),),
+    ),
+    _OnlineCodeTask(
+        name="online_code_complete_skeleton",
+        prompt=(
+            "请先读取 string_utils.py 和 test_string_utils.py，补全 reverse_words 函数"
+            "的实现，使 test_string_utils.py 的测试通过。可以运行 pytest 验证结果。"
+            "不要修改 test_string_utils.py 和 notes.txt。"
+        ),
+        initial_files=(
+            ("string_utils.py", "def reverse_words(text):\n    raise NotImplementedError\n"),
+            (
+                "test_string_utils.py",
+                "from string_utils import reverse_words\n\n\n"
+                "def test_reverse_words_reverses_order():\n"
+                "    assert reverse_words(\"hello world\") == \"world hello\"\n",
+            ),
+            ("notes.txt", "不要修改\n"),
+        ),
+        test_file="test_string_utils.py",
+        required_reads=("string_utils.py",),
+        required_edits=("string_utils.py",),
+        reply_keywords=("string_utils.py", "完成"),
+        unrelated_files=(("notes.txt", "不要修改\n"),),
     ),
 )
 
@@ -375,6 +441,201 @@ async def _run_online_file_task(
         )
 
 
+async def run_online_code_task(
+    task: _OnlineCodeTask,
+    env_path: Path | None = None,
+) -> EvaluationResult:
+    """在独立工作区执行一条代码正确性任务并保留诊断结果。"""
+
+    state = _OnlineRunState(task.name, "code-correctness")
+    return await _run_with_diagnostics(state, _run_online_code_task(state, task, env_path))
+
+
+async def _run_online_code_task(
+    state: _OnlineRunState,
+    task: _OnlineCodeTask,
+    env_path: Path | None,
+) -> EvaluationResult:
+    """执行代码正确性任务并用独立 pytest 结果判断成功。"""
+
+    state.stage = "load-settings"
+    settings = load_settings(env_path)
+    with tempfile.TemporaryDirectory(prefix="epsilon-code-") as directory:
+        workspace = Path(directory)
+        for path, content in task.initial_files:
+            (workspace / path).write_text(content, encoding="utf-8")
+        client = TimedModelClient(OpenAICompatibleClient(settings))
+        state.client = client
+
+        async def approve_all(definition, tool_call, allow_session):
+            """允许评测任务执行单次写入和命令。"""
+
+            return ApprovalResult(ApprovalDecision.ALLOW_ONCE)
+
+        manager = ToolManager(permission_manager=PermissionManager(approve_all))
+        manager.register_local(*create_read_file_tool(workspace))
+        manager.register_local(*create_list_files_tool(workspace))
+        manager.register_local(*create_write_file_tool(workspace))
+        manager.register_local(*create_edit_file_tool(workspace))
+        manager.register_local(*create_run_command_tool(workspace))
+        session = Session(workspace)
+        events = state.events
+        events.append(message_to_record(Message(role="user", content=task.prompt)))
+        session.add_user_message(task.prompt)
+
+        async def collect_event(event: object) -> None:
+            events.append(event_to_record(event))
+
+        started_at = perf_counter()
+        state.stage = "agent-loop"
+        result = await AgentLoop(client, manager).run(
+            session.get_messages(),
+            on_event=collect_event,
+        )
+        for message in result.new_messages:
+            session.add_message(message)
+        state.stage = "session-persistence"
+        persistence_ok = session.flush_persistence() and session.close()
+        restored = Session.restore(workspace, session.session_id)
+        restored_messages = restored.get_messages()
+        restored.close()
+
+        state.stage = "pytest-verification"
+        pytest_passed = await _run_pytest(workspace)
+
+        tool_events = [event for event in events if event["type"] == "tool_result"]
+        events.append(
+            message_to_record(Message(role="assistant", content=result.final_content))
+        )
+        events.append(
+            {
+                "type": "reply_keywords",
+                "matched": _contains_keywords(
+                    result.final_content,
+                    task.reply_keywords,
+                ),
+            }
+        )
+        test_file_content = _initial_file_content(task.initial_files, task.test_file)
+        assertions = [
+            EvaluationAssertion(
+                "pytest-passed",
+                pytest_passed,
+                "代码任务没有通过独立 pytest 验证",
+            ),
+            EvaluationAssertion(
+                "test-file-unchanged",
+                _files_match(workspace, ((task.test_file, test_file_content),)),
+                "模型修改了测试文件",
+            ),
+            EvaluationAssertion(
+                "unrelated-files-unchanged",
+                _files_match(workspace, task.unrelated_files),
+                "模型修改了与任务无关的文件",
+            ),
+            EvaluationAssertion(
+                "read-before-write",
+                _has_expected_code_read_before_write(events, task),
+                "模型在修改目标文件前没有先读取",
+            ),
+            EvaluationAssertion(
+                "session-restore",
+                restored_messages == session.get_messages(),
+                "真实 Session 恢复后的消息不一致",
+            ),
+            EvaluationAssertion(
+                "persistence",
+                persistence_ok,
+                "代码任务 Session Flush 失败",
+            ),
+        ]
+        return EvaluationResult(
+            scenario=task.name,
+            duration_ms=(perf_counter() - started_at) * 1000,
+            evaluation_type="code-correctness",
+            model_requests=len(client.requests),
+            tool_calls=len(tool_events),
+            tool_failures=sum(bool(event["is_error"]) for event in tool_events),
+            estimated_tokens=sum(
+                estimate_context_tokens(request) for request in client.requests
+            ),
+            actual_tokens=client.total_actual_tokens,
+            persistence_degraded=not persistence_ok,
+            model_request_durations_ms=tuple(client.durations_ms),
+            events=tuple(events),
+            assertions=tuple(assertions),
+        )
+
+
+async def _run_pytest(workspace: Path) -> bool:
+    """在独立工作区运行 pytest 并返回是否全部通过。"""
+
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        cwd=workspace,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await process.communicate()
+    return process.returncode == 0
+
+
+def _initial_file_content(
+    initial_files: tuple[tuple[str, str], ...],
+    path: str,
+) -> str:
+    """从初始文件列表查找指定路径的原始内容。"""
+
+    for file_path, content in initial_files:
+        if file_path == path:
+            return content
+    raise ValueError(f"初始文件未定义：{path}")
+
+
+def _has_expected_code_read_before_write(
+    events: Sequence[dict[str, object]],
+    task: _OnlineCodeTask,
+) -> bool:
+    """确认每个目标源文件在被修改前都被读取。"""
+
+    calls = [event for event in events if event.get("type") == "tool_call"]
+    read_positions = _tool_positions(calls, "read_file", task.required_reads)
+    write_positions = [
+        position
+        for path in task.required_edits
+        if (position := _first_write_position(calls, path)) is not None
+    ]
+    return (
+        len(read_positions) == len(task.required_reads)
+        and len(write_positions) == len(task.required_edits)
+        and all(
+            (read_position := _tool_position(calls, "read_file", path)) is not None
+            and read_position < write_position
+            for path, write_position in zip(task.required_edits, write_positions)
+        )
+    )
+
+
+def _first_write_position(
+    calls: Sequence[dict[str, object]],
+    path: str,
+) -> int | None:
+    """返回 write_file 或 edit_file 首次操作指定路径的位置。"""
+
+    for index, call in enumerate(calls):
+        arguments = call.get("arguments")
+        if (
+            call.get("name") in {"write_file", "edit_file"}
+            and isinstance(arguments, dict)
+            and arguments.get("path") == path
+        ):
+            return index
+    return None
+
+
 def _files_match(workspace: Path, expected_files: tuple[tuple[str, str], ...]) -> bool:
     """检查一组文件是否完全符合任务预期内容。"""
 
@@ -483,41 +744,65 @@ async def run_online_suite(
     if scenario != "main" and scenario not in runners:
         raise ValueError(f"不支持的在线评测场景：{scenario}")
     for repetition in range(1, repetitions + 1):
-        tasks = ONLINE_FILE_TASKS if scenario == "main" else (None,)
-        for task in tasks:
-            try:
-                result = (
-                    await run_online_file_task(task, env_path)
-                    if task is not None
-                    else await runners[scenario](env_path)
+        if scenario == "main":
+            for task in ONLINE_FILE_TASKS:
+                result = await _run_suite_task(
+                    task.name,
+                    "real-task",
+                    run_online_file_task(task, env_path),
                 )
-            except Exception as error:
-                result = EvaluationResult(
-                    scenario=task.name if task is not None else f"online_{scenario}",
-                    duration_ms=0,
-                    evaluation_type="real-task" if task is not None else "online-special",
-                    error_category=_error_category(error),
-                    error_stage="suite",
-                    error_message=f"{type(error).__name__}: {error}",
-                    events=(
-                        {
-                            "type": "evaluation_error",
-                            "category": _error_category(error),
-                            "stage": "suite",
-                            "exception_type": type(error).__name__,
-                            "message": str(error),
-                        },
-                    ),
-                    assertions=(
-                        EvaluationAssertion(
-                            "online-evaluation-error",
-                            False,
-                            f"在线评测在 suite 失败：{type(error).__name__}: {error}",
-                        ),
-                    ),
+                results.append(replace(result, repetition=repetition))
+            for task in ONLINE_CODE_TASKS:
+                result = await _run_suite_task(
+                    task.name,
+                    "code-correctness",
+                    run_online_code_task(task, env_path),
                 )
+                results.append(replace(result, repetition=repetition))
+        else:
+            result = await _run_suite_task(
+                f"online_{scenario}",
+                "online-special",
+                runners[scenario](env_path),
+            )
             results.append(replace(result, repetition=repetition))
     return results
+
+
+async def _run_suite_task(
+    scenario_name: str,
+    evaluation_type: str,
+    runner: Awaitable[EvaluationResult],
+) -> EvaluationResult:
+    """执行单个评测任务并把异常转换为保留诊断的失败结果。"""
+
+    try:
+        return await runner
+    except Exception as error:
+        return EvaluationResult(
+            scenario=scenario_name,
+            duration_ms=0,
+            evaluation_type=evaluation_type,  # type: ignore[arg-type]
+            error_category=_error_category(error),
+            error_stage="suite",
+            error_message=f"{type(error).__name__}: {error}",
+            events=(
+                {
+                    "type": "evaluation_error",
+                    "category": _error_category(error),
+                    "stage": "suite",
+                    "exception_type": type(error).__name__,
+                    "message": str(error),
+                },
+            ),
+            assertions=(
+                EvaluationAssertion(
+                    "online-evaluation-error",
+                    False,
+                    f"在线评测在 suite 失败：{type(error).__name__}: {error}",
+                ),
+            ),
+        )
 
 
 async def run_online_compaction_smoke(

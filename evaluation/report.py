@@ -60,6 +60,12 @@ def render_report(
       "任务完成率",
   )}
   {_evaluation_section(
+      "代码正确性任务",
+      "使用独立 pytest 结果验证模型修改的代码，不依赖回复关键词",
+      _results_of_type(results, "code-correctness"),
+      "任务完成率",
+  )}
+  {_evaluation_section(
       "在线专项",
       "验证压缩、网络等指定运行时能力，不计入真实任务指标",
       _results_of_type(results, "online-special"),
@@ -159,6 +165,7 @@ def _evaluation_type_label(evaluation_type: str) -> str:
         "core-regression": "核心链路回归",
         "real-task": "真实任务",
         "online-special": "在线专项",
+        "code-correctness": "代码正确性",
     }
     return labels[evaluation_type]
 

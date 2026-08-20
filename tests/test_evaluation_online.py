@@ -6,9 +6,11 @@ from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
 from evaluation.online import (
     DEFAULT_ONLINE_REPETITIONS,
+    ONLINE_CODE_TASKS,
     ONLINE_FILE_TASKS,
     TimedModelClient,
     _has_expected_file_read_before_edit,
+    run_online_code_task,
     run_online_file_task,
     run_online_suite,
 )
@@ -84,11 +86,11 @@ async def test_timed_model_client_collects_usage_from_summary_request() -> None:
 async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
     monkeypatch,
 ) -> None:
-    """测试在线主任务会运行全部文件任务并保留失败。"""
+    """测试在线主任务会运行全部文件任务和代码任务并保留失败。"""
 
     calls: list[str] = []
 
-    async def fake_run(task, env_path=None):
+    async def fake_run_file(task, env_path=None):
         calls.append(task.name)
         if task.name == "online_multi_file_edit":
             raise RuntimeError("模拟在线失败")
@@ -99,13 +101,26 @@ async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
             assertions=(EvaluationAssertion("ok", True),),
         )
 
-    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run)
+    async def fake_run_code(task, env_path=None):
+        calls.append(task.name)
+        return EvaluationResult(
+            scenario=task.name,
+            duration_ms=10,
+            evaluation_type="code-correctness",
+            assertions=(EvaluationAssertion("ok", True),),
+        )
+
+    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run_file)
+    monkeypatch.setattr("evaluation.online.run_online_code_task", fake_run_code)
 
     results = await run_online_suite(repetitions=1)
 
-    assert calls == [task.name for task in ONLINE_FILE_TASKS]
-    assert [result.repetition for result in results] == [1, 1, 1]
-    assert [result.passed for result in results] == [True, False, True]
+    expected_names = [task.name for task in ONLINE_FILE_TASKS] + [
+        task.name for task in ONLINE_CODE_TASKS
+    ]
+    assert calls == expected_names
+    assert [result.repetition for result in results] == [1] * len(expected_names)
+    assert [result.passed for result in results] == [True, False, True, True, True]
 
 
 @pytest.mark.asyncio
@@ -114,7 +129,7 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
 ) -> None:
     """测试默认主套件会生成至少二十个性能样本。"""
 
-    async def fake_run(task, env_path=None):
+    async def fake_run_file(task, env_path=None):
         return EvaluationResult(
             scenario=task.name,
             duration_ms=10,
@@ -122,12 +137,22 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
             assertions=(EvaluationAssertion("ok", True),),
         )
 
-    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run)
+    async def fake_run_code(task, env_path=None):
+        return EvaluationResult(
+            scenario=task.name,
+            duration_ms=10,
+            evaluation_type="code-correctness",
+            assertions=(EvaluationAssertion("ok", True),),
+        )
+
+    monkeypatch.setattr("evaluation.online.run_online_file_task", fake_run_file)
+    monkeypatch.setattr("evaluation.online.run_online_code_task", fake_run_code)
 
     results = await run_online_suite()
 
     assert DEFAULT_ONLINE_REPETITIONS == 7
-    assert len(results) == DEFAULT_ONLINE_REPETITIONS * len(ONLINE_FILE_TASKS)
+    total_tasks = len(ONLINE_FILE_TASKS) + len(ONLINE_CODE_TASKS)
+    assert len(results) == DEFAULT_ONLINE_REPETITIONS * total_tasks
     assert len(results) >= 20
 
 
@@ -250,6 +275,129 @@ def test_online_file_task_requires_each_target_read_before_edit() -> None:
 
     assert _has_expected_file_read_before_edit(interleaved_events, task)
     assert not _has_expected_file_read_before_edit(edit_first_events, task)
+
+
+@pytest.mark.asyncio
+async def test_online_code_task_validates_pytest_result(monkeypatch) -> None:
+    """测试代码正确性任务以独立 pytest 结果判断成功。"""
+
+    task = ONLINE_CODE_TASKS[0]
+    client = FakeModelClient(
+        [
+            [
+                ToolCallEvent(ToolCall("read-1", "read_file", {"path": "math_utils.py"})),
+                ToolCallEvent(ToolCall("read-2", "read_file", {"path": "test_math_utils.py"})),
+            ],
+            [
+                ToolCallEvent(
+                    ToolCall(
+                        "write-1",
+                        "write_file",
+                        {
+                            "path": "math_utils.py",
+                            "content": "def add(left, right):\n    return left + right\n",
+                        },
+                    )
+                )
+            ],
+            [TextDelta("已修复 math_utils.py 并完成")],
+        ]
+    )
+    monkeypatch.setattr(
+        "evaluation.online.load_settings",
+        lambda env_path=None: Settings("https://example.com", "test", "key"),
+    )
+    monkeypatch.setattr(
+        "evaluation.online.OpenAICompatibleClient",
+        lambda settings: client,
+    )
+
+    result = await run_online_code_task(task)
+
+    assert result.passed
+    assert result.evaluation_type == "code-correctness"
+
+
+@pytest.mark.asyncio
+async def test_online_code_task_fails_when_test_file_modified(monkeypatch) -> None:
+    """测试模型篡改测试文件时任务失败。"""
+
+    task = ONLINE_CODE_TASKS[0]
+    client = FakeModelClient(
+        [
+            [ToolCallEvent(ToolCall("read", "read_file", {"path": "math_utils.py"}))],
+            [
+                ToolCallEvent(
+                    ToolCall(
+                        "write",
+                        "write_file",
+                        {
+                            "path": "test_math_utils.py",
+                            "content": "def test_fake():\n    assert True\n",
+                        },
+                    )
+                )
+            ],
+            [TextDelta("完成")],
+        ]
+    )
+    monkeypatch.setattr(
+        "evaluation.online.load_settings",
+        lambda env_path=None: Settings("https://example.com", "test", "key"),
+    )
+    monkeypatch.setattr(
+        "evaluation.online.OpenAICompatibleClient",
+        lambda settings: client,
+    )
+
+    result = await run_online_code_task(task)
+
+    assert not result.passed
+    assert any(
+        assertion.name == "test-file-unchanged" and not assertion.passed
+        for assertion in result.assertions
+    )
+
+
+@pytest.mark.asyncio
+async def test_online_code_task_fails_when_pytest_does_not_pass(monkeypatch) -> None:
+    """测试模型修复后测试仍未通过时任务失败。"""
+
+    task = ONLINE_CODE_TASKS[0]
+    client = FakeModelClient(
+        [
+            [ToolCallEvent(ToolCall("read", "read_file", {"path": "math_utils.py"}))],
+            [
+                ToolCallEvent(
+                    ToolCall(
+                        "write",
+                        "write_file",
+                        {
+                            "path": "math_utils.py",
+                            "content": "def add(left, right):\n    return left * right\n",
+                        },
+                    )
+                )
+            ],
+            [TextDelta("完成")],
+        ]
+    )
+    monkeypatch.setattr(
+        "evaluation.online.load_settings",
+        lambda env_path=None: Settings("https://example.com", "test", "key"),
+    )
+    monkeypatch.setattr(
+        "evaluation.online.OpenAICompatibleClient",
+        lambda settings: client,
+    )
+
+    result = await run_online_code_task(task)
+
+    assert not result.passed
+    assert any(
+        assertion.name == "pytest-passed" and not assertion.passed
+        for assertion in result.assertions
+    )
 
 
 @pytest.mark.asyncio
