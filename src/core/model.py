@@ -44,7 +44,16 @@ class ToolCallEvent:
     tool_call: ToolCall
 
 
-ModelEvent = TextDelta | ToolCallEvent
+@dataclass(frozen=True)
+class UsageEvent:
+    """模型服务端返回的一次请求的实际 Token 用量。"""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+ModelEvent = TextDelta | ToolCallEvent | UsageEvent
 
 
 @dataclass(frozen=True)

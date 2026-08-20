@@ -195,3 +195,45 @@ def test_load_settings_finds_env_in_parent_directory(
     settings = load_settings()
 
     assert settings.model_name == "test-model"
+
+
+def test_load_settings_defaults_stream_usage_off(tmp_path: Path) -> None:
+    """测试默认关闭服务端 usage 采集。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n",
+    )
+
+    assert load_settings(env_path).stream_usage is False
+
+
+def test_load_settings_reads_stream_usage(tmp_path: Path) -> None:
+    """测试 MODEL_STREAM_USAGE 开启时会被正确读取。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MODEL_STREAM_USAGE=true\n",
+    )
+
+    assert load_settings(env_path).stream_usage is True
+
+
+def test_load_settings_rejects_invalid_stream_usage(tmp_path: Path) -> None:
+    """测试 MODEL_STREAM_USAGE 不是布尔值时抛出配置异常。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "MODEL_STREAM_USAGE=maybe\n",
+    )
+
+    with pytest.raises(ConfigError, match="MODEL_STREAM_USAGE"):
+        load_settings(env_path)

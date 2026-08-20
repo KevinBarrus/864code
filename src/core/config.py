@@ -35,6 +35,7 @@ class Settings:
     first_byte_timeout_seconds: float | None = None
     stream_idle_timeout_seconds: float | None = None
     mcp_stdio: McpStdioSettings | None = None
+    stream_usage: bool = False
 
     def __post_init__(self) -> None:
         """统一超时默认值并校验直接构造的配置。"""
@@ -90,6 +91,11 @@ def load_settings(env_path: Path | None = None) -> Settings:
         "MODEL_STREAM_IDLE_TIMEOUT_SECONDS",
     )
     mcp_stdio = _optional_mcp_stdio_settings(values)
+    stream_usage = _optional_bool(
+        values.get("MODEL_STREAM_USAGE"),
+        False,
+        "MODEL_STREAM_USAGE",
+    )
     if context_window <= 0:
         raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
@@ -109,6 +115,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         first_byte_timeout_seconds=first_byte_timeout_seconds,
         stream_idle_timeout_seconds=stream_idle_timeout_seconds,
         mcp_stdio=mcp_stdio,
+        stream_usage=stream_usage,
     )
 
 
@@ -144,6 +151,19 @@ def _optional_float(
         return float(value.strip())
     except ValueError as exc:
         raise ConfigError(f"{name} 必须是数字") from exc
+
+
+def _optional_bool(value: str | None, default: bool, name: str) -> bool:
+    """读取可选布尔配置，未设置时使用默认值。"""
+
+    if value is None or not value.strip():
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise ConfigError(f"{name} 必须是布尔值")
 
 
 def _optional_mcp_stdio_settings(values: dict[str, str | None]) -> McpStdioSettings | None:

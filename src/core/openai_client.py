@@ -16,6 +16,7 @@ from .model import (
     TextDelta,
     ToolCall,
     ToolCallEvent,
+    UsageEvent,
 )
 
 
@@ -41,6 +42,7 @@ class OpenAICompatibleClient:
         self._model_name = settings.model_name
         self._first_byte_timeout_seconds = settings.first_byte_timeout_seconds
         self._stream_idle_timeout_seconds = settings.stream_idle_timeout_seconds
+        self._stream_usage = settings.stream_usage
         self._client = client or AsyncOpenAI(
             api_key=settings.api_key,
             base_url=settings.base_url,
@@ -75,10 +77,16 @@ class OpenAICompatibleClient:
         }
         if tools:
             request["tools"] = list(tools)
+        if self._stream_usage:
+            request["stream_options"] = {"include_usage": True}
 
         try:
             tool_calls: dict[int, _ToolCallBuffer] = {}
+            usage: object | None = None
             async for chunk in self._stream_chunks(request):
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -90,6 +98,10 @@ class OpenAICompatibleClient:
 
             for index in sorted(tool_calls):
                 yield ToolCallEvent(_build_tool_call(tool_calls[index], index))
+            if usage is not None:
+                usage_event = _build_usage_event(usage)
+                if usage_event is not None:
+                    yield usage_event
         except asyncio.CancelledError:
             raise
         except ModelClientError:
@@ -241,4 +253,21 @@ def _build_tool_call(buffer: _ToolCallBuffer, index: int) -> ToolCall:
         call_id=buffer.call_id,
         name=buffer.name,
         arguments=arguments,
+    )
+
+
+def _build_usage_event(usage: object) -> UsageEvent | None:
+    """将服务端 usage 分片转换为用量事件，字段不完整时视为缺失。"""
+
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    completion_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    if total_tokens is None and isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+        total_tokens = prompt_tokens + completion_tokens
+    if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int) or not isinstance(total_tokens, int):
+        return None
+    return UsageEvent(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
     )

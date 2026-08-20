@@ -1,7 +1,7 @@
 import pytest
 
 from core.config import ConfigError, Settings
-from core.model import Message, TextDelta, ToolCall, ToolCallEvent
+from core.model import Message, TextDelta, ToolCall, ToolCallEvent, UsageEvent
 from evaluation.fakes import FakeModelClient
 from evaluation.models import EvaluationAssertion, EvaluationResult
 from evaluation.online import (
@@ -39,6 +39,45 @@ async def test_timed_model_client_records_summary_request_duration() -> None:
     assert chunks == ["摘要"]
     assert len(client.requests) == 1
     assert len(client.durations_ms) == 1
+
+
+@pytest.mark.asyncio
+async def test_timed_model_client_collects_usage() -> None:
+    """测试客户端包装器汇总各请求的实际 total Token。"""
+
+    client = TimedModelClient(
+        FakeModelClient([[TextDelta("完成"), UsageEvent(10, 2, 12)]])
+    )
+
+    events = [event async for event in client.stream_response([])]
+
+    assert events == [TextDelta("完成"), UsageEvent(10, 2, 12)]
+    assert client.total_actual_tokens == 12
+
+
+@pytest.mark.asyncio
+async def test_timed_model_client_returns_none_when_usage_missing() -> None:
+    """测试任一请求缺少 usage 时汇总结果保持 None。"""
+
+    client = TimedModelClient(FakeModelClient([[TextDelta("完成")]]))
+
+    _ = [event async for event in client.stream_response([])]
+
+    assert client.total_actual_tokens is None
+
+
+@pytest.mark.asyncio
+async def test_timed_model_client_collects_usage_from_summary_request() -> None:
+    """测试摘要请求的 usage 也会被收集并只向调用方返回文本。"""
+
+    client = TimedModelClient(
+        FakeModelClient([[TextDelta("摘要"), UsageEvent(5, 1, 6)]])
+    )
+
+    chunks = [chunk async for chunk in client.stream_chat([Message("user", "历史")])]
+
+    assert chunks == ["摘要"]
+    assert client.total_actual_tokens == 6
 
 
 @pytest.mark.asyncio

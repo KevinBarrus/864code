@@ -13,7 +13,7 @@ from core.config import ConfigError, load_settings
 from core.context import estimate_context_tokens
 from core.context import ContextBudget, ContextManager
 from core.errors import AgentError
-from core.model import Message, ModelClient, ModelEvent, ToolCallEvent
+from core.model import Message, ModelClient, ModelEvent, TextDelta, ToolCallEvent, UsageEvent
 from core.openai_client import OpenAICompatibleClient
 from core.session import Session
 from core.tools import (
@@ -118,6 +118,15 @@ class TimedModelClient:
         self._client = client
         self.requests: list[list[Message]] = []
         self.durations_ms: list[float] = []
+        self.usages: list[int | None] = []
+
+    @property
+    def total_actual_tokens(self) -> int | None:
+        """汇总所有请求的 total Token，任一请求缺少 usage 时返回 None"""
+
+        if not self.usages or any(usage is None for usage in self.usages):
+            return None
+        return sum(usage for usage in self.usages if usage is not None)
 
     async def stream_response(
         self,
@@ -127,9 +136,13 @@ class TimedModelClient:
         """记录一次真实流式请求并转发模型事件"""
 
         self.requests.append(list(messages))
+        self.usages.append(None)
+        usage_index = len(self.usages) - 1
         started_at = perf_counter()
         try:
             async for event in self._client.stream_response(messages, tools):
+                if isinstance(event, UsageEvent):
+                    self.usages[usage_index] = event.total_tokens
                 yield event
         finally:
             self.durations_ms.append((perf_counter() - started_at) * 1000)
@@ -138,10 +151,15 @@ class TimedModelClient:
         """记录一次真实摘要请求并转发文本片段"""
 
         self.requests.append(list(messages))
+        self.usages.append(None)
+        usage_index = len(self.usages) - 1
         started_at = perf_counter()
         try:
-            async for chunk in self._client.stream_chat(messages):
-                yield chunk
+            async for event in self._client.stream_response(messages):
+                if isinstance(event, UsageEvent):
+                    self.usages[usage_index] = event.total_tokens
+                elif isinstance(event, TextDelta):
+                    yield event.content
         finally:
             self.durations_ms.append((perf_counter() - started_at) * 1000)
 
@@ -349,6 +367,7 @@ async def _run_online_file_task(
             estimated_tokens=sum(
                 estimate_context_tokens(request) for request in client.requests
             ),
+            actual_tokens=client.total_actual_tokens,
             persistence_degraded=not persistence_ok,
             model_request_durations_ms=tuple(client.durations_ms),
             events=tuple(events),
@@ -570,6 +589,7 @@ async def _run_online_compaction_smoke(
             estimated_tokens=sum(
                 estimate_context_tokens(request) for request in client.requests
             ),
+            actual_tokens=client.total_actual_tokens,
             persistence_degraded=not persistence_ok,
             model_request_durations_ms=tuple(client.durations_ms),
             assertions=assertions,
@@ -634,6 +654,7 @@ async def _run_online_network_error_smoke(
         estimated_tokens=sum(
             estimate_context_tokens(request) for request in client.requests
         ),
+        actual_tokens=client.total_actual_tokens,
         model_request_durations_ms=tuple(client.durations_ms),
         events=(
             message_to_record(Message(role="user", content="测试网络异常处理")),

@@ -6,7 +6,14 @@ import pytest
 
 from core.config import Settings
 from core.errors import AgentError
-from core.model import Message, ModelClientError, TextDelta, ToolCall, ToolCallEvent
+from core.model import (
+    Message,
+    ModelClientError,
+    TextDelta,
+    ToolCall,
+    ToolCallEvent,
+    UsageEvent,
+)
 from core.openai_client import OpenAICompatibleClient
 
 
@@ -469,3 +476,89 @@ async def test_client_rejects_invalid_tool_arguments() -> None:
 
     with pytest.raises(ModelClientError, match="工具参数不是有效 JSON"):
         await _collect_events(client)
+
+
+@pytest.mark.asyncio
+async def test_client_omits_stream_options_when_stream_usage_disabled() -> None:
+    """测试默认关闭 usage 采集时不发送 stream_options。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"))]
+            )
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    await _collect_events(client)
+
+    assert fake_sdk.completions.received is not None
+    assert "stream_options" not in fake_sdk.completions.received
+
+
+@pytest.mark.asyncio
+async def test_client_emits_usage_event_when_stream_usage_enabled() -> None:
+    """测试开启 usage 采集时请求携带 stream_options 并产出用量事件。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="完成"))]
+            ),
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=12,
+                    completion_tokens=3,
+                    total_tokens=15,
+                ),
+            ),
+        ]
+    )
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        stream_usage=True,
+    )
+    client = OpenAICompatibleClient(settings, fake_sdk)  # type: ignore[arg-type]
+
+    events = await _collect_events(client)
+
+    assert events == [
+        TextDelta("完成"),
+        UsageEvent(prompt_tokens=12, completion_tokens=3, total_tokens=15),
+    ]
+    assert fake_sdk.completions.received is not None
+    assert fake_sdk.completions.received["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_client_skips_incomplete_usage() -> None:
+    """测试服务端 usage 字段不完整时不产出用量事件。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"))]
+            ),
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=None,
+                    completion_tokens=None,
+                    total_tokens=None,
+                ),
+            ),
+        ]
+    )
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        stream_usage=True,
+    )
+    client = OpenAICompatibleClient(settings, fake_sdk)  # type: ignore[arg-type]
+
+    assert await _collect_events(client) == [TextDelta("ok")]

@@ -1,7 +1,7 @@
 """将 Agent 运行事件转换为可保存的评测轨迹"""
 
 from core.agent_loop import ToolExecutionEvent
-from core.model import Message, TextDelta, ToolCallEvent
+from core.model import Message, TextDelta, ToolCallEvent, UsageEvent
 
 
 def event_to_record(event: object) -> dict[str, object]:
@@ -24,6 +24,13 @@ def event_to_record(event: object) -> dict[str, object]:
             "content": event.result.content,
             "is_error": event.result.is_error,
             "error_category": event.result.error_category,
+        }
+    if isinstance(event, UsageEvent):
+        return {
+            "type": "usage",
+            "prompt_tokens": event.prompt_tokens,
+            "completion_tokens": event.completion_tokens,
+            "total_tokens": event.total_tokens,
         }
     raise TypeError(f"不支持的评测事件：{type(event).__name__}")
 

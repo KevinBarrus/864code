@@ -1,7 +1,7 @@
 import pytest
 
 from core.agent_loop import ToolExecutionEvent
-from core.model import TextDelta, ToolCall, ToolCallEvent, ToolResult
+from core.model import TextDelta, ToolCall, ToolCallEvent, ToolResult, UsageEvent
 from evaluation.events import event_to_record, message_to_record
 
 
@@ -18,6 +18,17 @@ def test_event_to_record_normalizes_model_and_tool_events() -> None:
             ToolResult("call-1", "内容"),
         )
     )["type"] == "tool_result"
+
+
+def test_event_to_record_normalizes_usage_event() -> None:
+    """测试服务端用量事件可以转换为 JSON-safe 记录"""
+
+    assert event_to_record(UsageEvent(12, 3, 15)) == {
+        "type": "usage",
+        "prompt_tokens": 12,
+        "completion_tokens": 3,
+        "total_tokens": 15,
+    }
 
 
 def test_message_to_record_keeps_role_and_content() -> None:
