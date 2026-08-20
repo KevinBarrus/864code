@@ -39,7 +39,7 @@ class SessionStore:
     def __init__(self, workspace: Path) -> None:
         """记录工作区路径，不提前创建运行时目录。"""
 
-        self._sessions_dir = workspace / ".864code" / "sessions"
+        self._sessions_dir = workspace / ".epsilon" / "sessions"
 
     def append_message(self, session_id: str, message: Message) -> None:
         """将一条消息追加到指定会话的 JSONL 文件。"""

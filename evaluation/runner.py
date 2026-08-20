@@ -22,7 +22,7 @@ async def run_offline(output_path: Path, report_path: Path):
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("", encoding="utf-8")
-    with tempfile.TemporaryDirectory(prefix="864code-evaluation-") as directory:
+    with tempfile.TemporaryDirectory(prefix="epsilon-evaluation-") as directory:
         workspace = Path(directory)
         results = [
             await run_memory_scenario(workspace),
@@ -41,7 +41,7 @@ async def run_offline(output_path: Path, report_path: Path):
 def main() -> int:
     """处理离线评测命令行参数"""
 
-    parser = argparse.ArgumentParser(description="运行 864code 离线评测")
+    parser = argparse.ArgumentParser(description="运行 epsilon 离线评测")
     parser.add_argument(
         "--output",
         type=Path,

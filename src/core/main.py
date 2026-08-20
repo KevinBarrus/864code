@@ -1,4 +1,4 @@
-"""864code 的程序启动入口"""
+"""epsilon 的程序启动入口"""
 
 import asyncio
 import argparse
@@ -63,7 +63,7 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """处理启动阶段的错误并返回进程退出码"""
 
-    parser = argparse.ArgumentParser(description="启动 864code")
+    parser = argparse.ArgumentParser(description="启动 epsilon")
     subparsers = parser.add_subparsers(dest="command")
     resume_parser = subparsers.add_parser("resume", help="恢复已有会话")
     resume_parser.add_argument("session_id", nargs="?", help="要恢复的会话 ID")

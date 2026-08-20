@@ -251,7 +251,7 @@ async def _run_online_file_task(
 
     state.stage = "load-settings"
     settings = load_settings(env_path)
-    with tempfile.TemporaryDirectory(prefix="864code-online-") as directory:
+    with tempfile.TemporaryDirectory(prefix="epsilon-online-") as directory:
         workspace = Path(directory)
         for path, content in task.initial_files:
             (workspace / path).write_text(content, encoding="utf-8")
@@ -521,7 +521,7 @@ async def _run_online_compaction_smoke(
 
     state.stage = "load-settings"
     settings = load_settings(env_path)
-    with tempfile.TemporaryDirectory(prefix="864code-compaction-") as directory:
+    with tempfile.TemporaryDirectory(prefix="epsilon-compaction-") as directory:
         workspace = Path(directory)
         client = TimedModelClient(OpenAICompatibleClient(settings))
         state.client = client
@@ -646,7 +646,7 @@ async def _run_online_network_error_smoke(
 def main() -> int:
     """处理真实在线评测命令行参数"""
 
-    parser = argparse.ArgumentParser(description="运行 864code 在线冒烟评测")
+    parser = argparse.ArgumentParser(description="运行 epsilon 在线冒烟评测")
     parser.add_argument(
         "--confirm",
         action="store_true",

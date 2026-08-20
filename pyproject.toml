@@ -1,5 +1,5 @@
 [project]
-name = "864code"
+name = "epsilon"
 version = "0.1.0"
 description = "一个简洁、可扩展的 Coding Agent"
 requires-python = ">=3.11"
@@ -14,7 +14,7 @@ requires = ["hatchling>=1.27.0,<2.0.0"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-864code = "core.main:main"
+epsilon = "core.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/core"]

@@ -11,7 +11,7 @@ from .types import ToolDefinition, ToolHandler
 
 
 MAX_FILE_READ_BYTES = 1_000_000
-IGNORED_SEARCH_DIRECTORIES = {".git", ".864code", ".venv", "node_modules"}
+IGNORED_SEARCH_DIRECTORIES = {".git", ".epsilon", ".venv", "node_modules"}
 
 
 def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]:

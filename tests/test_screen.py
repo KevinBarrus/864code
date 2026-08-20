@@ -383,12 +383,12 @@ def test_chat_screen_accepts_logo_provider(tmp_path: Path) -> None:
         def render(self) -> str:
             """返回测试 Logo。"""
 
-            return "864code"
+            return "epsilon"
 
     status = create_status_info("test-model", "暂不可查询", tmp_path)
     screen = ChatScreen(status, logo_provider=TestLogo())
 
-    assert screen._render_logo() == "864code"
+    assert screen._render_logo() == "epsilon"
 
 
 @pytest.mark.asyncio

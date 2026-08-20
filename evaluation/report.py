@@ -33,7 +33,7 @@ def render_report(
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>864code Evaluation Report</title>
+  <title>epsilon Evaluation Report</title>
   <style>
     body {{ font-family: sans-serif; max-width: 1100px; margin: 2rem auto; color: #222; }}
     .metrics {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; }}
@@ -46,7 +46,7 @@ def render_report(
   </style>
 </head>
 <body>
-  <h1>864code Evaluation Report</h1>
+  <h1>epsilon Evaluation Report</h1>
   {_evaluation_section(
       "核心链路回归",
       "固定脚本验证模块协作，不衡量模型能力",

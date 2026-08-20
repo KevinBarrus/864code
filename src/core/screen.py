@@ -1,4 +1,4 @@
-"""构造 864code 的全屏终端界面。"""
+"""构造 epsilon 的全屏终端界面。"""
 
 import asyncio
 from collections.abc import Awaitable, Callable

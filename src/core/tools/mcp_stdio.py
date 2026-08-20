@@ -168,7 +168,7 @@ class StdioMcpProvider(McpToolProvider):
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "864code", "version": "0.1.0"},
+                "clientInfo": {"name": "epsilon", "version": "0.1.0"},
             },
         )
         await self._send_notification("notifications/initialized", {})

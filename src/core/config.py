@@ -1,4 +1,4 @@
-"""加载并校验 864code 的运行配置。"""
+"""加载并校验 epsilon 的运行配置。"""
 
 import json
 from dataclasses import dataclass
