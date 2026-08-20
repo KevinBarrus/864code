@@ -237,3 +237,45 @@ def test_load_settings_rejects_invalid_stream_usage(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="MODEL_STREAM_USAGE"):
         load_settings(env_path)
+
+
+def test_load_settings_defaults_max_tool_rounds(tmp_path: Path) -> None:
+    """测试默认工具轮次上限为 10。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n",
+    )
+
+    assert load_settings(env_path).max_tool_rounds == 10
+
+
+def test_load_settings_reads_max_tool_rounds(tmp_path: Path) -> None:
+    """测试 AGENT_MAX_TOOL_ROUNDS 会被正确读取。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "AGENT_MAX_TOOL_ROUNDS=5\n",
+    )
+
+    assert load_settings(env_path).max_tool_rounds == 5
+
+
+def test_load_settings_rejects_invalid_max_tool_rounds(tmp_path: Path) -> None:
+    """测试 AGENT_MAX_TOOL_ROUNDS 不是正整数时抛出配置异常。"""
+
+    env_path = _write_env(
+        tmp_path,
+        "MODEL_BASE_URL=https://example.com/v1\n"
+        "MODEL_NAME=test-model\n"
+        "MODEL_API_KEY=test-key\n"
+        "AGENT_MAX_TOOL_ROUNDS=0\n",
+    )
+
+    with pytest.raises(ConfigError, match="AGENT_MAX_TOOL_ROUNDS"):
+        load_settings(env_path)

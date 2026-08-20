@@ -58,3 +58,42 @@ def test_scrolling_to_current_end_resumes_output_following() -> None:
 
     assert view.vertical_scroll == 4
     assert view.follow_output is True
+
+
+def test_page_scroll_uses_viewport_height() -> None:
+    """测试翻页滚动按视口高度移动并暂停自动跟随。"""
+
+    view = _create_view()
+    view._viewport_height = 10
+    view._max_vertical_scroll = 100
+
+    view.scroll_page(1)
+
+    assert view.vertical_scroll == 9
+    assert view.follow_output is False
+
+
+def test_page_scroll_down_to_bottom_resumes_following() -> None:
+    """测试向下翻页到底部后恢复自动跟随。"""
+
+    view = _create_view()
+    view._viewport_height = 10
+    view._max_vertical_scroll = 5
+
+    view.scroll_page(1)
+
+    assert view.vertical_scroll == 5
+    assert view.follow_output is True
+
+
+def test_page_scroll_up_never_goes_above_top() -> None:
+    """测试向上翻页不会越过对话顶部。"""
+
+    view = _create_view()
+    view._viewport_height = 10
+    view._max_vertical_scroll = 100
+
+    view.scroll_page(-1)
+
+    assert view.vertical_scroll == 0
+    assert view.follow_output is False

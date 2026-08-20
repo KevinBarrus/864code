@@ -71,12 +71,14 @@ async def test_run_resume_without_id_uses_picker(
         restored_id,
         context_budget,
         mcp_provider=None,
+        max_tool_rounds=None,
     ) -> None:
         """记录应用启动参数"""
 
         captured["workspace"] = workspace
         captured["session_id"] = restored_id
         captured["context_budget"] = context_budget
+        captured["max_tool_rounds"] = max_tool_rounds
 
     monkeypatch.setattr(main, "SessionPicker", FakePicker)
     monkeypatch.setattr(
@@ -92,6 +94,7 @@ async def test_run_resume_without_id_uses_picker(
         "workspace": tmp_path.resolve(),
         "session_id": session_id,
         "context_budget": ContextBudget(100_000, 16_000, 20_000),
+        "max_tool_rounds": 10,
     }
 
 
@@ -128,6 +131,7 @@ async def test_run_resume_with_id_skips_picker(
         restored_id,
         context_budget,
         mcp_provider=None,
+        max_tool_rounds=None,
     ) -> None:
         """记录应用启动参数"""
 
@@ -176,6 +180,7 @@ async def test_run_creates_configured_stdio_mcp_provider(
         restored_id,
         context_budget,
         mcp_provider=None,
+        max_tool_rounds=None,
     ) -> None:
         """记录传入应用层的 Provider。"""
 

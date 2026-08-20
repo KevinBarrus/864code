@@ -35,6 +35,7 @@ async def run_chat(
     session_id: str | None = None,
     context_budget: ContextBudget | None = None,
     mcp_provider: StdioMcpProvider | None = None,
+    max_tool_rounds: int = 10,
 ) -> None:
     """启动全屏界面，并处理模型的流式回复"""
 
@@ -186,7 +187,7 @@ async def run_chat(
         model_tools=tool_manager.model_tools(),
         system_prompt=AGENT_SYSTEM_PROMPT,
     )
-    agent_loop = AgentLoop(client, tool_manager)
+    agent_loop = AgentLoop(client, tool_manager, max_tool_rounds=max_tool_rounds)
 
     history = session.get_messages()
     screen.add_history_entries(

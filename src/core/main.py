@@ -57,6 +57,7 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
             settings.keep_recent_tokens,
         ),
         mcp_provider=mcp_provider,
+        max_tool_rounds=settings.max_tool_rounds,
     )
 
 

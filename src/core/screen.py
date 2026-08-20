@@ -376,6 +376,20 @@ class ChatScreen:
 
             self.cancel_request()
 
+        @key_bindings.add("pageup", filter=~approval_active)
+        def page_up(event) -> None:
+            """向上翻页滚动对话历史。"""
+
+            self.conversation_view.scroll_page(-1)
+            self.application.invalidate()
+
+        @key_bindings.add("pagedown", filter=~approval_active)
+        def page_down(event) -> None:
+            """向下翻页滚动对话历史。"""
+
+            self.conversation_view.scroll_page(1)
+            self.application.invalidate()
+
         return key_bindings
 
     def cancel_request(self) -> None:

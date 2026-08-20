@@ -141,7 +141,7 @@ async def test_run_chat_registers_and_closes_mcp_provider(
     class CapturingAgentLoop:
         """记录应用层注册后的模型工具定义。"""
 
-        def __init__(self, client, tool_manager) -> None:
+        def __init__(self, client, tool_manager, max_tool_rounds=None) -> None:
             captured["tools"] = tool_manager.model_tools()
 
     provider = FakeProvider()

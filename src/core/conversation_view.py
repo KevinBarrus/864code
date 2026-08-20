@@ -24,6 +24,7 @@ class ConversationView(ScrollablePane):
         self._reserved_height = reserved_height or (lambda _width, _height: 0)
         self._follow_output = True
         self._max_vertical_scroll: int | None = None
+        self._viewport_height = 0
 
     def preferred_height(self, width: int, max_available_height: int) -> Dimension:
         """按消息高度自然增长，超出窗口后才成为可伸缩视口。"""
@@ -66,6 +67,12 @@ class ConversationView(ScrollablePane):
                 self._follow_output = True
         self.vertical_scroll = next_scroll
 
+    def scroll_page(self, direction: int) -> None:
+        """按当前视口高度翻页，direction 为 1 向下、-1 向上。"""
+
+        page = max(1, self._viewport_height - 1)
+        self.scroll_by(direction * page)
+
     def handle_mouse_event(self, event: MouseEvent) -> None:
         """处理对话区鼠标滚轮，不需要自行计算鼠标坐标。"""
 
@@ -90,6 +97,7 @@ class ConversationView(ScrollablePane):
             virtual_width,
             self.max_available_height,
         ).preferred
+        self._viewport_height = write_position.height
         self._max_vertical_scroll = max(0, content_height - write_position.height)
 
         if self._follow_output:

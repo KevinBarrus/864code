@@ -391,6 +391,41 @@ def test_chat_screen_accepts_logo_provider(tmp_path: Path) -> None:
     assert screen._render_logo() == "epsilon"
 
 
+def test_chat_screen_page_keys_scroll_conversation(tmp_path: Path) -> None:
+    """测试 PageUp/PageDown 会按页滚动对话历史。"""
+
+    screen = ChatScreen(create_status_info("test-model", "暂不可查询", tmp_path))
+
+    class FakeView:
+        """记录翻页调用的替身滚动容器。"""
+
+        def __init__(self) -> None:
+            self.calls: list[int] = []
+
+        def scroll_page(self, direction: int) -> None:
+            self.calls.append(direction)
+
+    screen.conversation_view = FakeView()
+
+    class FakeEvent:
+        """提供翻页按键处理器所需的最小应用对象。"""
+
+        app = None
+
+    def invoke(key: str) -> None:
+        binding = next(
+            binding
+            for binding in screen._key_bindings.bindings
+            if binding.keys[0].value == key and binding.filter()
+        )
+        binding.handler(FakeEvent())
+
+    invoke("pageup")
+    invoke("pagedown")
+
+    assert screen.conversation_view.calls == [-1, 1]
+
+
 @pytest.mark.asyncio
 async def test_cancel_request_restores_submitted_draft(tmp_path: Path) -> None:
     """测试取消请求后恢复发送前的输入内容和光标位置。"""

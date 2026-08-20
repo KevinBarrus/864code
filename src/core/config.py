@@ -36,6 +36,7 @@ class Settings:
     stream_idle_timeout_seconds: float | None = None
     mcp_stdio: McpStdioSettings | None = None
     stream_usage: bool = False
+    max_tool_rounds: int = 10
 
     def __post_init__(self) -> None:
         """统一超时默认值并校验直接构造的配置。"""
@@ -57,6 +58,8 @@ class Settings:
         ):
             if value <= 0:
                 raise ConfigError(f"{name} 必须大于 0")
+        if self.max_tool_rounds <= 0:
+            raise ConfigError("AGENT_MAX_TOOL_ROUNDS 必须大于 0")
         object.__setattr__(self, "first_byte_timeout_seconds", first_byte_timeout)
         object.__setattr__(self, "stream_idle_timeout_seconds", stream_idle_timeout)
 
@@ -96,6 +99,11 @@ def load_settings(env_path: Path | None = None) -> Settings:
         False,
         "MODEL_STREAM_USAGE",
     )
+    max_tool_rounds = _optional_int(
+        values.get("AGENT_MAX_TOOL_ROUNDS"),
+        10,
+        "AGENT_MAX_TOOL_ROUNDS",
+    )
     if context_window <= 0:
         raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
@@ -116,6 +124,7 @@ def load_settings(env_path: Path | None = None) -> Settings:
         stream_idle_timeout_seconds=stream_idle_timeout_seconds,
         mcp_stdio=mcp_stdio,
         stream_usage=stream_usage,
+        max_tool_rounds=max_tool_rounds,
     )
 
 
@@ -127,7 +136,7 @@ def _required_value(value: str | None, name: str) -> str:
     return value.strip()
 
 
-def _optional_int(value: str | None, default: int) -> int:
+def _optional_int(value: str | None, default: int, name: str = "上下文预算") -> int:
     """读取可选整数配置，未设置时使用默认值。"""
 
     if value is None or not value.strip():
@@ -135,7 +144,7 @@ def _optional_int(value: str | None, default: int) -> int:
     try:
         return int(value.strip())
     except ValueError as exc:
-        raise ConfigError("上下文预算配置必须是整数") from exc
+        raise ConfigError(f"{name}配置必须是整数") from exc
 
 
 def _optional_float(
