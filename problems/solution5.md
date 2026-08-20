@@ -12,7 +12,7 @@
 4. 问题十三、二十二：补充低侵入的运行配置与键盘交互
 5. 其余问题：更新待办与边界说明，不在本轮实现
 
-## 问题一、二：Turn / Step 与 Session 文档承诺
+## 问题一、二：Turn / Step 与 Session 文档承诺（已完成）
 
 ### 评估
 
@@ -26,6 +26,8 @@
 - 在 `todo/runtime/turn-step.md` 记录升级前提：需要断点续跑、并发子任务或逐 Step 审计时，再引入持久化 Turn/Step 记录
 
 验收：架构文档与实际职责一致；面试可明确说明当前没有 Turn/Step 实体及其原因
+
+完成记录：架构文档已将 v1 Runtime 明确为 `Session + AgentLoop`，Turn/Step 仅为未持久化的执行边界；Session 职责、JSONL 结构和持久化范围已与实际实现对齐，并记录了升级为持久化 Turn/Step 的明确触发条件
 
 ## 问题三、七：可选服务端 Token usage 与估算校准
 
