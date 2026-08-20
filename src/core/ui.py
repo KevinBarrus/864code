@@ -9,9 +9,16 @@ from .screen import ChatScreen
 from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
 from .model import Message, ModelClient, TextDelta, ToolCallEvent
+from .commands import (
+    CommandContext,
+    CommandRegistry,
+    start_skill_command,
+    stop_skill_command,
+)
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .prompts import load_prompt
 from .session import Session
+from .skills import SkillManager
 from .tools import (
     PermissionManager,
     ToolManager,
@@ -26,6 +33,15 @@ from .tools import (
 
 
 AGENT_SYSTEM_PROMPT = load_prompt("agent")
+
+
+def _default_command_registry() -> CommandRegistry:
+    """创建注册了全部内置命令的注册表。"""
+
+    registry = CommandRegistry()
+    registry.register(start_skill_command)
+    registry.register(stop_skill_command)
+    return registry
 
 
 async def run_chat(
@@ -46,9 +62,24 @@ async def run_chat(
         if session_id
         else Session(session_workspace)
     )
+    skill_manager = SkillManager(session_workspace)
+    command_registry = _default_command_registry()
 
     async def handle_submit(prompt: str) -> None:
         """发送请求，并同步当前会话的消息历史"""
+
+        # slash command 优先于普通用户消息
+        if prompt.startswith("/"):
+            command_context = CommandContext(
+                screen,
+                session,
+                skill_manager,
+                context_manager,
+            )
+            if await command_registry.dispatch(prompt, command_context):
+                return
+            screen.add_entry("tool", f"未知命令：{prompt}")
+            return
 
         # 先更新界面，让用户立即看到本轮输入和待生成的回复区域
         screen.add_entry("user", prompt)

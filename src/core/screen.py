@@ -27,6 +27,7 @@ from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
 from .conversation_view import ConversationView
 from .model import ToolCall
+from .skill_picker import SkillPicker
 from .tool_approval import ApprovalPrompt
 from .tools.permissions import ApprovalResult
 from .tools.types import ToolDefinition
@@ -75,6 +76,7 @@ class ChatScreen:
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
         self._approval_prompt: ApprovalPrompt | None = None
+        self._skill_picker: SkillPicker | None = None
         self._status_message = ""
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
@@ -272,6 +274,26 @@ class ChatScreen:
             self._layout.focus(self.input_area)
             self.application.invalidate()
 
+    async def request_skill_picker(
+        self,
+        items: list[tuple[str, str]],
+        checked: set[str],
+    ) -> set[str] | None:
+        """在输入区域显示 skill 勾选列表并等待用户选择。"""
+
+        picker = SkillPicker(items, checked)
+        self._skill_picker = picker
+        self._input_container.children = [picker.window]
+        self._layout.focus(picker.window)
+        self.application.invalidate()
+        try:
+            return await picker.wait()
+        finally:
+            self._input_container.children = list(self._normal_input_children)
+            self._skill_picker = None
+            self._layout.focus(self.input_area)
+            self.application.invalidate()
+
     def _get_reserved_height(self, width: int, max_height: int) -> int:
         """计算对话视口下方的输入区和状态栏所需高度。"""
 
@@ -296,6 +318,7 @@ class ChatScreen:
         key_bindings = KeyBindings()
         input_focused = has_focus(self.input_area.buffer)
         approval_active = Condition(lambda: self._approval_prompt is not None)
+        skill_picker_active = Condition(lambda: self._skill_picker is not None)
 
         @key_bindings.add("up", filter=approval_active)
         def move_approval_up(event) -> None:
@@ -327,7 +350,49 @@ class ChatScreen:
             if self._approval_prompt is not None:
                 self._approval_prompt.reject()
 
-        @key_bindings.add("enter", filter=~approval_active, eager=True)
+        @key_bindings.add("up", filter=skill_picker_active)
+        def move_skill_up(event) -> None:
+            """向上移动 skill 选择。"""
+
+            if self._skill_picker is not None:
+                self._skill_picker.move(-1)
+                self.application.invalidate()
+
+        @key_bindings.add("down", filter=skill_picker_active)
+        def move_skill_down(event) -> None:
+            """向下移动 skill 选择。"""
+
+            if self._skill_picker is not None:
+                self._skill_picker.move(1)
+                self.application.invalidate()
+
+        @key_bindings.add("space", filter=skill_picker_active)
+        def toggle_skill(event) -> None:
+            """切换当前 skill 的勾选状态。"""
+
+            if self._skill_picker is not None:
+                self._skill_picker.toggle()
+                self.application.invalidate()
+
+        @key_bindings.add("enter", filter=skill_picker_active, eager=True)
+        def confirm_skill(event) -> None:
+            """确认当前勾选的 skill 集合。"""
+
+            if self._skill_picker is not None:
+                self._skill_picker.confirm()
+
+        @key_bindings.add("escape", filter=skill_picker_active)
+        def cancel_skill(event) -> None:
+            """取消 skill 选择。"""
+
+            if self._skill_picker is not None:
+                self._skill_picker.cancel()
+
+        @key_bindings.add(
+            "enter",
+            filter=~approval_active & ~skill_picker_active,
+            eager=True,
+        )
         def submit(event) -> None:
             """提交输入框中的内容。"""
 
@@ -370,7 +435,10 @@ class ChatScreen:
 
             self.paste_to_input()
 
-        @key_bindings.add("escape", filter=~approval_active)
+        @key_bindings.add(
+            "escape",
+            filter=~approval_active & ~skill_picker_active,
+        )
         def cancel_request(event) -> None:
             """取消当前请求，输入恢复由请求任务负责。"""
 

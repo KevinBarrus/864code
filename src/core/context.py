@@ -93,11 +93,23 @@ class ContextManager:
         self._budget = budget
         self._tool_capabilities = dict(tool_capabilities or {})
         self._model_tools = tuple(model_tools)
-        self._base_system_messages = (
+        self._base_prompt_messages = (
             (Message(role="system", content=system_prompt),)
             if system_prompt
             else ()
         )
+        self._extra_system_messages: tuple[Message, ...] = ()
+
+    @property
+    def _base_system_messages(self) -> tuple[Message, ...]:
+        """返回基础提示词和额外系统消息的组合。"""
+
+        return (*self._base_prompt_messages, *self._extra_system_messages)
+
+    def set_extra_system_messages(self, messages: Sequence[Message]) -> None:
+        """设置追加在基础提示词之后的额外系统消息，如激活的 skill。"""
+
+        self._extra_system_messages = tuple(messages)
 
     @property
     def _message_budget(self) -> int:

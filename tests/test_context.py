@@ -124,6 +124,27 @@ def test_context_manager_adds_runtime_system_prompt_without_mutating_history() -
     assert messages == [Message(role="user", content="检查项目")]
 
 
+def test_context_manager_appends_extra_system_messages_after_base_prompt() -> None:
+    """测试额外系统消息追加在基础提示词之后。"""
+
+    messages = [Message(role="user", content="你好")]
+    manager = ContextManager(
+        ContextBudget(100, 10, 50),
+        system_prompt="基础提示词",
+    )
+    manager.set_extra_system_messages(
+        [Message(role="system", content="激活的 skill")]
+    )
+
+    result = manager.build(messages)
+
+    assert result[:2] == [
+        Message(role="system", content="基础提示词"),
+        Message(role="system", content="激活的 skill"),
+    ]
+    assert result[2] == Message(role="user", content="你好")
+
+
 def test_context_manager_requires_compaction_when_context_exceeds_budget() -> None:
     manager = ContextManager(ContextBudget(10, 2, 5))
 

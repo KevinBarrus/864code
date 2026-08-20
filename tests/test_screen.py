@@ -36,6 +36,13 @@ def _approval_definition() -> ToolDefinition:
     )
 
 
+def _binding_key(binding) -> str:
+    """返回绑定的第一个键值，兼容字符串键和枚举键。"""
+
+    key = binding.keys[0]
+    return key.value if hasattr(key, "value") else key
+
+
 def test_chat_screen_uses_full_screen_and_mouse_support(tmp_path: Path) -> None:
     """测试界面启用全屏模式和鼠标支持。"""
 
@@ -68,6 +75,29 @@ async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> No
 
         assert result.decision == ApprovalDecision.ALLOW_ONCE
         assert screen._approval_prompt is None
+        assert screen._input_window in screen._input_container.children
+
+
+@pytest.mark.asyncio
+async def test_skill_picker_replaces_input_and_restores_layout(tmp_path: Path) -> None:
+    """测试 skill 选择期间只替换输入区并在完成后恢复布局。"""
+
+    with create_app_session(output=DummyOutput()):
+        screen = _create_screen(tmp_path)
+        task = asyncio.create_task(
+            screen.request_skill_picker([("a", "A 描述")], checked=set())
+        )
+        await asyncio.sleep(0)
+
+        assert screen._skill_picker is not None
+        assert screen._input_container.children == [screen._skill_picker.window]
+
+        screen._skill_picker.toggle()   # 勾选 a
+        screen._skill_picker.confirm()
+        result = await task
+
+        assert result == {"a"}
+        assert screen._skill_picker is None
         assert screen._input_window in screen._input_container.children
 
 
@@ -351,7 +381,7 @@ def test_submitted_input_is_saved_to_in_memory_history(tmp_path: Path) -> None:
     key_binding = next(
         binding
         for binding in screen._key_bindings.bindings
-        if binding.keys[0].value == "c-m" and binding.filter()
+        if _binding_key(binding) == "c-m" and binding.filter()
     )
 
     class FakeApplication:
@@ -416,7 +446,7 @@ def test_chat_screen_page_keys_scroll_conversation(tmp_path: Path) -> None:
         binding = next(
             binding
             for binding in screen._key_bindings.bindings
-            if binding.keys[0].value == key and binding.filter()
+            if _binding_key(binding) == key and binding.filter()
         )
         binding.handler(FakeEvent())
 
