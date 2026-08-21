@@ -57,19 +57,24 @@ async def test_choice_picker_cancel_returns_none() -> None:
 
 
 @pytest.mark.asyncio
-async def test_choice_picker_move_stays_within_bounds() -> None:
-    """测试光标移动不会越过列表边界。"""
+async def test_choice_picker_move_wraps_around() -> None:
+    """测试光标越界时循环到另一端。"""
 
-    picker = ChoicePicker(["a", "b"], "选择", extra_options=["extra"])
+    picker = ChoicePicker(["a", "b", "c"], "选择")
 
-    picker.move(-5)
+    picker.move(-1)   # 从顶部向上 → 底部
+    picker.confirm()
+    assert await picker.wait() == "c"
+
+    picker = ChoicePicker(["a", "b", "c"], "选择")
+    picker.move(3)    # 从底部向下 → 顶部
     picker.confirm()
     assert await picker.wait() == "a"
 
     picker = ChoicePicker(["a", "b"], "选择", extra_options=["extra"])
-    picker.move(10)
+    picker.move(10)   # 多次循环
     picker.confirm()
-    assert await picker.wait() == "extra"
+    assert await picker.wait() == "b"
 
 
 @pytest.mark.asyncio
@@ -85,18 +90,15 @@ async def test_choice_picker_scrolls_to_keep_cursor_visible() -> None:
 
 
 @pytest.mark.asyncio
-async def test_choice_picker_stops_at_last_item_and_max_scroll() -> None:
-    """测试到最后一个选项后继续下移会停在原地，窗口不再滚动。"""
+async def test_choice_picker_wraps_and_follows_scroll() -> None:
+    """测试越过末尾后循环回顶部并重置滚动，滚动跟随保持。"""
 
     picker = ChoicePicker([f"item-{index}" for index in range(20)], "选择")
 
-    picker.move(30)
-    max_scroll = max(0, 20 - ChoicePicker._VISIBLE_CHOICES)
+    picker.move(25)   # 0 + 25 = 25 % 20 = 5
+    assert picker._cursor == 5
+    assert picker.window.vertical_scroll == 0
 
-    assert picker._cursor == 19
-    assert picker.window.vertical_scroll == max_scroll
-
-    picker.move(5)
-
-    assert picker._cursor == 19
-    assert picker.window.vertical_scroll == max_scroll
+    picker.move(15)   # 5 + 15 = 20 % 20 = 0，回到顶部
+    assert picker._cursor == 0
+    assert picker.window.vertical_scroll == 0

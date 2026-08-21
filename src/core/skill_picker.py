@@ -36,11 +36,11 @@ class SkillPicker:
         )
 
     def move(self, offset: int) -> None:
-        """移动光标，限制在列表范围内。"""
+        """移动光标，越界时循环到另一端。"""
 
         if not self._items:
             return
-        self._cursor = max(0, min(len(self._items) - 1, self._cursor + offset))
+        self._cursor = (self._cursor + offset) % len(self._items)
 
     def toggle(self) -> None:
         """切换当前项勾选状态。"""

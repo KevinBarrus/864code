@@ -45,12 +45,12 @@ class ChoicePicker:
         return [*self._items, *self._extra_options]
 
     def move(self, offset: int) -> None:
-        """移动光标，限制在列表范围内并保持选中项可见。"""
+        """移动光标，越界时循环到另一端并保持选中项可见。"""
 
         choices = self._choices
         if not choices:
             return
-        self._cursor = max(0, min(len(choices) - 1, self._cursor + offset))
+        self._cursor = (self._cursor + offset) % len(choices)
         self._follow_cursor()
 
     def _follow_cursor(self) -> None:

@@ -68,15 +68,23 @@ async def test_skill_picker_cancel_returns_none() -> None:
 
 
 @pytest.mark.asyncio
-async def test_skill_picker_move_stays_within_bounds() -> None:
-    """测试光标移动不会越过列表边界。"""
+async def test_skill_picker_move_wraps_around() -> None:
+    """测试光标越界时循环到另一端。"""
 
-    picker = SkillPicker([("a", "A", "project")], checked=set())
+    picker = SkillPicker(
+        [("a", "A", "project"), ("b", "B", "global")],
+        checked=set(),
+    )
 
-    picker.move(-5)
+    picker.move(-1)   # 从顶部 a 向上 → 底部 b
     picker.toggle()
 
-    assert picker._checked == {("a", "project")}
+    assert picker._checked == {("b", "global")}
+
+    picker.move(1)    # 从底部 b 向下 → 顶部 a
+    picker.toggle()
+
+    assert picker._checked == {("a", "project"), ("b", "global")}
 
 
 @pytest.mark.asyncio
