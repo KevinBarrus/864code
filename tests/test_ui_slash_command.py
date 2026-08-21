@@ -29,7 +29,7 @@ async def test_run_chat_start_skill_injects_active_skill(
 ) -> None:
     """测试 /start-skill 激活的 skill 会进入后续模型请求。"""
 
-    skill_dir = tmp_path / "skills" / "git"
+    skill_dir = tmp_path / ".epsilon" / "skills" / "git"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         "---\nname: git-commit\ndescription: 生成提交信息\n---\n规范提交正文",

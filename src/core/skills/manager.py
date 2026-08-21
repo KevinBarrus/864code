@@ -16,30 +16,42 @@ class Skill:
 
 
 class SkillManager:
-    """扫描项目 skills 目录，维护当前会话激活的 skill 集合。"""
+    """扫描项目与全局 skill 目录，维护当前会话激活的 skill 集合。"""
 
-    def __init__(self, workspace: Path) -> None:
-        """记录工作区并准备空的激活集合。"""
+    def __init__(
+        self,
+        workspace: Path,
+        global_skills_dir: Path | None = None,
+    ) -> None:
+        """记录项目与全局 skill 根目录并准备空的激活集合。"""
 
-        self._skills_dir = workspace / "skills"
+        self._skills_dirs = [workspace / ".epsilon" / "skills"]
+        global_dir = global_skills_dir or Path.home() / ".agents" / "skills"
+        self._skills_dirs.append(global_dir)
         self._active: set[str] = set()
 
     def list_skills(self) -> list[Skill]:
-        """扫描 skills/<name>/SKILL.md，返回全部可用 skill。"""
+        """扫描各根目录下 <name>/SKILL.md，项目目录优先且重名去重。"""
 
-        if not self._skills_dir.is_dir():
-            return []
         skills: list[Skill] = []
-        for skill_dir in sorted(self._skills_dir.iterdir()):
-            if not skill_dir.is_dir():
+        seen_names: set[str] = set()
+        for skills_dir in self._skills_dirs:
+            if not skills_dir.is_dir():
                 continue
-            skill_path = skill_dir / "SKILL.md"
-            if not skill_path.is_file():
-                continue
-            try:
-                skills.append(_parse_skill(skill_path, skill_dir.name))
-            except OSError:
-                continue
+            for skill_dir in sorted(skills_dir.iterdir()):
+                if not skill_dir.is_dir():
+                    continue
+                skill_path = skill_dir / "SKILL.md"
+                if not skill_path.is_file():
+                    continue
+                try:
+                    skill = _parse_skill(skill_path, skill_dir.name)
+                except OSError:
+                    continue
+                if skill.name in seen_names:
+                    continue
+                seen_names.add(skill.name)
+                skills.append(skill)
         return skills
 
     def activate(self, name: str) -> None:
