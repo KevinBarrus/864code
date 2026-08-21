@@ -51,19 +51,33 @@ class SlashCommandCompleter(Completer):
         self._commands = list(commands)
 
     def get_completions(self, document, complete_event):
-        """仅当输入以 / 开头时按前缀生成补全。"""
+        """仅当输入以 / 开头时按 exact 优先、prefix 匹配生成补全。"""
 
         text = document.text_before_cursor
         if not text.startswith("/"):
             return
         prefix = text[1:]
+        exact: list[Completion] = []
+        prefix_matches: list[Completion] = []
         for name, description in self._commands:
-            if name.startswith(prefix):
-                yield Completion(
-                    name,
-                    start_position=-len(prefix),
-                    display_meta=description,
+            if name == prefix:
+                exact.append(
+                    Completion(
+                        name,
+                        start_position=-len(prefix),
+                        display_meta=description,
+                    )
                 )
+            elif name.startswith(prefix):
+                prefix_matches.append(
+                    Completion(
+                        name,
+                        start_position=-len(prefix),
+                        display_meta=description,
+                    )
+                )
+        yield from exact
+        yield from prefix_matches
 
 
 @dataclass(frozen=True)
@@ -111,6 +125,11 @@ class ChatScreen:
         self._status_message = ""
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
+        # 补全菜单展开时隐藏状态栏（对齐 Codex 的 popup 替换 footer 方案）
+        self._completion_active = Condition(
+            lambda: self.input_area.buffer.complete_state is not None
+        )
+        self._last_input_length = 0
         self.input_area = TextArea(
             prompt="",
             multiline=True,
@@ -125,6 +144,8 @@ class ChatScreen:
             completer=SlashCommandCompleter(command_names or []),
             complete_while_typing=True,
         )
+        # 删除字符不会触发 complete_while_typing，需要手动重新启动补全
+        self.input_area.buffer.on_text_changed += self._on_input_text_changed
         self._conversation_content = HSplit(
             [],
             # 不添加顶部对齐的隐式填充行，消息内容只占实际需要的高度。
@@ -247,10 +268,14 @@ class ChatScreen:
             self.conversation_view,
             filter=Condition(lambda: bool(self._conversation)),
         )
-        status_window = Window(
-            content=self._status_control,
-            height=1,
+        status_container = ConditionalContainer(
+            Window(
+                content=self._status_control,
+                height=1,
+            ),
+            filter=~self._completion_active,
         )
+        self._status_container = status_container
         input_container = HSplit(
             [
                 Window(
@@ -281,7 +306,7 @@ class ChatScreen:
                     self._logo_container,
                     self._conversation_container,
                     input_container,
-                    status_window,
+                    status_container,
                 ],
                 # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
                 # 填充窗口；剩余空间应当只交给有消息时的对话视口。
@@ -381,7 +406,10 @@ class ChatScreen:
     def _get_reserved_height(self, width: int, max_height: int) -> int:
         """计算对话视口下方的输入区和状态栏所需高度。"""
 
-        return self._input_container.preferred_height(width, max_height).preferred + 1
+        status_height = (
+            0 if self.input_area.buffer.complete_state is not None else 1
+        )
+        return self._input_container.preferred_height(width, max_height).preferred + status_height
 
     def _has_logo(self) -> bool:
         """判断 Logo 是否有实际内容，空 Logo 不占用布局空间。"""
@@ -527,20 +555,38 @@ class ChatScreen:
             eager=True,
         )
         def submit(event) -> None:
-            """提交输入框中的内容。"""
+            """提交输入框中的内容，补全菜单打开时先应用选中项。"""
 
+            buffer = self.input_area.buffer
+            completion = self._selected_completion(buffer)
+            if completion is not None:
+                buffer.apply_completion(completion)
             prompt = self.input_area.text.strip()
             if not prompt or self._request_active or self._on_submit is None:
                 return
             self._submitted_draft = DraftState(
                 text=self.input_area.text,
-                cursor_position=self.input_area.buffer.cursor_position,
+                cursor_position=buffer.cursor_position,
             )
             self._input_history.append_string(self.input_area.text)
             self.input_area.text = ""
             self._request_task = event.app.create_background_task(
                 self._submit(prompt)
             )
+
+        @key_bindings.add(
+            "tab",
+            filter=self._completion_active & input_focused & ~embedded_active,
+            eager=True,
+        )
+        def apply_completion(event) -> None:
+            """Tab 应用当前补全但不提交（对齐 Codex）。"""
+
+            buffer = self.input_area.buffer
+            completion = self._selected_completion(buffer)
+            if completion is not None:
+                buffer.apply_completion(completion)
+                self.application.invalidate()
 
         @key_bindings.add("c-j", filter=input_focused)
         def insert_newline(event) -> None:
@@ -598,6 +644,29 @@ class ChatScreen:
 
         if self._request_task is not None and not self._request_task.done():
             self._request_task.cancel()
+
+    def _selected_completion(self, buffer) -> object | None:
+        """返回补全菜单中的当前选中项，未选中时取第一项。"""
+
+        state = buffer.complete_state
+        if state is None:
+            return None
+        completion = state.current_completion
+        if completion is None and state.completions:
+            completion = state.completions[0]
+        return completion
+
+    def _on_input_text_changed(self, buffer) -> None:
+        """删除字符后重新触发命令补全，插入场景由 complete_while_typing 处理。"""
+
+        text = buffer.text
+        if (
+            text.startswith("/")
+            and len(text) < self._last_input_length
+            and buffer.complete_state is None
+        ):
+            buffer.start_completion()
+        self._last_input_length = len(text)
 
     async def _submit(self, prompt: str) -> None:
         """标记请求状态并调用应用层提交处理器。"""

@@ -69,7 +69,7 @@ async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> No
 
         assert screen._approval_prompt is not None
         assert screen._input_container.children == [screen._approval_prompt.window]
-        assert screen._layout.container.content.children[-1].content is screen._status_control
+        assert screen._layout.container.content.children[-1].content.content is screen._status_control
 
         screen._approval_prompt.confirm()
         result = await task
@@ -537,3 +537,129 @@ def test_layout_includes_completion_menu_float(tmp_path: Path) -> None:
     floats = screen._layout.container.floats
 
     assert any("CompletionsMenu" in type(floats[0].content).__name__ for _ in floats)
+
+
+def test_slash_command_completer_prefers_exact_match() -> None:
+    """测试输入与命令完全一致时 exact 匹配排在前。"""
+
+    completer = SlashCommandCompleter(
+        [("model-switch", "切换配置"), ("model", "切换模型")]
+    )
+
+    completions = list(completer.get_completions(_FakeDocument("/model"), None))
+
+    assert [completion.text for completion in completions] == ["model", "model-switch"]
+
+
+def test_completion_active_hides_status_container(tmp_path: Path) -> None:
+    """测试补全展开时状态栏隐藏，收起后恢复。"""
+
+    screen = _create_screen(tmp_path)
+
+    assert screen._completion_active() is False
+    assert screen._status_container.filter() is True
+
+    class FakeCompleteState:
+        """模拟补全进行中的状态。"""
+
+        completions = []
+        current_completion = None
+
+    screen.input_area.buffer.complete_state = FakeCompleteState()
+
+    assert screen._completion_active() is True
+    assert screen._status_container.filter() is False
+
+
+def test_selected_completion_falls_back_to_first(tmp_path: Path) -> None:
+    """测试未手动选中补全项时默认取第一项。"""
+
+    screen = _create_screen(tmp_path)
+    buffer = screen.input_area.buffer
+
+    assert screen._selected_completion(buffer) is None
+
+    class FakeState:
+        """模拟补全菜单状态。"""
+
+        current_completion = None
+        completions = ["first", "second"]
+
+    buffer.complete_state = FakeState()
+
+    assert screen._selected_completion(buffer) == "first"
+
+    class FakeStateWithSelection:
+        """模拟用户手动选中的补全菜单状态。"""
+
+        current_completion = "second"
+        completions = ["first", "second"]
+
+    buffer.complete_state = FakeStateWithSelection()
+
+    assert screen._selected_completion(buffer) == "second"
+
+
+def test_input_text_changed_restarts_completion_after_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试删除字符后重新触发命令补全。"""
+
+    screen = _create_screen(tmp_path)
+    started: list[bool] = []
+    monkeypatch.setattr(
+        screen.input_area.buffer,
+        "start_completion",
+        lambda: started.append(True),
+    )
+
+    screen._last_input_length = 4   # 之前是 /mod
+    screen.input_area.buffer.complete_state = None
+    screen.input_area.buffer.text = "/mo"
+    screen._on_input_text_changed(screen.input_area.buffer)
+
+    assert started == [True]
+    assert screen._last_input_length == 3
+
+
+def test_input_text_changed_skips_when_text_grows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试插入字符（文本变长）不重复触发补全，交给 complete_while_typing。"""
+
+    screen = _create_screen(tmp_path)
+    started: list[bool] = []
+    monkeypatch.setattr(
+        screen.input_area.buffer,
+        "start_completion",
+        lambda: started.append(True),
+    )
+
+    screen._last_input_length = 3
+    screen.input_area.buffer.text = "/mod"
+    screen._on_input_text_changed(screen.input_area.buffer)
+
+    assert started == []
+
+
+def test_input_text_changed_skips_without_slash_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试不以 / 开头的输入不触发补全。"""
+
+    screen = _create_screen(tmp_path)
+    started: list[bool] = []
+    monkeypatch.setattr(
+        screen.input_area.buffer,
+        "start_completion",
+        lambda: started.append(True),
+    )
+
+    screen._last_input_length = 5
+    screen.input_area.buffer.text = "hello"
+    screen._on_input_text_changed(screen.input_area.buffer)
+
+    assert started == []
