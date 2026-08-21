@@ -114,7 +114,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             yield ui.TextDelta("已压缩后重试")
 
     class FakeScreen:
-        def __init__(self, status, on_submit, command_names=None, model_name_provider=None) -> None:
+        def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None) -> None:
             self._on_submit = on_submit
             self.application = self
             self.entries: list[tuple[str, str]] = []
@@ -274,3 +274,99 @@ async def test_model_error_is_saved_with_error_status(tmp_path: Path) -> None:
             error_category="internal",
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_chat_refreshes_balance_after_turn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试每轮对话后刷新余额并更新状态栏显示。"""
+
+    class BalanceProbe:
+        """记录查询次数并返回固定余额。"""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def get_balance(self) -> str:
+            self.calls += 1
+            return "9.99 CNY"
+
+    class FakeScreen:
+        """记录构造参数并在提交后读取余额 provider。"""
+
+        instances: list["FakeScreen"] = []
+
+        def __init__(
+            self,
+            status,
+            on_submit,
+            command_names=None,
+            model_name_provider=None,
+            balance_text_provider=None,
+        ) -> None:
+            self._on_submit = on_submit
+            self.application = self
+            self.entries: list[tuple[str, str]] = []
+            self.balance_text_provider = balance_text_provider
+            FakeScreen.instances.append(self)
+
+        def add_entry(self, role: str, content: str) -> int:
+            self.entries.append((role, content))
+            return len(self.entries) - 1
+
+        def add_history_entries(self, entries) -> None:
+            pass
+
+        def append_to_entry(self, index: int, content: str) -> None:
+            pass
+
+        def set_entry_content(self, index: int, content: str) -> None:
+            pass
+
+        def set_status_message(self, message: str) -> None:
+            pass
+
+        def invalidate(self) -> None:
+            pass
+
+        async def request_approval(self, definition, tool_call, allow_session=True):
+            raise AssertionError("不应请求工具审批")
+
+        async def request_skill_picker(self, items, checked):
+            raise AssertionError("不应请求 skill 选择器")
+
+        async def request_choice_picker(self, items, title, extra_options=None):
+            raise AssertionError("不应请求选择器")
+
+        async def request_text_input(self, title, is_password=False):
+            raise AssertionError("不应请求文本输入")
+
+        async def run_async(self) -> None:
+            await self._on_submit("继续")
+
+    class FakeTurnClient:
+        """实现 stream_response 的测试客户端。"""
+
+        async def stream_chat(self, messages):
+            yield "测试回复"
+
+        async def stream_response(self, messages, tools=()):
+            yield ui.TextDelta("测试回复")
+
+    client = FakeTurnClient()
+    probe = BalanceProbe()
+    FakeScreen.instances = []
+    monkeypatch.setattr(ui, "ChatScreen", FakeScreen)
+
+    await ui.run_chat(
+        client,
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        Settings("https://example.com", "test", "key"),
+        workspace=tmp_path,
+        balance_provider=probe,
+    )
+
+    assert probe.calls >= 1
+    assert FakeScreen.instances[0].balance_text_provider() == "9.99 CNY"

@@ -109,6 +109,7 @@ class ChatScreen:
         input_layout: InputLayoutConfig | None = None,
         command_names: list[tuple[str, str]] | None = None,
         model_name_provider: Callable[[], str] | None = None,
+        balance_text_provider: Callable[[], str] | None = None,
     ) -> None:
         """创建对话区、输入区和状态栏。"""
 
@@ -117,6 +118,7 @@ class ChatScreen:
         self._logo_provider = logo_provider or EmptyLogoProvider()
         self._input_layout = input_layout or InputLayoutConfig()
         self._model_name_provider = model_name_provider
+        self._balance_text_provider = balance_text_provider
         self._request_active = False
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
@@ -762,10 +764,15 @@ class ChatScreen:
             if self._model_name_provider is not None
             else self._status.model_name
         )
+        balance = (
+            self._balance_text_provider()
+            if self._balance_text_provider is not None
+            else self._status.balance
+        )
         fragments = [
             ("class:status-model", f"Model: {model_name}"),
             ("", "    "),
-            ("class:status-balance", f"Balance: {self._status.balance}"),
+            ("class:status-balance", f"Balance: {balance}"),
             ("", "    "),
             (
                 "class:status-working-directory",

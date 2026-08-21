@@ -38,7 +38,7 @@ async def test_run_chat_start_skill_injects_active_skill(
     )
 
     class FakeScreen:
-        def __init__(self, status, on_submit, command_names=None, model_name_provider=None) -> None:
+        def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None) -> None:
             self._on_submit = on_submit
             self.application = self
             self.entries: list[tuple[str, str]] = []
@@ -103,7 +103,7 @@ async def test_run_chat_unknown_command_does_not_call_model(
     class FakeScreen:
         instances: list["FakeScreen"] = []
 
-        def __init__(self, status, on_submit, command_names=None, model_name_provider=None) -> None:
+        def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None) -> None:
             self._on_submit = on_submit
             self.application = self
             self.entries: list[tuple[str, str]] = []

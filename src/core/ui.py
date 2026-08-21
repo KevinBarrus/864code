@@ -16,6 +16,7 @@ from .commands import (
     stop_skill_command,
     model_command_slash,
 )
+from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .config import Settings
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .prompts import load_prompt
@@ -55,6 +56,7 @@ async def run_chat(
     workspace: Path | None = None,
     session_id: str | None = None,
     context_budget: ContextBudget | None = None,
+    balance_provider: BalanceProvider | None = None,
     mcp_provider: StdioMcpProvider | None = None,
     max_tool_rounds: int = 10,
 ) -> None:
@@ -62,6 +64,22 @@ async def run_chat(
 
     screen: ChatScreen
     session_workspace = (workspace or Path.cwd()).resolve()
+    current_balance = status.balance
+
+    async def refresh_balance() -> None:
+        """每轮对话后刷新余额，失败保留旧值。"""
+
+        if balance_provider is None:
+            return
+        try:
+            refreshed = await balance_provider.get_balance()
+        except Exception:
+            return
+        if refreshed != UNAVAILABLE_BALANCE:
+            nonlocal current_balance
+            current_balance = refreshed
+            screen.application.invalidate()
+
     session = (
         Session.restore(session_workspace, session_id)
         if session_id
@@ -197,6 +215,7 @@ async def run_chat(
                     "⚠ Context summary failed; recent history only",
                 )
             _update_persistence_status(screen, session)
+            await refresh_balance()
 
     screen = ChatScreen(
         status,
@@ -206,6 +225,7 @@ async def run_chat(
             for command in command_registry.list()
         ],
         model_name_provider=lambda: client_holder.settings.model_name,
+        balance_text_provider=lambda: current_balance,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

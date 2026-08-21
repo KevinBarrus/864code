@@ -693,3 +693,28 @@ def test_status_model_name_falls_back_to_status(tmp_path: Path) -> None:
     fragments = screen._render_status()
 
     assert any("static-model" in text for _style, text in fragments)
+
+
+def test_status_balance_uses_provider(tmp_path: Path) -> None:
+    """测试状态栏余额优先使用动态 provider 的值。"""
+
+    provider_value = "9.99 CNY"
+    screen = ChatScreen(
+        create_status_info("test-model", "unavailable", tmp_path),
+        balance_text_provider=lambda: provider_value,
+    )
+
+    fragments = screen._render_status()
+
+    assert any("9.99 CNY" in text for _style, text in fragments)
+    assert not any("unavailable" in text for _style, text in fragments)
+
+
+def test_status_balance_falls_back_to_status(tmp_path: Path) -> None:
+    """测试未提供 provider 时使用状态对象里的余额。"""
+
+    screen = ChatScreen(create_status_info("test-model", "2.00 CNY", tmp_path))
+
+    fragments = screen._render_status()
+
+    assert any("2.00 CNY" in text for _style, text in fragments)

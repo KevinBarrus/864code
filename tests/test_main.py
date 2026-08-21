@@ -88,6 +88,7 @@ async def test_run_resume_without_id_uses_picker(
         workspace,
         restored_id,
         context_budget=None,
+        balance_provider=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:
@@ -150,6 +151,7 @@ async def test_run_resume_with_id_skips_picker(
         workspace,
         restored_id,
         context_budget=None,
+        balance_provider=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:
@@ -201,6 +203,7 @@ async def test_run_creates_configured_stdio_mcp_provider(
         workspace,
         restored_id,
         context_budget=None,
+        balance_provider=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:

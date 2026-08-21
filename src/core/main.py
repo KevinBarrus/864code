@@ -68,6 +68,7 @@ async def run(
             settings.reserve_tokens,
             settings.keep_recent_tokens,
         ),
+        balance_provider=balance_provider,
         mcp_provider=mcp_provider,
         max_tool_rounds=settings.max_tool_rounds,
     )
