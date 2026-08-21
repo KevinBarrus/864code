@@ -41,15 +41,21 @@ class FakeAgentLoop:
 
 
 class FakeContextManager:
-    """记录预算更新的测试 ContextManager。"""
+    """记录预算与模型名更新的测试 ContextManager。"""
 
     def __init__(self) -> None:
         self.budget_updates = 0
+        self.model_names: list[str] = []
 
     def update_budget(self, budget) -> None:
         """记录预算更新次数。"""
 
         self.budget_updates += 1
+
+    def set_model_name(self, model_name: str) -> None:
+        """记录模型名更新。"""
+
+        self.model_names.append(model_name)
 
 
 class FakeScreen:
@@ -132,6 +138,7 @@ async def test_model_command_switches_to_selected_model(
     assert context.client_holder.settings.model_name == "deepseek-v4-flash"
     assert context.client_holder.settings.base_url == BASE_URL
     assert ("tool", "Switched to model: deepseek-v4-flash") in screen.entries
+    assert context.context_manager.model_names == ["deepseek-v4-flash"]
 
 
 @pytest.mark.asyncio

@@ -155,7 +155,10 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
     )
 
     assert len(client.requests) == 2
-    assert client.requests[0][0] == Message(role="system", content=ui.AGENT_SYSTEM_PROMPT)
+    assert client.requests[0][0] == Message(
+        role="system",
+        content=ui.AGENT_SYSTEM_PROMPT.replace("{model_name}", "test"),
+    )
     assert any(
         message.content == CONTEXT_FALLBACK_NOTICE
         for message in client.requests[1]

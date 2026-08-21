@@ -110,6 +110,7 @@ def _apply_model_switch(context: CommandContext, settings: Settings) -> None:
     new_client = OpenAICompatibleClient(settings)
     context.client_holder.swap(settings, new_client)
     context.agent_loop.swap_client(new_client)
+    context.context_manager.set_model_name(settings.model_name)
     context.context_manager.update_budget(
         ContextBudget(
             settings.context_window,

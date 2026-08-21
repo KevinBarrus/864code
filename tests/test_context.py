@@ -4,6 +4,7 @@ import pytest
 
 from core.context import (
     ContextBudget,
+    DEFAULT_CONTEXT_BUDGET,
     ContextBuildResult,
     ContextCompactionRequired,
     ContextManager,
@@ -653,3 +654,36 @@ async def test_context_manager_accumulates_file_operations_in_summary() -> None:
     summary = result.messages[0].content
     assert "<read-files>\n- src/app.py\n</read-files>" in summary
     assert "<modified-files>\n- src/app.py\n</modified-files>" in summary
+
+
+def test_context_manager_injects_model_name_into_system_prompt() -> None:
+    """测试系统提示词中的模型名占位符会被动态替换。"""
+
+    manager = ContextManager(
+        DEFAULT_CONTEXT_BUDGET,
+        system_prompt="你是运行在 epsilon 里的助手，由 {model_name} 驱动。",
+    )
+
+    manager.set_model_name("deepseek-v4-pro")
+
+    messages = manager._base_system_messages
+    assert "deepseek-v4-pro" in messages[0].content
+    assert "{model_name}" not in messages[0].content
+
+
+def test_context_manager_updates_model_name_on_switch() -> None:
+    """测试切换模型后系统提示词跟随更新。"""
+
+    manager = ContextManager(
+        DEFAULT_CONTEXT_BUDGET,
+        system_prompt="由 {model_name} 驱动。",
+    )
+
+    manager.set_model_name("deepseek-v4-pro")
+    first = manager._base_system_messages[0].content
+
+    manager.set_model_name("deepseek-v4-flash")
+    second = manager._base_system_messages[0].content
+
+    assert "deepseek-v4-pro" in first
+    assert "deepseek-v4-flash" in second

@@ -93,11 +93,8 @@ class ContextManager:
         self._budget = budget
         self._tool_capabilities = dict(tool_capabilities or {})
         self._model_tools = tuple(model_tools)
-        self._base_prompt_messages = (
-            (Message(role="system", content=system_prompt),)
-            if system_prompt
-            else ()
-        )
+        self._system_prompt_template = system_prompt
+        self._model_name: str | None = None
         self._extra_system_messages: tuple[Message, ...] = ()
 
     def update_budget(self, budget: ContextBudget) -> None:
@@ -105,11 +102,20 @@ class ContextManager:
 
         self._budget = budget
 
+    def set_model_name(self, model_name: str) -> None:
+        """更新系统提示词中注入的模型名，切换模型时调用。"""
+
+        self._model_name = model_name
+
     @property
     def _base_system_messages(self) -> tuple[Message, ...]:
-        """返回基础提示词和额外系统消息的组合。"""
+        """返回注入当前模型名的基础提示词和额外系统消息的组合。"""
 
-        return (*self._base_prompt_messages, *self._extra_system_messages)
+        prompt = self._system_prompt_template
+        if prompt and self._model_name:
+            prompt = prompt.replace("{model_name}", self._model_name)
+        base = (Message(role="system", content=prompt),) if prompt else ()
+        return (*base, *self._extra_system_messages)
 
     def set_extra_system_messages(self, messages: Sequence[Message]) -> None:
         """设置追加在基础提示词之后的额外系统消息，如激活的 skill。"""

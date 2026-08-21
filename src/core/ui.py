@@ -235,6 +235,7 @@ async def run_chat(
         model_tools=tool_manager.model_tools(),
         system_prompt=AGENT_SYSTEM_PROMPT,
     )
+    context_manager.set_model_name(settings.model_name)
     agent_loop = AgentLoop(client, tool_manager, max_tool_rounds=max_tool_rounds)
 
     history = session.get_messages()
