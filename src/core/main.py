@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import ConfigError, default_user_config_path, load_settings
 from .context import ContextBudget
-from .balance import UnavailableBalanceProvider
+from .balance import create_balance_provider
 from .openai_client import OpenAICompatibleClient
 from .session_picker import SessionPicker
 from .session_store import SessionStore
@@ -54,7 +54,8 @@ async def run(
         if settings.mcp_stdio is not None
         else None
     )
-    balance = await UnavailableBalanceProvider().get_balance()
+    balance_provider = create_balance_provider(settings.base_url, settings.api_key)
+    balance = await balance_provider.get_balance()
     status = create_status_info(settings.model_name, balance)
     await run_chat(
         client,

@@ -8,11 +8,11 @@ from core.status import create_status_info
 
 @pytest.mark.asyncio
 async def test_unavailable_balance_provider_returns_default_text() -> None:
-    """测试通用余额实现返回暂不可查询。"""
+    """测试通用余额实现返回不可查询状态。"""
 
     provider = UnavailableBalanceProvider()
 
-    assert await provider.get_balance() == "暂不可查询"
+    assert await provider.get_balance() == "unavailable"
 
 
 def test_create_status_info_uses_given_values(tmp_path: Path) -> None:
