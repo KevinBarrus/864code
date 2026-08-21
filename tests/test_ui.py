@@ -114,7 +114,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             yield ui.TextDelta("已压缩后重试")
 
     class FakeScreen:
-        def __init__(self, status, on_submit) -> None:
+        def __init__(self, status, on_submit, command_names=None, model_name_provider=None) -> None:
             self._on_submit = on_submit
             self.application = self
             self.entries: list[tuple[str, str]] = []

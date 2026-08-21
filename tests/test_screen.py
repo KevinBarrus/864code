@@ -663,3 +663,28 @@ def test_input_text_changed_skips_without_slash_prefix(
     screen._on_input_text_changed(screen.input_area.buffer)
 
     assert started == []
+
+
+def test_status_model_name_uses_provider(tmp_path: Path) -> None:
+    """测试状态栏模型名优先使用动态 provider 的值。"""
+
+    provider_value = "dynamic-model"
+    screen = ChatScreen(
+        create_status_info("static-model", "n/a", tmp_path),
+        model_name_provider=lambda: provider_value,
+    )
+
+    fragments = screen._render_status()
+
+    assert any("dynamic-model" in text for _style, text in fragments)
+    assert not any("static-model" in text for _style, text in fragments)
+
+
+def test_status_model_name_falls_back_to_status(tmp_path: Path) -> None:
+    """测试未提供 provider 时使用状态对象里的模型名。"""
+
+    screen = ChatScreen(create_status_info("static-model", "n/a", tmp_path))
+
+    fragments = screen._render_status()
+
+    assert any("static-model" in text for _style, text in fragments)

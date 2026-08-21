@@ -108,6 +108,7 @@ class ChatScreen:
         logo_provider: LogoProvider | None = None,
         input_layout: InputLayoutConfig | None = None,
         command_names: list[tuple[str, str]] | None = None,
+        model_name_provider: Callable[[], str] | None = None,
     ) -> None:
         """创建对话区、输入区和状态栏。"""
 
@@ -115,6 +116,7 @@ class ChatScreen:
         self._on_submit = on_submit
         self._logo_provider = logo_provider or EmptyLogoProvider()
         self._input_layout = input_layout or InputLayoutConfig()
+        self._model_name_provider = model_name_provider
         self._request_active = False
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
@@ -734,8 +736,13 @@ class ChatScreen:
     def _render_status(self) -> list[tuple[str, str]]:
         """将状态信息转换为带独立颜色的底部状态栏。"""
 
+        model_name = (
+            self._model_name_provider()
+            if self._model_name_provider is not None
+            else self._status.model_name
+        )
         fragments = [
-            ("class:status-model", f"模型：{self._status.model_name}"),
+            ("class:status-model", f"模型：{model_name}"),
             ("", "    "),
             ("class:status-balance", f"余额：{self._status.balance}"),
             ("", "    "),

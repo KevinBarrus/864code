@@ -205,6 +205,7 @@ async def run_chat(
             (command.name, command.description)
             for command in command_registry.list()
         ],
+        model_name_provider=lambda: client_holder.settings.model_name,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

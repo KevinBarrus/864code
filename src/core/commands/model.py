@@ -43,10 +43,10 @@ async def model_command(context: CommandContext) -> None:
         if model_name is None:
             return
         _apply_model_switch(context, replace(current, model_name=model_name))
-        context.screen.set_status_message(f"已切换到模型：{model_name}")
+        context.screen.add_entry("tool", f"Switched to model: {model_name}")
         return
     _apply_model_switch(context, replace(current, model_name=choice))
-    context.screen.set_status_message(f"已切换到模型：{choice}")
+    context.screen.add_entry("tool", f"Switched to model: {choice}")
 
 
 async def _create_new_config(context: CommandContext) -> None:
@@ -84,7 +84,7 @@ async def _create_new_config(context: CommandContext) -> None:
         {"model": {"base_url": base_url, "api_key": api_key, "model_name": model_name}},
     )
     _apply_model_switch(context, settings)
-    context.screen.set_status_message(f"已切换到新配置：{model_name}")
+    context.screen.add_entry("tool", f"Switched to model: {model_name}")
 
 
 async def _pick_vendor(context: CommandContext) -> str | None:

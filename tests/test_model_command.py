@@ -131,7 +131,7 @@ async def test_model_command_switches_to_selected_model(
     assert len(loop.swapped_clients) == 1
     assert context.client_holder.settings.model_name == "deepseek-v4-flash"
     assert context.client_holder.settings.base_url == BASE_URL
-    assert screen.status_message == "已切换到模型：deepseek-v4-flash"
+    assert ("tool", "Switched to model: deepseek-v4-flash") in screen.entries
 
 
 @pytest.mark.asyncio
@@ -173,7 +173,7 @@ async def test_model_command_manual_input_when_list_fails(
 
     assert len(loop.swapped_clients) == 1
     assert context.client_holder.settings.model_name == "manual-model"
-    assert screen.status_message == "已切换到模型：manual-model"
+    assert ("tool", "Switched to model: manual-model") in screen.entries
 
 
 @pytest.mark.asyncio
@@ -208,6 +208,7 @@ async def test_model_command_new_config_writes_project_settings(
     assert context.client_holder.settings.model_name == "deepseek-v4-pro"
     assert context.client_holder.settings.api_key == "new-api-key"
     assert context.client_holder.settings.base_url == "https://api.deepseek.com/"
+    assert ("tool", "Switched to model: deepseek-v4-pro") in screen.entries
 
 
 @pytest.mark.asyncio
