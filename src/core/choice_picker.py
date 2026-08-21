@@ -9,7 +9,10 @@ from prompt_toolkit.layout.dimension import Dimension
 
 
 class ChoicePicker:
-    """单选列表，可在末尾附加一个特殊选项（如 new config）。"""
+    """单选列表，可在末尾附加特殊选项（如 new config）。"""
+
+    # 窗口优先高度减去标题行后的可见选项数，用于滚动跟随
+    _VISIBLE_CHOICES = 6
 
     def __init__(
         self,
@@ -33,6 +36,7 @@ class ChoicePicker:
             wrap_lines=True,
             style="class:approval-area",
         )
+        self.window.vertical_scroll = 0
 
     @property
     def _choices(self) -> list[str]:
@@ -41,12 +45,20 @@ class ChoicePicker:
         return [*self._items, *self._extra_options]
 
     def move(self, offset: int) -> None:
-        """移动光标，限制在列表范围内。"""
+        """移动光标，限制在列表范围内并保持选中项可见。"""
 
         choices = self._choices
         if not choices:
             return
         self._cursor = max(0, min(len(choices) - 1, self._cursor + offset))
+        self._follow_cursor()
+
+    def _follow_cursor(self) -> None:
+        """滚动窗口让当前光标项始终可见。"""
+
+        max_scroll = max(0, len(self._choices) - self._VISIBLE_CHOICES)
+        desired_scroll = max(0, self._cursor - (self._VISIBLE_CHOICES - 1))
+        self.window.vertical_scroll = min(max_scroll, desired_scroll)
 
     def confirm(self) -> None:
         """确认当前光标项并返回选择结果。"""

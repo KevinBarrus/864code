@@ -12,7 +12,7 @@ from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
@@ -20,6 +20,7 @@ from prompt_toolkit.layout.containers import (
 )
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 
@@ -273,16 +274,26 @@ class ChatScreen:
         # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
         # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
         self._input_window = self.input_area.window
-        return HSplit(
-            [
-                self._logo_container,
-                self._conversation_container,
-                input_container,
-                status_window,
+        # 补全菜单作为浮层跟随光标显示，TextArea 本身不含补全菜单控件。
+        return FloatContainer(
+            HSplit(
+                [
+                    self._logo_container,
+                    self._conversation_container,
+                    input_container,
+                    status_window,
+                ],
+                # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
+                # 填充窗口；剩余空间应当只交给有消息时的对话视口。
+                align=VerticalAlign.JUSTIFY,
+            ),
+            floats=[
+                Float(
+                    xcursor=True,
+                    ycursor=True,
+                    content=CompletionsMenu(max_height=16, scroll_offset=1),
+                )
             ],
-            # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
-            # 填充窗口；剩余空间应当只交给有消息时的对话视口。
-            align=VerticalAlign.JUSTIFY,
         )
 
     async def request_approval(

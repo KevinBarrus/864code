@@ -69,7 +69,7 @@ async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> No
 
         assert screen._approval_prompt is not None
         assert screen._input_container.children == [screen._approval_prompt.window]
-        assert screen._layout.container.children[-1].content is screen._status_control
+        assert screen._layout.container.content.children[-1].content is screen._status_control
 
         screen._approval_prompt.confirm()
         result = await task
@@ -246,7 +246,7 @@ def test_chat_screen_does_not_add_an_implicit_fill_area(tmp_path: Path) -> None:
 
     screen = _create_screen(tmp_path)
 
-    assert screen._layout.container.align is VerticalAlign.JUSTIFY
+    assert screen._layout.container.content.align is VerticalAlign.JUSTIFY
 
 
 def test_empty_logo_and_conversation_do_not_take_layout_space(
@@ -277,7 +277,7 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
 
     with create_app_session(output=DummyOutput()):
         screen = _create_screen(tmp_path)
-        root = screen._layout.container
+        root = screen._layout.container.content
         empty_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
         # 根布局的第 5、7 项分别是输入区和状态栏，中间的 0 是布局间隔。
@@ -527,3 +527,13 @@ def test_slash_command_completer_ignores_plain_text() -> None:
     completer = SlashCommandCompleter([("model", "切换模型")])
 
     assert list(completer.get_completions(_FakeDocument("hello"), None)) == []
+
+
+def test_layout_includes_completion_menu_float(tmp_path: Path) -> None:
+    """测试根布局包含补全菜单浮层。"""
+
+    screen = _create_screen(tmp_path)
+
+    floats = screen._layout.container.floats
+
+    assert any("CompletionsMenu" in type(floats[0].content).__name__ for _ in floats)

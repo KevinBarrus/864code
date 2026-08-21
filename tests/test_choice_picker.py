@@ -70,3 +70,33 @@ async def test_choice_picker_move_stays_within_bounds() -> None:
     picker.move(10)
     picker.confirm()
     assert await picker.wait() == "extra"
+
+
+@pytest.mark.asyncio
+async def test_choice_picker_scrolls_to_keep_cursor_visible() -> None:
+    """测试光标移动到列表深处时窗口滚动跟随。"""
+
+    picker = ChoicePicker([f"item-{index}" for index in range(20)], "选择")
+
+    picker.move(10)
+
+    assert picker.window.vertical_scroll > 0
+    assert picker._cursor == 10
+
+
+@pytest.mark.asyncio
+async def test_choice_picker_stops_at_last_item_and_max_scroll() -> None:
+    """测试到最后一个选项后继续下移会停在原地，窗口不再滚动。"""
+
+    picker = ChoicePicker([f"item-{index}" for index in range(20)], "选择")
+
+    picker.move(30)
+    max_scroll = max(0, 20 - ChoicePicker._VISIBLE_CHOICES)
+
+    assert picker._cursor == 19
+    assert picker.window.vertical_scroll == max_scroll
+
+    picker.move(5)
+
+    assert picker._cursor == 19
+    assert picker.window.vertical_scroll == max_scroll
