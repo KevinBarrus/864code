@@ -12,7 +12,7 @@ from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.layout import Float, FloatContainer, HSplit, Layout, Window
+from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
@@ -20,7 +20,6 @@ from prompt_toolkit.layout.containers import (
 )
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 
@@ -29,6 +28,7 @@ from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
 from .conversation_view import ConversationView
 from .model import ToolCall
+from .command_picker import CommandPicker
 from .skill_picker import SkillPicker
 from .choice_picker import ChoicePicker
 from .input_prompt import InputPrompt
@@ -124,13 +124,10 @@ class ChatScreen:
         self._skill_picker: SkillPicker | None = None
         self._choice_picker: ChoicePicker | None = None
         self._text_input: InputPrompt | None = None
+        self._command_picker: CommandPicker | None = None
         self._status_message = ""
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
-        # 补全菜单展开时隐藏状态栏（对齐 Codex 的 popup 替换 footer 方案）
-        self._completion_active = Condition(
-            lambda: self.input_area.buffer.complete_state is not None
-        )
         self._last_input_length = 0
         self.input_area = TextArea(
             prompt="",
@@ -148,6 +145,8 @@ class ChatScreen:
         )
         # 删除字符不会触发 complete_while_typing，需要手动重新启动补全
         self.input_area.buffer.on_text_changed += self._on_input_text_changed
+        # 补全状态变化时同步底部区域的补全列表
+        self.input_area.buffer.on_completions_changed += self._on_completions_changed
         self._conversation_content = HSplit(
             [],
             # 不添加顶部对齐的隐式填充行，消息内容只占实际需要的高度。
@@ -270,14 +269,15 @@ class ChatScreen:
             self.conversation_view,
             filter=Condition(lambda: bool(self._conversation)),
         )
-        status_container = ConditionalContainer(
-            Window(
-                content=self._status_control,
-                height=1,
-            ),
-            filter=~self._completion_active,
+        self._status_window = Window(
+            content=self._status_control,
+            height=1,
         )
-        self._status_container = status_container
+        bottom_container = HSplit(
+            [self._status_window],
+            style="class:approval-area",
+        )
+        self._bottom_container = bottom_container
         input_container = HSplit(
             [
                 Window(
@@ -301,26 +301,17 @@ class ChatScreen:
         # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
         # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
         self._input_window = self.input_area.window
-        # 补全菜单作为浮层跟随光标显示，TextArea 本身不含补全菜单控件。
-        return FloatContainer(
-            HSplit(
-                [
-                    self._logo_container,
-                    self._conversation_container,
-                    input_container,
-                    status_container,
-                ],
-                # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
-                # 填充窗口；剩余空间应当只交给有消息时的对话视口。
-                align=VerticalAlign.JUSTIFY,
-            ),
-            floats=[
-                Float(
-                    xcursor=True,
-                    ycursor=True,
-                    content=CompletionsMenu(max_height=16, scroll_offset=1),
-                )
+        # 底部区域在输入栏下方：无补全显示状态栏，补全时替换为命令列表（对齐 Codex）
+        return HSplit(
+            [
+                self._logo_container,
+                self._conversation_container,
+                input_container,
+                bottom_container,
             ],
+            # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
+            # 填充窗口；剩余空间应当只交给有消息时的对话视口。
+            align=VerticalAlign.JUSTIFY,
         )
 
     async def request_approval(
@@ -406,12 +397,15 @@ class ChatScreen:
             self.application.invalidate()
 
     def _get_reserved_height(self, width: int, max_height: int) -> int:
-        """计算对话视口下方的输入区和状态栏所需高度。"""
+        """计算对话视口下方的输入区和底部区域所需高度。"""
 
-        status_height = (
-            0 if self.input_area.buffer.complete_state is not None else 1
-        )
-        return self._input_container.preferred_height(width, max_height).preferred + status_height
+        input_height = self._input_container.preferred_height(
+            width, max_height
+        ).preferred
+        bottom_height = self._bottom_container.preferred_height(
+            width, max_height
+        ).preferred
+        return input_height + bottom_height
 
     def _has_logo(self) -> bool:
         """判断 Logo 是否有实际内容，空 Logo 不占用布局空间。"""
@@ -435,6 +429,7 @@ class ChatScreen:
         skill_picker_active = Condition(lambda: self._skill_picker is not None)
         choice_active = Condition(lambda: self._choice_picker is not None)
         text_input_active = Condition(lambda: self._text_input is not None)
+        command_picker_active = Condition(lambda: self._command_picker is not None)
         embedded_active = (
             approval_active | skill_picker_active | choice_active | text_input_active
         )
@@ -557,7 +552,7 @@ class ChatScreen:
             eager=True,
         )
         def submit(event) -> None:
-            """提交输入框中的内容，补全菜单打开时先应用选中项。"""
+            """提交输入框中的内容，补全列表打开时先应用选中项。"""
 
             buffer = self.input_area.buffer
             completion = self._selected_completion(buffer)
@@ -576,9 +571,25 @@ class ChatScreen:
                 self._submit(prompt)
             )
 
+        @key_bindings.add("up", filter=command_picker_active)
+        def move_command_up(event) -> None:
+            """向上移动补全列表选中项。"""
+
+            if self._command_picker is not None:
+                self._command_picker.move(-1)
+                self.application.invalidate()
+
+        @key_bindings.add("down", filter=command_picker_active)
+        def move_command_down(event) -> None:
+            """向下移动补全列表选中项。"""
+
+            if self._command_picker is not None:
+                self._command_picker.move(1)
+                self.application.invalidate()
+
         @key_bindings.add(
             "tab",
-            filter=self._completion_active & input_focused & ~embedded_active,
+            filter=command_picker_active & input_focused & ~embedded_active,
             eager=True,
         )
         def apply_completion(event) -> None:
@@ -648,15 +659,25 @@ class ChatScreen:
             self._request_task.cancel()
 
     def _selected_completion(self, buffer) -> object | None:
-        """返回补全菜单中的当前选中项，未选中时取第一项。"""
+        """返回补全列表当前选中的补全项。"""
+
+        if self._command_picker is not None:
+            return self._command_picker.selected
+        return None
+
+    def _on_completions_changed(self, buffer) -> None:
+        """补全状态变化时，在底部区域显示补全列表或恢复状态栏。"""
 
         state = buffer.complete_state
-        if state is None:
-            return None
-        completion = state.current_completion
-        if completion is None and state.completions:
-            completion = state.completions[0]
-        return completion
+        completions = list(state.completions) if state is not None else []
+        if completions:
+            picker = CommandPicker(completions)
+            self._command_picker = picker
+            self._bottom_container.children = [picker.window]
+        else:
+            self._command_picker = None
+            self._bottom_container.children = [self._status_window]
+        self.application.invalidate()
 
     def _on_input_text_changed(self, buffer) -> None:
         """删除字符后重新触发命令补全，插入场景由 complete_while_typing 处理。"""

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from prompt_toolkit.application import create_app_session
+from prompt_toolkit.completion import Completion
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.formatted_text import to_plain_text
 from prompt_toolkit.history import InMemoryHistory
@@ -69,7 +70,7 @@ async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> No
 
         assert screen._approval_prompt is not None
         assert screen._input_container.children == [screen._approval_prompt.window]
-        assert screen._layout.container.content.children[-1].content.content is screen._status_control
+        assert screen._layout.container.children[-1].children[0].content is screen._status_control
 
         screen._approval_prompt.confirm()
         result = await task
@@ -246,7 +247,7 @@ def test_chat_screen_does_not_add_an_implicit_fill_area(tmp_path: Path) -> None:
 
     screen = _create_screen(tmp_path)
 
-    assert screen._layout.container.content.align is VerticalAlign.JUSTIFY
+    assert screen._layout.container.align is VerticalAlign.JUSTIFY
 
 
 def test_empty_logo_and_conversation_do_not_take_layout_space(
@@ -277,7 +278,7 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
 
     with create_app_session(output=DummyOutput()):
         screen = _create_screen(tmp_path)
-        root = screen._layout.container.content
+        root = screen._layout.container
         empty_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
         # 根布局的第 5、7 项分别是输入区和状态栏，中间的 0 是布局间隔。
@@ -529,14 +530,15 @@ def test_slash_command_completer_ignores_plain_text() -> None:
     assert list(completer.get_completions(_FakeDocument("hello"), None)) == []
 
 
-def test_layout_includes_completion_menu_float(tmp_path: Path) -> None:
-    """测试根布局包含补全菜单浮层。"""
+def test_layout_includes_bottom_area_with_status(tmp_path: Path) -> None:
+    """测试根布局包含底部区域，默认显示状态栏。"""
 
     screen = _create_screen(tmp_path)
 
-    floats = screen._layout.container.floats
+    bottom = screen._layout.container.children[-1]
 
-    assert any("CompletionsMenu" in type(floats[0].content).__name__ for _ in floats)
+    assert bottom is screen._bottom_container
+    assert screen._bottom_container.children == [screen._status_window]
 
 
 def test_slash_command_completer_prefers_exact_match() -> None:
@@ -551,53 +553,56 @@ def test_slash_command_completer_prefers_exact_match() -> None:
     assert [completion.text for completion in completions] == ["model", "model-switch"]
 
 
-def test_completion_active_hides_status_container(tmp_path: Path) -> None:
-    """测试补全展开时状态栏隐藏，收起后恢复。"""
+def test_completion_swaps_bottom_area_to_picker(tmp_path: Path) -> None:
+    """测试补全出现时底部区域切换为列表，收起后恢复状态栏。"""
 
     screen = _create_screen(tmp_path)
 
-    assert screen._completion_active() is False
-    assert screen._status_container.filter() is True
+    assert screen._command_picker is None
+    assert screen._bottom_container.children == [screen._status_window]
 
-    class FakeCompleteState:
-        """模拟补全进行中的状态。"""
+    screen._on_completions_changed(_FakeBuffer(["model"]))
 
-        completions = []
-        current_completion = None
+    assert screen._command_picker is not None
+    assert screen._bottom_container.children == [screen._command_picker.window]
 
-    screen.input_area.buffer.complete_state = FakeCompleteState()
+    screen._on_completions_changed(_FakeBuffer([]))
 
-    assert screen._completion_active() is True
-    assert screen._status_container.filter() is False
+    assert screen._command_picker is None
+    assert screen._bottom_container.children == [screen._status_window]
 
 
-def test_selected_completion_falls_back_to_first(tmp_path: Path) -> None:
-    """测试未手动选中补全项时默认取第一项。"""
+class _FakeCompleteState:
+    """模拟补全状态，completions 为文本列表。"""
+
+    def __init__(self, texts: list[str]) -> None:
+        self.completions = [
+            Completion(text, start_position=0) for text in texts
+        ]
+
+
+class _FakeBuffer:
+    """模拟带补全状态的输入缓冲区。"""
+
+    def __init__(self, texts: list[str]) -> None:
+        self.complete_state = _FakeCompleteState(texts)
+
+
+def test_selected_completion_uses_command_picker(tmp_path: Path) -> None:
+    """测试选中补全项来自补全列表组件。"""
 
     screen = _create_screen(tmp_path)
     buffer = screen.input_area.buffer
 
     assert screen._selected_completion(buffer) is None
 
-    class FakeState:
-        """模拟补全菜单状态。"""
+    screen._on_completions_changed(_FakeBuffer(["model", "model-switch"]))
 
-        current_completion = None
-        completions = ["first", "second"]
+    assert screen._selected_completion(buffer).text == "model"
 
-    buffer.complete_state = FakeState()
+    screen._command_picker.move(1)
 
-    assert screen._selected_completion(buffer) == "first"
-
-    class FakeStateWithSelection:
-        """模拟用户手动选中的补全菜单状态。"""
-
-        current_completion = "second"
-        completions = ["first", "second"]
-
-    buffer.complete_state = FakeStateWithSelection()
-
-    assert screen._selected_completion(buffer) == "second"
+    assert screen._selected_completion(buffer).text == "model-switch"
 
 
 def test_input_text_changed_restarts_completion_after_delete(
