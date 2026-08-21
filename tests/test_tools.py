@@ -56,9 +56,9 @@ def test_local_registry_rejects_duplicate_or_non_local_tools() -> None:
     registry = LocalToolRegistry()
     registry.register(_definition(), _handler())
 
-    with pytest.raises(ToolRegistrationError, match="工具已注册"):
+    with pytest.raises(ToolRegistrationError, match="tool already registered"):
         registry.register(_definition(), _handler())
-    with pytest.raises(ToolRegistrationError, match="只能注册 local"):
+    with pytest.raises(ToolRegistrationError, match="only accepts local tools"):
         registry.register(_definition("mcp_tool", "mcp"), _handler())
 
 
@@ -86,7 +86,7 @@ async def test_tool_manager_returns_error_for_unknown_tool() -> None:
 
     assert result.is_error is True
     assert result.call_id == "call-1"
-    assert "工具不存在" in result.content
+    assert "tool not found" in result.content
     assert result.error_category == "invalid_request"
 
 
@@ -106,7 +106,7 @@ async def test_tool_manager_converts_handler_error() -> None:
 
     assert result == ToolResult(
         call_id="call-1",
-        content="工具执行失败，请根据错误调整后续操作",
+        content="tool execution failed, adjust based on the error",
         is_error=True,
         error_category="tool_execution",
     )
@@ -140,7 +140,7 @@ async def test_tool_manager_denies_write_without_confirmation() -> None:
     )
 
     assert result.is_error is True
-    assert "被拒绝" in result.content
+    assert "rejected" in result.content
     assert result.error_category == "tool_permission"
     assert executed is False
 

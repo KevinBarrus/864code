@@ -35,13 +35,13 @@ async def run(
         summaries = SessionStore(workspace).list_sessions()
         session_id = await SessionPicker(summaries).pick()
         if session_id is None:
-            print("没有选择会话，已退出")
+            print("No session selected, exiting")
             return
 
     if config_path is None and not default_user_config_path().is_file():
         completed = await run_setup_guide(default_user_config_path())
         if not completed:
-            print("没有完成首次配置，已退出")
+            print("Setup incomplete, exiting")
             return
     settings = load_settings(user_config_path=config_path)
     client = OpenAICompatibleClient(settings)
@@ -76,15 +76,15 @@ async def run(
 def main(argv: Sequence[str] | None = None) -> int:
     """处理启动阶段的错误并返回进程退出码"""
 
-    parser = argparse.ArgumentParser(description="启动 epsilon")
+    parser = argparse.ArgumentParser(description="Start epsilon")
     parser.add_argument(
         "--config",
         type=Path,
-        help="指定配置文件路径，跳过首次配置引导",
+        help="Use a specific config file and skip first-run setup",
     )
     subparsers = parser.add_subparsers(dest="command")
-    resume_parser = subparsers.add_parser("resume", help="恢复已有会话")
-    resume_parser.add_argument("session_id", nargs="?", help="要恢复的会话 ID")
+    resume_parser = subparsers.add_parser("resume", help="Resume a previous session")
+    resume_parser.add_argument("session_id", nargs="?", help="Session ID to resume")
     args = parser.parse_args(argv)
 
     try:
@@ -96,16 +96,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     except ConfigError as exc:
-        print(f"配置错误：{exc}", file=sys.stderr)
+        print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
     except SessionStoreError as exc:
-        print(f"会话错误：{exc}", file=sys.stderr)
+        print(f"Session error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\n已退出。")
+        print("\nExited.")
     except Exception:
-        logger.debug("启动过程发生未分类异常", exc_info=True)
-        print("运行错误：发生未预期错误，请重试或查看调试日志", file=sys.stderr)
+        logger.debug("Unexpected error during startup", exc_info=True)
+        print(
+            "Runtime error: unexpected failure, retry or check debug logs",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

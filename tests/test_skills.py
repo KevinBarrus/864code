@@ -114,10 +114,10 @@ def test_active_system_messages_includes_source_and_body(tmp_path: Path) -> None
     assert len(messages) == 2
     assert messages[0].role == "system"
     assert "git-commit" in messages[0].content
-    assert "来源：project" in messages[0].content
+    assert "source: project" in messages[0].content
     assert "规范提交正文" in messages[0].content
     assert "lint-guide" in messages[1].content
-    assert "来源：global" in messages[1].content
+    assert "source: global" in messages[1].content
 
 
 def test_active_system_messages_skips_unknown_key(tmp_path: Path) -> None:

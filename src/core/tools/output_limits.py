@@ -2,7 +2,7 @@
 
 MAX_TOOL_OUTPUT_BYTES = 16_000
 MAX_TOOL_OUTPUT_LINES = 400
-TRUNCATION_NOTICE = "\n… 工具输出已截断"
+TRUNCATION_NOTICE = "\n… tool output truncated"
 
 
 def limit_tool_output(
@@ -15,7 +15,7 @@ def limit_tool_output(
 
     notice_bytes = len(TRUNCATION_NOTICE.encode("utf-8"))
     if max_bytes <= notice_bytes or max_lines <= 0:
-        raise ValueError("工具输出预算不足")
+        raise ValueError("tool output budget insufficient")
 
     content_budget = max_bytes - notice_bytes
     selected: list[str] = []

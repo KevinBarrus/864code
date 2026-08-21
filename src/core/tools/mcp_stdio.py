@@ -26,9 +26,9 @@ class StdioMcpProvider(McpToolProvider):
         """保存 MCP Server 启动命令和提供者身份。"""
 
         if not command:
-            raise ValueError("MCP Server 启动命令不能为空")
+            raise ValueError("mcp server command must not be empty")
         if not provider_id:
-            raise ValueError("MCP provider_id 不能为空")
+            raise ValueError("mcp provider_id must not be empty")
         self._command = tuple(command)
         self._provider_id = provider_id
         self._cwd = cwd
@@ -42,22 +42,22 @@ class StdioMcpProvider(McpToolProvider):
         result = await self._request("tools/list", {})
         raw_tools = result.get("tools", [])
         if not isinstance(raw_tools, list):
-            raise McpProtocolError("tools/list 返回的 tools 不是数组")
+            raise McpProtocolError("tools/list returned tools that are not an array")
 
         definitions: list[ToolDefinition] = []
         for raw_tool in raw_tools:
             if not isinstance(raw_tool, Mapping):
-                raise McpProtocolError("MCP 工具定义不是对象")
+                raise McpProtocolError("mcp tool definition is not an object")
             name = raw_tool.get("name")
             description = raw_tool.get("description", "")
             schema = raw_tool.get("inputSchema", {"type": "object"})
             if not isinstance(name, str) or not name:
-                raise McpProtocolError("MCP 工具缺少有效名称")
+                raise McpProtocolError("mcp tool is missing a valid name")
             if not isinstance(description, str) or not isinstance(schema, dict):
-                raise McpProtocolError(f"MCP 工具定义无效：{name}")
+                raise McpProtocolError(f"invalid mcp tool definition: {name}")
             annotations = raw_tool.get("annotations", {})
             if not isinstance(annotations, Mapping):
-                raise McpProtocolError(f"MCP 工具 annotations 无效：{name}")
+                raise McpProtocolError(f"invalid mcp tool annotations: {name}")
             read_only = annotations.get("readOnlyHint") is True
             definitions.append(
                 ToolDefinition(
@@ -83,11 +83,11 @@ class StdioMcpProvider(McpToolProvider):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            return ToolResult(tool_call.call_id, f"MCP 调用失败：{exc}", True)
+            return ToolResult(tool_call.call_id, f"mcp call failed: {exc}", True)
 
         content = result.get("content", [])
         if not isinstance(content, list):
-            return ToolResult(tool_call.call_id, "MCP 工具结果格式无效", True)
+            return ToolResult(tool_call.call_id, "invalid mcp tool result format", True)
         text_parts = [
             item.get("text", "")
             for item in content
@@ -137,7 +137,7 @@ class StdioMcpProvider(McpToolProvider):
             while True:
                 line = await self._process.stdout.readline()
                 if not line:
-                    raise McpProtocolError("MCP Server 已退出")
+                    raise McpProtocolError("mcp server exited")
                 response = json.loads(line)
                 if response.get("id") != request_id:
                     continue
@@ -145,7 +145,7 @@ class StdioMcpProvider(McpToolProvider):
                     raise McpProtocolError(str(response["error"]))
                 result = response.get("result")
                 if not isinstance(result, dict):
-                    raise McpProtocolError("MCP 响应缺少 result 对象")
+                    raise McpProtocolError("mcp response is missing a result object")
                 return result
 
     async def _ensure_started(self) -> None:
@@ -153,7 +153,7 @@ class StdioMcpProvider(McpToolProvider):
 
         if self._process is not None:
             if self._process.returncode is not None:
-                raise McpProtocolError("MCP Server 已退出")
+                raise McpProtocolError("mcp server exited")
             return
 
         self._process = await asyncio.create_subprocess_exec(
@@ -196,7 +196,7 @@ class StdioMcpProvider(McpToolProvider):
         while True:
             line = await self._process.stdout.readline()
             if not line:
-                raise McpProtocolError("MCP Server 已退出")
+                raise McpProtocolError("mcp server exited")
             response = json.loads(line)
             if response.get("id") != request_id:
                 continue
@@ -204,7 +204,7 @@ class StdioMcpProvider(McpToolProvider):
                 raise McpProtocolError(str(response["error"]))
             result = response.get("result")
             if not isinstance(result, dict):
-                raise McpProtocolError("MCP 响应缺少 result 对象")
+                raise McpProtocolError("mcp response is missing a result object")
             return result
 
     async def _send_notification(self, method: str, params: dict[str, object]) -> None:

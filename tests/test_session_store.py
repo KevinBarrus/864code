@@ -112,15 +112,15 @@ def test_compaction_record_is_persisted_and_loaded_separately(tmp_path: Path) ->
     [
         (
             '{"type":"compaction","summary":1,"first_kept_message_index":0,"tokens_before":1}',
-            "压缩摘要无效",
+            "has an invalid compaction summary",
         ),
         (
             '{"type":"compaction","summary":"摘要","first_kept_message_index":-1,"tokens_before":1}',
-            "保留边界无效",
+            "has an invalid retention boundary",
         ),
         (
             '{"type":"compaction","summary":"摘要","first_kept_message_index":0,"tokens_before":-1}',
-            "压缩 Token 数无效",
+            "has an invalid compaction token count",
         ),
     ],
 )
@@ -208,10 +208,10 @@ def test_sessions_are_stored_in_separate_files(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("content", "expected_message"),
     [
-        ("not-json", "不是有效 JSON"),
-        ('{"type":"other"}', "不是消息记录"),
-        ('{"type":"message","role":"system","content":"x"}', "角色无效"),
-        ('{"type":"message","role":"user","content":1}', "内容无效"),
+        ("not-json", "is not valid JSON"),
+        ('{"type":"other"}', "is not a message record"),
+        ('{"type":"message","role":"system","content":"x"}', "has an invalid role"),
+        ('{"type":"message","role":"user","content":1}', "has invalid content"),
     ],
 )
 def test_invalid_records_raise_clear_errors(
@@ -236,7 +236,7 @@ def test_invalid_session_id_is_rejected(tmp_path: Path) -> None:
 
     store = SessionStore(tmp_path)
 
-    with pytest.raises(SessionStoreError, match="无效的 Session ID"):
+    with pytest.raises(SessionStoreError, match="invalid session ID"):
         store.load_messages("../../outside")
 
 
@@ -340,5 +340,5 @@ def test_list_sessions_rejects_corrupted_file(tmp_path: Path) -> None:
     path.parent.mkdir(parents=True)
     path.write_text("not-json\n", encoding="utf-8")
 
-    with pytest.raises(SessionStoreError, match=f"无法读取会话 {session_id}"):
+    with pytest.raises(SessionStoreError, match=f"cannot read session {session_id}"):
         store.list_sessions()

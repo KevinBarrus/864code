@@ -87,10 +87,10 @@ class SessionPicker:
         """渲染提示语和会话列表"""
 
         if not self._summaries:
-            return "没有可恢复的会话\n按 Esc 退出"
+            return "No sessions to resume\nPress Esc to exit"
 
         rendered: list[tuple[str, str]] = [
-            ("", "↑/↓ 选择，Enter 进入，Esc 退出\n\n")
+            ("", "↑/↓ select, Enter resume, Esc exit\n\n")
         ]
         for index, summary in enumerate(self._summaries):
             prefix = "> " if index == self._selected_index else "  "

@@ -57,12 +57,12 @@ class McpToolRegistry:
         """按 Provider 和原始工具名注册一个 MCP 工具。"""
 
         if definition.source != "mcp":
-            raise McpToolRegistrationError("MCP 注册表只能注册 mcp 工具")
+            raise McpToolRegistrationError("mcp registry only accepts mcp tools")
         if not definition.provider_id or definition.provider_id == "builtin":
-            raise McpToolRegistrationError("MCP 工具缺少有效 provider_id")
+            raise McpToolRegistrationError("mcp tool is missing a valid provider_id")
         key = (definition.provider_id, definition.provider_tool_name or definition.name)
         if key in self._tools:
-            raise McpToolRegistrationError(f"工具已注册：{key[1]}")
+            raise McpToolRegistrationError(f"tool already registered: {key[1]}")
         self._tools[key] = RegisteredMcpTool(definition, provider)
 
     def get(self, provider_id: str, name: str) -> RegisteredMcpTool | None:

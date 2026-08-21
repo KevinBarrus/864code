@@ -52,7 +52,7 @@ class AgentLoopCancelled(asyncio.CancelledError):
     """保存取消前已产生消息的 Agent Loop 取消异常。"""
 
     def __init__(self, new_messages: tuple[Message, ...]) -> None:
-        super().__init__("Agent Loop 已取消")
+        super().__init__("Agent loop cancelled")
         self.new_messages = new_messages
 
 
@@ -147,7 +147,7 @@ class AgentLoop:
                     if on_event is not None:
                         await on_event(ToolExecutionEvent(tool_call, result))
 
-            raise AgentLoopError("工具调用轮次超过限制")
+            raise AgentLoopError("tool call limit exceeded")
         except asyncio.CancelledError as exc:
             if text_parts or tool_calls:
                 new_messages.append(

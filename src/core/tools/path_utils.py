@@ -15,5 +15,5 @@ def resolve_workspace_path(workspace: Path, value: str) -> Path:
     try:
         path.relative_to(workspace)
     except ValueError as exc:
-        raise WorkspacePathError("路径必须位于当前工作区内") from exc
+        raise WorkspacePathError("path must be inside the current workspace") from exc
     return path

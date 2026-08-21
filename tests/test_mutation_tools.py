@@ -48,8 +48,8 @@ async def test_write_file_is_idempotent(tmp_path: Path) -> None:
     first = await manager.execute(call)
     second = await manager.execute(call)
 
-    assert first.content == "文件已写入"
-    assert second.content == "文件内容已经是目标内容"
+    assert first.content == "file written"
+    assert second.content == "file content already matches the target"
     assert (tmp_path / "src/a.txt").read_text(encoding="utf-8") == "内容"
 
 
@@ -79,13 +79,13 @@ async def test_edit_file_requires_expected_old_content(tmp_path: Path) -> None:
         {"path": "a.txt", "old_content": "旧内容", "new_content": "新内容"},
     )
 
-    assert (await manager.execute(call)).content == "文件已编辑"
-    assert (await manager.execute(call)).content == "文件内容已经是目标内容"
+    assert (await manager.execute(call)).content == "file edited"
+    assert (await manager.execute(call)).content == "file content already matches the target"
 
     path.write_text("外部修改", encoding="utf-8")
     conflict = await manager.execute(call)
     assert conflict.is_error is True
-    assert "已变化" in conflict.content
+    assert "refusing to overwrite" in conflict.content
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_run_command_marks_nonzero_exit_as_error(tmp_path: Path) -> None:
     result = await manager.execute(_call("run_command", {"command": command}))
 
     assert result.is_error is True
-    assert "退出码：2" in result.content
+    assert "exit code: 2" in result.content
 
 
 @pytest.mark.asyncio
@@ -160,7 +160,7 @@ async def test_run_command_returns_timeout_error(tmp_path: Path) -> None:
 
     assert result.is_error is True
     assert result.error_category == "tool_execution"
-    assert "超时" in result.content
+    assert "timed out" in result.content
 
 
 @pytest.mark.asyncio

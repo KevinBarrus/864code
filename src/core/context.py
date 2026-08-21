@@ -23,11 +23,11 @@ class ContextBudget:
         """校验上下文预算参数。"""
 
         if self.context_window <= 0:
-            raise ValueError("上下文窗口必须大于 0")
+            raise ValueError("context window must be > 0")
         if self.reserve_tokens < 0 or self.reserve_tokens >= self.context_window:
-            raise ValueError("回复预留 Token 必须小于上下文窗口")
+            raise ValueError("reserve tokens must be < context window")
         if self.keep_recent_tokens <= 0:
-            raise ValueError("最近消息预算必须大于 0")
+            raise ValueError("keep recent tokens must be > 0")
 
     @property
     def compaction_threshold(self) -> int:
@@ -130,7 +130,7 @@ class ContextManager:
         """确保工具定义未单独耗尽模型上下文。"""
 
         if self._message_budget <= 0:
-            raise ContextCompactionRequired("工具定义已耗尽可用上下文预算")
+            raise ContextCompactionRequired("tool definitions exhausted the context budget")
 
     @property
     def _summary_input_budget(self) -> int:
@@ -157,7 +157,7 @@ class ContextManager:
         message_list = list(messages)
         self._ensure_message_budget()
         if self._estimate(message_list) > self._budget.compaction_threshold:
-            raise ContextCompactionRequired("上下文超出预算，需要先执行压缩")
+            raise ContextCompactionRequired("context exceeds budget, compaction required")
         return self._with_base_system_messages(message_list)
 
     def build_fallback(self, messages: Sequence[Message]) -> list[Message]:
@@ -212,7 +212,7 @@ class ContextManager:
         self._ensure_message_budget()
         try:
             if force_compaction:
-                raise ContextCompactionRequired("服务端拒绝当前上下文，需要强制压缩")
+                raise ContextCompactionRequired("server rejected the context, forced compaction")
             return ContextBuildResult(self.build(messages))
         except ContextCompactionRequired:
             recent = select_recent_messages(messages, min(
@@ -424,7 +424,7 @@ def select_recent_messages(
     """保留系统消息和预算内的最近完整对话单元。"""
 
     if max_tokens <= 0:
-        raise ValueError("最近消息预算必须大于 0")
+        raise ValueError("keep recent tokens must be > 0")
 
     system_messages = [message for message in messages if message.role == "system"]
     conversation_messages = [
@@ -641,11 +641,11 @@ async def generate_context_summary(
                 parts.append(part)
             summary = "".join(parts).strip()
             if not _is_structured_summary(summary):
-                raise ContextSummaryError("模型返回的摘要缺少必要结构")
+                raise ContextSummaryError("model summary is missing required structure")
             return summary
         except (ContextSummaryError, ModelClientError) as exc:
             last_error = exc
-    raise ContextSummaryError("上下文摘要请求失败") from last_error
+    raise ContextSummaryError("context summary request failed") from last_error
 
 
 def _limit_summary_source(
@@ -661,7 +661,7 @@ def _limit_summary_source(
     wrapper_tokens = estimate_text_tokens("<conversation>\n\n</conversation>")
     source_budget = max_input_tokens - estimate_text_tokens(system_prompt) - wrapper_tokens
     if source_budget <= 0:
-        raise ContextSummaryError("摘要输入预算不足")
+        raise ContextSummaryError("summary input budget insufficient")
     if estimate_context_tokens(messages) <= source_budget:
         return list(messages)
 

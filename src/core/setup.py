@@ -33,10 +33,10 @@ VENDORS = (
     Vendor("DeepSeek", "https://api.deepseek.com/"),
     Vendor("OpenAI", "https://api.openai.com/v1"),
     Vendor("Moonshot", "https://api.moonshot.cn/v1"),
-    Vendor("阿里云百炼", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    Vendor("智谱", "https://open.bigmodel.cn/api/paas/v4"),
-    Vendor("硅基流动", "https://api.siliconflow.cn/v1"),
-    Vendor("手动配置", ""),
+    Vendor("Alibaba Bailian", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    Vendor("Zhipu", "https://open.bigmodel.cn/api/paas/v4"),
+    Vendor("SiliconFlow", "https://api.siliconflow.cn/v1"),
+    Vendor("Manual", ""),
 )
 
 
@@ -86,7 +86,7 @@ async def run_setup_guide(target_path: Path) -> bool:
             }
         },
     )
-    print(f"配置已写入 {target_path}")
+    print(f"Config written to {target_path}")
     return True
 
 

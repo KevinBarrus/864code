@@ -40,7 +40,7 @@ async def test_read_tool_is_allowed_without_confirmation() -> None:
 async def test_mutating_tool_is_denied_without_confirmation() -> None:
     """测试没有确认回调时拒绝有副作用的工具。"""
 
-    with pytest.raises(PermissionDenied, match="需要用户确认"):
+    with pytest.raises(PermissionDenied, match="requires user approval"):
         await PermissionManager().authorize(_definition("write"), _call())
 
 

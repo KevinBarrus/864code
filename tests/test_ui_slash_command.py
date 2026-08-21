@@ -145,6 +145,6 @@ async def test_run_chat_unknown_command_does_not_call_model(
     )
 
     assert any(
-        role == "tool" and "未知命令" in content
+        role == "tool" and "Unknown command" in content
         for role, content in FakeScreen.instances[0].entries
     )

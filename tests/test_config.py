@@ -189,7 +189,7 @@ def test_load_settings_rejects_invalid_base_url(tmp_path: Path) -> None:
 def test_load_settings_rejects_missing_user_config(tmp_path: Path) -> None:
     """测试用户配置文件缺失时抛出配置异常。"""
 
-    with pytest.raises(ConfigError, match="找不到用户配置文件"):
+    with pytest.raises(ConfigError, match="User config not found"):
         load_settings(user_config_path=tmp_path / "settings.json")
 
 
@@ -199,7 +199,7 @@ def test_load_settings_rejects_invalid_json(tmp_path: Path) -> None:
     user_path = tmp_path / "settings.json"
     user_path.write_text("{not-json", encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="不是合法的 JSON"):
+    with pytest.raises(ConfigError, match="not valid JSON"):
         load_settings(user_config_path=user_path)
 
 
@@ -208,7 +208,7 @@ def test_load_settings_rejects_non_object_json(tmp_path: Path) -> None:
 
     user_path = _write_user_settings(tmp_path, [1, 2, 3])
 
-    with pytest.raises(ConfigError, match="必须是 JSON 对象"):
+    with pytest.raises(ConfigError, match="must be a JSON object"):
         load_settings(user_config_path=user_path)
 
 

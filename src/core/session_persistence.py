@@ -26,7 +26,7 @@ class SessionPersistenceQueue:
         """创建后台写入线程和有界重试策略。"""
 
         if max_retries < 0:
-            raise ValueError("持久化重试次数不能小于 0")
+            raise ValueError("persistence retry count must be >= 0")
         self._persist_message = persist_message
         self._persist_pending = persist_pending or (lambda message: None)
         self._max_retries = max_retries
@@ -43,7 +43,7 @@ class SessionPersistenceQueue:
 
         with self._lock:
             if self._closed:
-                raise RuntimeError("Session 持久化队列已关闭")
+                raise RuntimeError("session persistence queue is closed")
         self._queue.put(message)
 
     def flush(self) -> bool:

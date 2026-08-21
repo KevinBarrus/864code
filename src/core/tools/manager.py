@@ -84,7 +84,7 @@ class ToolManager:
         if registered is None:
             return ToolResult(
                 call_id=tool_call.call_id,
-                content=f"工具不存在：{tool_call.name}",
+                content=f"tool not found: {tool_call.name}",
                 is_error=True,
                 error_category="invalid_request",
             )
@@ -96,10 +96,10 @@ class ToolManager:
                 tool_call,
             )
             if approval.decision == ApprovalDecision.DENY:
-                feedback = f" 用户反馈：{approval.feedback}" if approval.feedback else ""
+                feedback = f"  user feedback: {approval.feedback}" if approval.feedback else ""
                 return ToolResult(
                     call_id=tool_call.call_id,
-                    content=f"工具调用被拒绝。{feedback}".strip(),
+                    content=f"tool call rejected. {feedback}".strip(),
                     is_error=True,
                     error_category="tool_permission",
                 )
@@ -112,8 +112,8 @@ class ToolManager:
                 AgentError(
                     category="invalid_request",
                     operation="tool_validation",
-                    user_message=f"工具参数无效：{exc}",
-                    model_message=f"工具参数无效：{exc}",
+                    user_message=f"invalid tool arguments: {exc}",
+                    model_message=f"invalid tool arguments: {exc}",
                     cause=exc,
                 ),
             )
@@ -123,8 +123,8 @@ class ToolManager:
                 AgentError(
                     category="tool_permission",
                     operation="tool_authorization",
-                    user_message="工具调用被拒绝",
-                    model_message=f"工具调用被拒绝：{exc}",
+                    user_message="tool call rejected",
+                    model_message=f"tool call rejected: {exc}",
                     cause=exc,
                 ),
             )
@@ -134,8 +134,8 @@ class ToolManager:
                 AgentError(
                     category="tool_execution",
                     operation="tool_execution",
-                    user_message="工具执行失败",
-                    model_message=f"工具执行失败：{exc}",
+                    user_message="tool execution failed",
+                    model_message=f"tool execution failed: {exc}",
                     cause=exc,
                 ),
             )
@@ -145,8 +145,8 @@ class ToolManager:
                 AgentError(
                     category="tool_execution",
                     operation="tool_execution",
-                    user_message="工具执行失败",
-                    model_message="工具执行失败，请根据错误调整后续操作",
+                    user_message="tool execution failed",
+                    model_message="tool execution failed, adjust based on the error",
                     cause=exc,
                 ),
             )

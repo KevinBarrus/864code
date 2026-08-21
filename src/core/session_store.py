@@ -66,7 +66,7 @@ class SessionStore:
                     record = json.loads(line)
                 except json.JSONDecodeError as exc:
                     raise SessionStoreError(
-                        f"pending 第 {line_number} 行不是有效 JSON"
+                        f"pending line {line_number} is not valid JSON"
                     ) from exc
                 messages.append(self._message_from_record(record, line_number))
         return messages
@@ -142,7 +142,7 @@ class SessionStore:
                 title = self._read_title(session_id)
             except SessionStoreError as exc:
                 raise SessionStoreError(
-                    f"无法读取会话 {session_id}: {exc}"
+                    f"cannot read session {session_id}: {exc}"
                 ) from exc
 
             summaries.append(
@@ -178,7 +178,7 @@ class SessionStore:
                     if file.tell() == file_size and not line.endswith("\n"):
                         break
                     raise SessionStoreError(
-                        f"第 {line_number} 行不是有效 JSON"
+                        "line {line_number} is not valid JSON"
                     ) from exc
 
                 if isinstance(record, dict) and record.get("type") == "compaction":
@@ -194,7 +194,7 @@ class SessionStore:
         try:
             normalized_id = str(uuid.UUID(session_id))
         except (ValueError, AttributeError) as exc:
-            raise SessionStoreError("无效的 Session ID") from exc
+            raise SessionStoreError("invalid session ID") from exc
         return self._sessions_dir / f"{normalized_id}.jsonl"
 
     def _pending_path(self, session_id: str) -> Path:
@@ -237,7 +237,7 @@ class SessionStore:
                 if line_number == len(lines) and not line.endswith("\n"):
                     continue
                 raise SessionStoreError(
-                    f"第 {line_number} 行不是有效 JSON"
+                    "line {line_number} is not valid JSON"
                 ) from exc
         return records
 
@@ -272,29 +272,29 @@ class SessionStore:
         """校验 JSON 记录并转换为模型消息。"""
 
         if not isinstance(record, dict) or record.get("type") != "message":
-            raise SessionStoreError(f"第 {line_number} 行不是消息记录")
+            raise SessionStoreError(f"line {line_number} is not a message record")
 
         role = record.get("role")
         content = record.get("content")
         if role not in {"user", "assistant", "tool"}:
-            raise SessionStoreError(f"第 {line_number} 行的角色无效")
+            raise SessionStoreError(f"line {line_number} has an invalid role")
         if not isinstance(content, str):
-            raise SessionStoreError(f"第 {line_number} 行的内容无效")
+            raise SessionStoreError(f"line {line_number} has invalid content")
 
         status = record.get("status", "completed")
         if status not in {"completed", "cancelled", "error"}:
-            raise SessionStoreError(f"第 {line_number} 行的消息状态无效")
+            raise SessionStoreError(f"line {line_number} has an invalid message status")
         error_category = record.get("error_category")
         if error_category is not None and not is_error_category(error_category):
-            raise SessionStoreError(f"第 {line_number} 行的错误类别无效")
+            raise SessionStoreError(f"line {line_number} has an invalid error category")
 
         raw_tool_calls = record.get("tool_calls", [])
         if not isinstance(raw_tool_calls, list):
-            raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+            raise SessionStoreError(f"line {line_number} has an invalid tool call")
         tool_calls: list[ToolCall] = []
         for raw_tool_call in raw_tool_calls:
             if not isinstance(raw_tool_call, dict):
-                raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+                raise SessionStoreError(f"line {line_number} has an invalid tool call")
             call_id = raw_tool_call.get("call_id")
             name = raw_tool_call.get("name")
             arguments = raw_tool_call.get("arguments")
@@ -303,14 +303,14 @@ class SessionStore:
                 or not isinstance(name, str)
                 or not isinstance(arguments, dict)
             ):
-                raise SessionStoreError(f"第 {line_number} 行的工具调用无效")
+                raise SessionStoreError(f"line {line_number} has an invalid tool call")
             tool_calls.append(ToolCall(call_id, name, arguments))
 
         tool_call_id = record.get("tool_call_id")
         if tool_call_id is not None and not isinstance(tool_call_id, str):
-            raise SessionStoreError(f"第 {line_number} 行的工具调用 ID 无效")
+            raise SessionStoreError(f"line {line_number} has an invalid tool call id")
         if role == "tool" and not tool_call_id:
-            raise SessionStoreError(f"第 {line_number} 行缺少工具调用 ID")
+            raise SessionStoreError(f"line {line_number} is missing a tool call id")
         return Message(
             role=role,
             content=content,
@@ -328,17 +328,17 @@ class SessionStore:
         """校验压缩记录并转换为 CompactionRecord。"""
 
         if not isinstance(record, dict) or record.get("type") != "compaction":
-            raise SessionStoreError(f"第 {line_number} 行不是压缩记录")
+            raise SessionStoreError(f"line {line_number} is not a compaction record")
 
         summary = record.get("summary")
         first_kept_message_index = record.get("first_kept_message_index")
         tokens_before = record.get("tokens_before")
         if not isinstance(summary, str):
-            raise SessionStoreError(f"第 {line_number} 行的压缩摘要无效")
+            raise SessionStoreError(f"line {line_number} has an invalid compaction summary")
         if not isinstance(first_kept_message_index, int) or first_kept_message_index < 0:
-            raise SessionStoreError(f"第 {line_number} 行的保留边界无效")
+            raise SessionStoreError(f"line {line_number} has an invalid retention boundary")
         if not isinstance(tokens_before, int) or tokens_before < 0:
-            raise SessionStoreError(f"第 {line_number} 行的压缩 Token 数无效")
+            raise SessionStoreError(f"line {line_number} has an invalid compaction token count")
         return CompactionRecord(
             summary=summary,
             first_kept_message_index=first_kept_message_index,

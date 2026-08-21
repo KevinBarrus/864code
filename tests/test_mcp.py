@@ -77,9 +77,9 @@ def test_mcp_registry_rejects_invalid_source_and_duplicates() -> None:
     registry = McpToolRegistry()
     registry.register(_definition(), provider)
 
-    with pytest.raises(McpToolRegistrationError, match="只能注册 mcp"):
+    with pytest.raises(McpToolRegistrationError, match="only accepts mcp tools"):
         registry.register(_definition("local", "local_tool"), provider)
-    with pytest.raises(McpToolRegistrationError, match="工具已注册"):
+    with pytest.raises(McpToolRegistrationError, match="tool already registered"):
         registry.register(_definition(), provider)
 
 
@@ -102,7 +102,7 @@ def test_unified_registry_rejects_duplicate_names_across_sources() -> None:
     assert local_binding is not None
     unified.register(local_binding)
 
-    with pytest.raises(ToolRegistrationError, match="工具已注册"):
+    with pytest.raises(ToolRegistrationError, match="tool already registered"):
         unified.register(RegisteredMcpTool(mcp_definition, provider))
 
 

@@ -139,7 +139,7 @@ async def test_client_wraps_request_error() -> None:
     )
     client = OpenAICompatibleClient(_settings(), failing_sdk)  # type: ignore[arg-type]
 
-    with pytest.raises(ModelClientError, match="模型网络请求失败") as error_info:
+    with pytest.raises(ModelClientError, match="model network request failed") as error_info:
         await _collect(client)
 
     error = error_info.value
@@ -194,7 +194,7 @@ async def test_client_times_out_when_stream_hangs() -> None:
     slow_sdk = SimpleNamespace(chat=SimpleNamespace(completions=SlowCompletions()))
     client = OpenAICompatibleClient(settings, slow_sdk)  # type: ignore[arg-type]
 
-    with pytest.raises(ModelClientError, match="模型请求超时") as error_info:
+    with pytest.raises(ModelClientError, match="model request timed out") as error_info:
         await _collect(client)
 
     assert error_info.value.category == "timeout"
@@ -270,7 +270,7 @@ async def test_client_times_out_when_stream_becomes_idle() -> None:
     idle_sdk = SimpleNamespace(chat=SimpleNamespace(completions=IdleCompletions()))
     client = OpenAICompatibleClient(settings, idle_sdk)  # type: ignore[arg-type]
 
-    with pytest.raises(ModelClientError, match="模型请求超时") as error_info:
+    with pytest.raises(ModelClientError, match="model request timed out") as error_info:
         await _collect(client)
 
     assert error_info.value.category == "timeout"
@@ -297,7 +297,7 @@ async def test_client_classifies_context_overflow_by_structured_code(
 
     class FailingCompletions:
         async def create(self, **kwargs: object) -> AsyncIterator[object]:
-            raise BadRequestError("上下文超过限制", **attributes)
+            raise BadRequestError("context limit exceeded", **attributes)
 
     failing_sdk = SimpleNamespace(
         chat=SimpleNamespace(completions=FailingCompletions())
@@ -474,7 +474,7 @@ async def test_client_rejects_invalid_tool_arguments() -> None:
     )
     client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
 
-    with pytest.raises(ModelClientError, match="工具参数不是有效 JSON"):
+    with pytest.raises(ModelClientError, match="not valid JSON"):
         await _collect_events(client)
 
 

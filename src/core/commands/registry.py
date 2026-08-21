@@ -50,7 +50,7 @@ class CommandRegistry:
         """注册一个命令，重复名称直接拒绝。"""
 
         if command.name in self._commands:
-            raise CommandRegistrationError(f"命令已注册：{command.name}")
+            raise CommandRegistrationError(f"Command already registered: {command.name}")
         self._commands[command.name] = command
 
     def get(self, name: str) -> SlashCommand | None:

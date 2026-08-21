@@ -20,9 +20,9 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
     async def read_file(tool_call: ToolCall) -> ToolResult:
         path = resolve_workspace_path(workspace, string_argument(tool_call, "path"))
         if not path.is_file():
-            raise ValueError("目标不是文件")
+            raise ValueError("target is not a file")
         if path.stat().st_size > MAX_FILE_READ_BYTES:
-            raise ValueError("文件超过读取上限（1 MB）")
+            raise ValueError("file exceeds the 1 MB read limit")
         return ToolResult(
             call_id=tool_call.call_id,
             content=limit_tool_output(path.read_text(encoding="utf-8")),
@@ -31,7 +31,7 @@ def create_read_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
     return (
         ToolDefinition(
             name="read_file",
-            description="读取工作区内文件的完整文本内容",
+            description="Read the full text content of a file in the workspace",
             parameters={
                 "type": "object",
                 "properties": {"path": {"type": "string"}},
@@ -52,7 +52,7 @@ def create_list_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
     async def list_files(tool_call: ToolCall) -> ToolResult:
         path = resolve_workspace_path(workspace, optional_path(tool_call))
         if not path.is_dir():
-            raise ValueError("目标不是目录")
+            raise ValueError("target is not a directory")
 
         entries = sorted(path.iterdir(), key=lambda item: item.name)
         content = "\n".join(
@@ -60,13 +60,13 @@ def create_list_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler
         )
         return ToolResult(
             call_id=tool_call.call_id,
-            content=limit_tool_output(content) if content else "目录为空",
+            content=limit_tool_output(content) if content else "directory is empty",
         )
 
     return (
         ToolDefinition(
             name="list_files",
-            description="列出工作区内目录的直接内容",
+            description="List the direct contents of a directory in the workspace",
             parameters={
                 "type": "object",
                 "properties": {
@@ -89,7 +89,7 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
         pattern = string_argument(tool_call, "pattern")
         root = resolve_workspace_path(workspace, optional_path(tool_call))
         if not root.is_dir():
-            raise ValueError("搜索范围不是目录")
+            raise ValueError("search scope is not a directory")
 
         matches: list[str] = []
         for directory, directories, filenames in os.walk(root):
@@ -117,13 +117,13 @@ def create_search_files_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandl
 
         return ToolResult(
             call_id=tool_call.call_id,
-            content=limit_tool_output("\n".join(matches)) if matches else "没有找到匹配内容",
+            content=limit_tool_output("\n".join(matches)) if matches else "no matching content found",
         )
 
     return (
         ToolDefinition(
             name="search_files",
-            description="在工作区文件中按文本内容搜索",
+            description="Search workspace files by text content",
             parameters={
                 "type": "object",
                 "properties": {

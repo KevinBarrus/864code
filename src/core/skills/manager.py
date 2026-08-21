@@ -84,7 +84,7 @@ class SkillManager:
             messages.append(
                 Message(
                     role="system",
-                    content=f"当前激活的 skill：{name}（来源：{source}）\n\n{skill.body}",
+                    content=f"Active skill: {name} (source: {source})\n\n{skill.body}",
                 )
             )
         return messages

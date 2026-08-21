@@ -11,7 +11,7 @@ from .registry import CommandContext, SlashCommand
 
 NEW_CONFIG_OPTION = "new config"
 MANUAL_INPUT_OPTION = "manual input"
-_CHOICE_HINTS = "↑/↓ 移动，Enter 确认，Esc 取消"
+_CHOICE_HINTS = "↑/↓ move, Enter confirm, Esc cancel"
 
 
 async def model_command(context: CommandContext) -> None:
@@ -20,17 +20,17 @@ async def model_command(context: CommandContext) -> None:
     current = context.client_holder.settings
     context.screen.add_entry(
         "tool",
-        f"当前配置：{current.model_name} @ {current.base_url}",
+        f"Current config: {current.model_name} @ {current.base_url}",
     )
     models = await asyncio.to_thread(list_models, current.base_url, current.api_key)
     extra_options = [NEW_CONFIG_OPTION]
     if not models:
         models = []
         extra_options.append(MANUAL_INPUT_OPTION)
-        context.screen.add_entry("tool", "无法拉取模型列表，可手动输入模型名")
+        context.screen.add_entry("tool", "Could not fetch model list, enter manually")
     choice = await context.screen.request_choice_picker(
         models,
-        f"选择模型（{_CHOICE_HINTS}）",
+        f"Select model ({_CHOICE_HINTS})",
         extra_options=extra_options,
     )
     if choice is None:
@@ -39,7 +39,7 @@ async def model_command(context: CommandContext) -> None:
         await _create_new_config(context)
         return
     if choice == MANUAL_INPUT_OPTION:
-        model_name = await context.screen.request_text_input("手动输入模型名")
+        model_name = await context.screen.request_text_input("Enter model name")
         if model_name is None:
             return
         _apply_model_switch(context, replace(current, model_name=model_name))
@@ -57,7 +57,7 @@ async def _create_new_config(context: CommandContext) -> None:
     if base_url is None:
         return
     api_key = await context.screen.request_text_input(
-        "API key（输入后按 Enter 确认）",
+        "API key (Enter to confirm)",
         is_password=True,
     )
     if api_key is None:
@@ -66,11 +66,11 @@ async def _create_new_config(context: CommandContext) -> None:
     if models:
         model_name = await context.screen.request_choice_picker(
             models,
-            f"选择默认模型（{_CHOICE_HINTS}）",
+            f"Select default model ({_CHOICE_HINTS})",
         )
     else:
-        context.screen.add_entry("tool", "无法拉取模型列表，请手动输入模型名")
-        model_name = await context.screen.request_text_input("模型名")
+        context.screen.add_entry("tool", "Could not fetch model list, enter model name")
+        model_name = await context.screen.request_text_input("Model name")
     if model_name is None:
         return
     settings = replace(
@@ -92,7 +92,7 @@ async def _pick_vendor(context: CommandContext) -> str | None:
 
     choice = await context.screen.request_choice_picker(
         [vendor.name for vendor in VENDORS],
-        f"选择模型服务厂商（{_CHOICE_HINTS}）",
+        f"Select provider ({_CHOICE_HINTS})",
     )
     if choice is None:
         return None
@@ -100,7 +100,7 @@ async def _pick_vendor(context: CommandContext) -> str | None:
     if vendor.base_url:
         return vendor.base_url
     return await context.screen.request_text_input(
-        "手动输入服务地址（如 https://api.example.com/v1）"
+        "Enter base URL (e.g. https://api.example.com/v1)"
     )
 
 
@@ -121,6 +121,6 @@ def _apply_model_switch(context: CommandContext, settings: Settings) -> None:
 
 model_command_slash = SlashCommand(
     name="model",
-    description="查看并切换可用模型，或新建配置",
+    description="View and switch models, or create a config",
     handler=model_command,
 )

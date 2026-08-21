@@ -8,7 +8,7 @@ def string_argument(tool_call: ToolCall, name: str) -> str:
 
     value = tool_call.arguments.get(name)
     if not isinstance(value, str) or not value:
-        raise ValueError(f"{name} 参数必须是非空字符串")
+        raise ValueError(f"{name} must be a non-empty string")
     return value
 
 
@@ -17,7 +17,7 @@ def text_argument(tool_call: ToolCall, name: str) -> str:
 
     value = tool_call.arguments.get(name)
     if not isinstance(value, str):
-        raise ValueError(f"{name} 参数必须是字符串")
+        raise ValueError(f"{name} must be a string")
     return value
 
 
@@ -26,5 +26,5 @@ def optional_path(tool_call: ToolCall) -> str:
 
     value = tool_call.arguments.get("path", ".")
     if not isinstance(value, str) or not value:
-        raise ValueError("path 参数必须是非空字符串")
+        raise ValueError("path must be a non-empty string")
     return value

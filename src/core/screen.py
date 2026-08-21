@@ -742,13 +742,13 @@ class ChatScreen:
             else self._status.model_name
         )
         fragments = [
-            ("class:status-model", f"模型：{model_name}"),
+            ("class:status-model", f"Model: {model_name}"),
             ("", "    "),
-            ("class:status-balance", f"余额：{self._status.balance}"),
+            ("class:status-balance", f"Balance: {self._status.balance}"),
             ("", "    "),
             (
                 "class:status-working-directory",
-                f"工作目录：{self._status.working_directory}",
+                f"Working directory: {self._status.working_directory}",
             ),
         ]
         if self._status_message:

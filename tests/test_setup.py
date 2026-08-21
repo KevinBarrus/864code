@@ -52,8 +52,8 @@ def test_vendors_include_manual_config() -> None:
 
     names = [vendor.name for vendor in VENDORS]
 
-    assert "手动配置" in names
-    assert next(vendor for vendor in VENDORS if vendor.name == "手动配置").base_url == ""
+    assert "Manual" in names
+    assert next(vendor for vendor in VENDORS if vendor.name == "Manual").base_url == ""
 
 
 def test_list_models_returns_model_ids(monkeypatch: pytest.MonkeyPatch) -> None:

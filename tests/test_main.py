@@ -61,7 +61,7 @@ def test_main_handles_unexpected_error_without_traceback(
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "运行错误：发生未预期错误，请重试或查看调试日志" in captured.err
+    assert "Runtime error: unexpected failure, retry or check debug logs" in captured.err
     assert "Traceback" not in captured.err
     assert caplog.records[0].exc_info is not None
 

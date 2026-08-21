@@ -197,7 +197,7 @@ async def test_cancelled_response_is_kept_in_memory(tmp_path: Path) -> None:
                         status="cancelled",
                     )
                 )
-            screen.append_to_entry(response_index, "（已取消）")
+            screen.append_to_entry(response_index, "(cancelled)")
             raise
 
     screen._on_submit = handle_submit
@@ -257,7 +257,7 @@ async def test_model_error_is_saved_with_error_status(tmp_path: Path) -> None:
                     error_category=exc.category,
                 )
             )
-            screen.append_to_entry(response_index, f"错误：{exc}")
+            screen.append_to_entry(response_index, f"Error: {exc}")
 
     screen._on_submit = handle_submit
     await screen._submit("测试错误")

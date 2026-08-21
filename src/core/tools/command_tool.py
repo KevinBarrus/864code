@@ -20,7 +20,7 @@ def create_run_command_tool(
     """创建以工作区为当前目录的命令执行工具。"""
 
     if timeout_seconds <= 0:
-        raise ValueError("命令超时时间必须大于 0")
+        raise ValueError("command timeout must be > 0")
 
     async def run_command(tool_call: ToolCall) -> ToolResult:
         command = string_argument(tool_call, "command")
@@ -40,7 +40,7 @@ def create_run_command_tool(
             await _stop_process_group(process)
             return ToolResult(
                 call_id=tool_call.call_id,
-                content=f"命令执行超时（{timeout_seconds:g} 秒）",
+                content=f"command timed out after {timeout_seconds:g}s",
                 is_error=True,
                 error_category="tool_execution",
             )
@@ -50,7 +50,7 @@ def create_run_command_tool(
 
         output = _format_output(stdout, stderr)
         if process.returncode:
-            output = f"退出码：{process.returncode}\n{output}"
+            output = f"exit code: {process.returncode}\n{output}"
         output = limit_tool_output(output)
         return ToolResult(
             call_id=tool_call.call_id,
@@ -61,7 +61,7 @@ def create_run_command_tool(
     return (
         ToolDefinition(
             name="run_command",
-            description="在当前工作区中执行 shell 命令",
+            description="Execute a shell command in the current workspace",
             parameters={
                 "type": "object",
                 "properties": {"command": {"type": "string"}},
@@ -82,8 +82,8 @@ def _format_output(stdout: bytes, stderr: bytes) -> str:
     if stdout:
         parts.append(stdout.decode(errors="replace").rstrip())
     if stderr:
-        parts.append(f"错误输出：\n{stderr.decode(errors='replace').rstrip()}")
-    return "\n".join(parts) or "命令执行成功"
+        parts.append(f"stderr:\n{stderr.decode(errors='replace').rstrip()}")
+    return "\n".join(parts) or "command executed successfully"
 
 
 async def _stop_process_group(process: asyncio.subprocess.Process) -> None:

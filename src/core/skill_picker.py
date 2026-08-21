@@ -79,7 +79,7 @@ class SkillPicker:
         """渲染带来源后缀的勾选列表。"""
 
         fragments: list[tuple[str, str]] = [
-            ("", "↑/↓ 移动，Space 勾选，Enter 确认，Esc 取消\n\n")
+            ("", "↑/↓ move, Space toggle, Enter confirm, Esc cancel\n\n")
         ]
         for index, (name, description, source) in enumerate(self._items):
             key = (name, source)

@@ -19,24 +19,24 @@ def validate_tool_arguments(
     schema = definition.parameters
     arguments = tool_call.arguments
     if not isinstance(arguments, dict):
-        raise ToolArgumentError("工具参数必须是 JSON 对象")
+        raise ToolArgumentError("tool arguments must be a JSON object")
 
     required = schema.get("required", [])
     if not isinstance(required, list):
-        raise ToolArgumentError("工具定义的 required 必须是数组")
+        raise ToolArgumentError("tool required fields must be an array")
     for name in required:
         if not isinstance(name, str) or name not in arguments:
-            raise ToolArgumentError(f"缺少工具参数：{name}")
+            raise ToolArgumentError(f"missing tool argument: {name}")
 
     properties = schema.get("properties", {})
     if not isinstance(properties, Mapping):
-        raise ToolArgumentError("工具定义的 properties 必须是对象")
+        raise ToolArgumentError("tool properties must be an object")
     for name, value in arguments.items():
         property_schema = properties.get(name)
         if property_schema is None:
             continue
         if not isinstance(property_schema, Mapping):
-            raise ToolArgumentError(f"参数定义无效：{name}")
+            raise ToolArgumentError(f"invalid argument definition: {name}")
         _validate_value(name, value, property_schema.get("type"))
 
 
@@ -44,18 +44,18 @@ def _validate_value(name: str, value: object, value_type: object) -> None:
     """校验单个参数的基础 JSON 类型。"""
 
     if value_type == "string" and not isinstance(value, str):
-        raise ToolArgumentError(f"参数 {name} 必须是字符串")
+        raise ToolArgumentError(f"argument {name} must be a string")
     if value_type == "object" and not isinstance(value, dict):
-        raise ToolArgumentError(f"参数 {name} 必须是对象")
+        raise ToolArgumentError(f"argument {name} must be an object")
     if value_type == "array" and not isinstance(value, list):
-        raise ToolArgumentError(f"参数 {name} 必须是数组")
+        raise ToolArgumentError(f"argument {name} must be an array")
     if value_type == "boolean" and not isinstance(value, bool):
-        raise ToolArgumentError(f"参数 {name} 必须是布尔值")
+        raise ToolArgumentError(f"argument {name} must be a boolean")
     if value_type == "integer" and (
         not isinstance(value, int) or isinstance(value, bool)
     ):
-        raise ToolArgumentError(f"参数 {name} 必须是整数")
+        raise ToolArgumentError(f"argument {name} must be an integer")
     if value_type == "number" and (
         not isinstance(value, int | float) or isinstance(value, bool)
     ):
-        raise ToolArgumentError(f"参数 {name} 必须是数字")
+        raise ToolArgumentError(f"argument {name} must be a number")

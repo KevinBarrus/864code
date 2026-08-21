@@ -70,7 +70,7 @@ async def test_read_file_rejects_file_larger_than_read_limit(tmp_path: Path) -> 
     result = await manager.execute(_call("read_file", {"path": "too-large.txt"}))
 
     assert result.is_error is True
-    assert "读取上限" in result.content
+    assert "1 MB read limit" in result.content
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ async def test_file_tools_reject_workspace_escape(tmp_path: Path) -> None:
     result = await manager.execute(_call("read_file", {"path": "../secret.txt"}))
 
     assert result.is_error is True
-    assert "工作区内" in result.content
+    assert "inside the current workspace" in result.content
 
 
 def test_workspace_path_resolver_rejects_absolute_escape(tmp_path: Path) -> None:

@@ -9,7 +9,7 @@ async def stop_skill(context: CommandContext) -> None:
 
     active = context.skill_manager.active_keys()
     if not active:
-        context.screen.add_entry("tool", "当前没有激活的 skill")
+        context.screen.add_entry("tool", "No active skills")
         return
     active_skills = [
         (skill.name, skill.description, skill.source)
@@ -23,12 +23,12 @@ async def stop_skill(context: CommandContext) -> None:
     _apply_active_skills(context, selected)
     if removed:
         context.screen.set_status_message(
-            f"已停止 skill：{', '.join(name for name, _ in removed)}"
+            f"Stopped skills: {', '.join(name for name, _ in removed)}"
         )
 
 
 stop_skill_command = SlashCommand(
     name="stop-skill",
-    description="取消已激活的 skill",
+    description="Deactivate active skills",
     handler=stop_skill,
 )

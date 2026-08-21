@@ -143,21 +143,21 @@ def _to_model_error(error: BaseException) -> ModelClientError:
     }:
         is_timeout = isinstance(error, (TimeoutError, asyncio.TimeoutError)) or error_name == "APITimeoutError"
         category: ErrorCategory = "timeout" if is_timeout else "network"
-        message = "模型请求超时" if category == "timeout" else "模型网络请求失败"
+        message = "model request timed out" if category == "timeout" else "model network request failed"
         return ModelClientError(message, category=category, retryable=True, cause=error)
     if error_name == "RateLimitError":
-        return ModelClientError("模型请求过于频繁", category="rate_limit", retryable=True, cause=error)
+        return ModelClientError("model request rate limited", category="rate_limit", retryable=True, cause=error)
     if error_name in {"AuthenticationError", "PermissionDeniedError"}:
-        return ModelClientError("模型认证失败，请检查密钥配置", category="authentication", cause=error)
+        return ModelClientError("model authentication failed, check the API key", category="authentication", cause=error)
     if error_name in {"BadRequestError", "UnprocessableEntityError"}:
         if _is_context_overflow_error(error):
             return ModelClientError(
-                "模型上下文超出限制，正在压缩后重试",
+                "model context limit exceeded, retrying after compaction",
                 category="context_overflow",
                 cause=error,
             )
-        return ModelClientError("模型请求参数无效", category="invalid_request", cause=error)
-    return ModelClientError("模型请求失败，请检查配置和网络连接", category="internal", cause=error)
+        return ModelClientError("model request parameters invalid", category="invalid_request", cause=error)
+    return ModelClientError("model request failed, check config and network", category="internal", cause=error)
 
 
 def _is_context_overflow_error(error: BaseException) -> bool:
@@ -242,13 +242,13 @@ def _build_tool_call(buffer: _ToolCallBuffer, index: int) -> ToolCall:
     """将工具调用缓冲区转换为已校验的内部对象。"""
 
     if not buffer.call_id or not buffer.name:
-        raise ModelClientError(f"模型返回了不完整的工具调用：{index}")
+        raise ModelClientError(f"model returned an incomplete tool call: {index}")
     try:
         arguments = json.loads(buffer.arguments or "{}")
     except json.JSONDecodeError as exc:
-        raise ModelClientError("模型返回的工具参数不是有效 JSON") from exc
+        raise ModelClientError("model returned tool arguments that are not valid JSON") from exc
     if not isinstance(arguments, dict):
-        raise ModelClientError("模型返回的工具参数必须是 JSON 对象")
+        raise ModelClientError("model tool arguments must be a JSON object")
     return ToolCall(
         call_id=buffer.call_id,
         name=buffer.name,

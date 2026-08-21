@@ -87,7 +87,7 @@ async def run_chat(
             )
             if await command_registry.dispatch(prompt, command_context):
                 return
-            screen.add_entry("tool", f"未知命令：{prompt}")
+            screen.add_entry("tool", f"Unknown command: {prompt}")
             return
 
         # 先更新界面，让用户立即看到本轮输入和待生成的回复区域
@@ -170,7 +170,7 @@ async def run_chat(
                         status="cancelled",
                     )
                 )
-            screen.append_to_entry(response_index, "（已取消）")
+            screen.append_to_entry(response_index, "(cancelled)")
             raise
         except (AgentError, AgentLoopError) as exc:
             # 模型请求失败时保留部分回复和结构化错误状态
@@ -185,7 +185,7 @@ async def run_chat(
                     ),
                 )
             )
-            screen.append_to_entry(response_index, f"错误：{exc}")
+            screen.append_to_entry(response_index, f"Error: {exc}")
         else:
             # 流式响应完成后，按 AgentLoop 返回顺序保存本轮新增消息
             _persist_new_messages(session, result.new_messages)

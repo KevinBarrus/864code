@@ -55,9 +55,9 @@ class Settings:
             ("stream_idle_timeout_seconds", stream_idle_timeout),
         ):
             if value <= 0:
-                raise ConfigError(f"{name} 必须大于 0")
+                raise ConfigError(f"{name} must be > 0")
         if self.max_tool_rounds <= 0:
-            raise ConfigError("max_tool_rounds 必须大于 0")
+            raise ConfigError("max_tool_rounds must be > 0")
         object.__setattr__(self, "first_byte_timeout_seconds", first_byte_timeout)
         object.__setattr__(self, "stream_idle_timeout_seconds", stream_idle_timeout)
 
@@ -75,8 +75,8 @@ def load_settings(
     user_path = (user_config_path or default_user_config_path()).resolve()
     if not user_path.is_file():
         raise ConfigError(
-            f"找不到用户配置文件: {user_path}\n"
-            "请先运行 epsilon 完成首次配置，或手动创建该文件"
+            f"User config not found: {user_path}\n"
+            "Run epsilon to set up, or create the file manually"
         )
     merged_data = _read_config_json(user_path)
     project_path = _project_config_path(project_dir)
@@ -104,13 +104,13 @@ def _read_config_json(path: Path) -> dict:
     try:
         content = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ConfigError(f"读取配置文件失败: {path}") from exc
+        raise ConfigError(f"Failed to read config file: {path}") from exc
     try:
         data = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"配置文件不是合法的 JSON: {path}") from exc
+        raise ConfigError(f"Config file is not valid JSON: {path}") from exc
     if not isinstance(data, dict):
-        raise ConfigError(f"配置文件必须是 JSON 对象: {path}")
+        raise ConfigError(f"Config file must be a JSON object: {path}")
     return data
 
 
@@ -137,7 +137,7 @@ def _settings_from_data(data: dict) -> Settings:
 
     model = data.get("model")
     if not isinstance(model, dict):
-        raise ConfigError("配置中的 model 必须是对象")
+        raise ConfigError("model must be an object")
     base_url = _required_value(model.get("base_url"), "model.base_url")
     model_name = _required_value(model.get("model_name"), "model.model_name")
     api_key = _required_value(model.get("api_key"), "model.api_key")
@@ -182,11 +182,11 @@ def _settings_from_data(data: dict) -> Settings:
         "model.max_tool_rounds",
     )
     if context_window <= 0:
-        raise ConfigError("model.context_window 必须大于 0")
+        raise ConfigError("model.context_window must be > 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
-        raise ConfigError("model.reserve_tokens 必须小于 model.context_window")
+        raise ConfigError("model.reserve_tokens must be < model.context_window")
     if keep_recent_tokens <= 0:
-        raise ConfigError("model.keep_recent_tokens 必须大于 0")
+        raise ConfigError("model.keep_recent_tokens must be > 0")
     _validate_base_url(base_url)
 
     return Settings(
@@ -209,7 +209,7 @@ def _required_value(value: object, name: str) -> str:
     """读取必填配置项，避免把空配置传给模型客户端。"""
 
     if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"缺少必填配置项: {name}")
+        raise ConfigError(f"Missing required setting: {name}")
     return value.strip()
 
 
@@ -221,7 +221,7 @@ def _optional_int(value: object, default: int, name: str) -> int:
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{name} 必须是整数") from exc
+        raise ConfigError(f"{name} must be an integer") from exc
 
 
 def _optional_float(
@@ -236,7 +236,7 @@ def _optional_float(
     try:
         return float(value)
     except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{name} 必须是数字") from exc
+        raise ConfigError(f"{name} must be a number") from exc
 
 
 def _optional_bool(value: object, default: bool, name: str) -> bool:
@@ -252,7 +252,7 @@ def _optional_bool(value: object, default: bool, name: str) -> bool:
             return True
         if normalized in {"false", "0", "no", "off"}:
             return False
-    raise ConfigError(f"{name} 必须是布尔值")
+    raise ConfigError(f"{name} must be a boolean")
 
 
 def _optional_mcp_stdio_settings(data: dict) -> McpStdioSettings | None:
@@ -262,7 +262,7 @@ def _optional_mcp_stdio_settings(data: dict) -> McpStdioSettings | None:
     if mcp is None:
         return None
     if not isinstance(mcp, dict):
-        raise ConfigError("配置中的 mcp_stdio 必须是对象")
+        raise ConfigError("mcp_stdio must be an object")
     command = mcp.get("command")
     arguments = mcp.get("arguments")
     provider_id = mcp.get("provider_id")
@@ -271,7 +271,7 @@ def _optional_mcp_stdio_settings(data: dict) -> McpStdioSettings | None:
     if not isinstance(arguments, list) or not all(
         isinstance(argument, str) for argument in arguments
     ):
-        raise ConfigError("mcp_stdio.arguments 必须是字符串数组")
+        raise ConfigError("mcp_stdio.arguments must be an array of strings")
     return McpStdioSettings(
         command=_required_value(command, "mcp_stdio.command"),
         arguments=tuple(arguments),
@@ -284,4 +284,4 @@ def _validate_base_url(base_url: str) -> None:
 
     parsed_url = urlparse(base_url)
     if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-        raise ConfigError("model.base_url 必须是有效的 http 或 https 地址")
+        raise ConfigError("model.base_url must be a valid http or https URL")

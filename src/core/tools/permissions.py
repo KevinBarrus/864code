@@ -58,7 +58,7 @@ class PermissionManager:
             return ApprovalResult(ApprovalDecision.ALLOW_SESSION)
 
         if self._approval_handler is None:
-            raise PermissionDenied("该工具需要用户确认")
+            raise PermissionDenied("this tool requires user approval")
 
         allow_session = definition.permission != "command"
         result = await self._approval_handler(definition, tool_call, allow_session)

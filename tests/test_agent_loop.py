@@ -140,7 +140,7 @@ async def test_agent_loop_returns_unknown_tool_result_to_model() -> None:
     )
 
     assert result.final_content == "工具不存在"
-    assert "工具不存在：missing" in client.requests[1][-1].content
+    assert "tool not found: missing" in client.requests[1][-1].content
 
 
 @pytest.mark.asyncio

@@ -219,7 +219,7 @@ async def test_model_command_new_config_manual_model_when_list_fails(
     """测试新建配置时拉取模型失败会手动输入模型名。"""
 
     context, loop, screen = _make_context(tmp_path)
-    screen.choice_results = [NEW_CONFIG_OPTION, "手动配置"]
+    screen.choice_results = [NEW_CONFIG_OPTION, "Manual"]
     screen.text_results = ["https://custom.example.com/v1", "new-api-key", "custom-model"]
 
     monkeypatch.setattr(

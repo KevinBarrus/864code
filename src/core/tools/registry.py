@@ -45,9 +45,9 @@ class LocalToolRegistry:
         """注册一个本地工具，重复名称直接拒绝。"""
 
         if definition.source != "local":
-            raise ToolRegistrationError("本地注册表只能注册 local 工具")
+            raise ToolRegistrationError("local registry only accepts local tools")
         if definition.name in self._tools:
-            raise ToolRegistrationError(f"工具已注册：{definition.name}")
+            raise ToolRegistrationError(f"tool already registered: {definition.name}")
         self._tools[definition.name] = RegisteredTool(definition, handler)
 
     def get(self, name: str) -> RegisteredTool | None:
@@ -76,16 +76,16 @@ class ToolRegistry:
         definition = binding.definition
         name = definition.name
         if binding.definition.source not in {"local", "mcp"}:
-            raise ToolRegistrationError("工具来源不受支持")
+            raise ToolRegistrationError("unsupported tool source")
         route_key = (
             definition.source,
             definition.provider_id,
             definition.provider_tool_name or definition.name,
         )
         if route_key in self._tools_by_route:
-            raise ToolRegistrationError(f"工具路由已注册：{route_key[2]}")
+            raise ToolRegistrationError(f"tool route already registered: {route_key[2]}")
         if name in self._tools_by_name:
-            raise ToolRegistrationError(f"工具已注册：{name}")
+            raise ToolRegistrationError(f"tool already registered: {name}")
         self._tools_by_name[name] = binding
         self._tools_by_route[route_key] = binding
 
