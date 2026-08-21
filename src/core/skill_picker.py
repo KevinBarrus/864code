@@ -7,21 +7,24 @@ from prompt_toolkit.layout import Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 
+# 来源值到选择器后缀的显示映射
+_SOURCE_LABELS = {"project": "projects", "global": "global"}
+
 
 class SkillPicker:
     """管理 skill 列表、勾选状态和异步结果。"""
 
     def __init__(
         self,
-        items: list[tuple[str, str]],
-        checked: set[str],
+        items: list[tuple[str, str, str]],
+        checked: set[tuple[str, str]],
     ) -> None:
-        """创建 skill 选择面板，items 为 (name, description) 列表。"""
+        """创建 skill 选择面板，items 为 (name, description, source) 列表。"""
 
         self._items = list(items)
         self._checked = set(checked)
         self._cursor = 0
-        self._result: asyncio.Future[set[str] | None] = (
+        self._result: asyncio.Future[set[tuple[str, str]] | None] = (
             asyncio.get_running_loop().create_future()
         )
         self.window = Window(
@@ -44,11 +47,12 @@ class SkillPicker:
 
         if not self._items:
             return
-        name = self._items[self._cursor][0]
-        if name in self._checked:
-            self._checked.discard(name)
+        name, _description, source = self._items[self._cursor]
+        key = (name, source)
+        if key in self._checked:
+            self._checked.discard(key)
         else:
-            self._checked.add(name)
+            self._checked.add(key)
 
     def confirm(self) -> None:
         """确认当前勾选集合。"""
@@ -60,28 +64,30 @@ class SkillPicker:
 
         self._resolve(None)
 
-    async def wait(self) -> set[str] | None:
+    async def wait(self) -> set[tuple[str, str]] | None:
         """等待用户完成选择。"""
 
         return await self._result
 
-    def _resolve(self, result: set[str] | None) -> None:
+    def _resolve(self, result: set[tuple[str, str]] | None) -> None:
         """只允许选择结果被设置一次。"""
 
         if not self._result.done():
             self._result.set_result(result)
 
     def _render(self) -> AnyFormattedText:
-        """渲染勾选列表。"""
+        """渲染带来源后缀的勾选列表。"""
 
         fragments: list[tuple[str, str]] = [
             ("", "↑/↓ 移动，Space 勾选，Enter 确认，Esc 取消\n\n")
         ]
-        for index, (name, description) in enumerate(self._items):
-            marker = "√" if name in self._checked else " "
+        for index, (name, description, source) in enumerate(self._items):
+            key = (name, source)
+            marker = "√" if key in self._checked else " "
             prefix = "> " if index == self._cursor else "  "
             style = "class:approval-selected" if index == self._cursor else ""
-            fragments.append((style, f"{prefix}[{marker}] {name}"))
+            source_label = _SOURCE_LABELS.get(source, source)
+            fragments.append((style, f"{prefix}[{marker}] {name} [{source_label}]"))
             if description:
                 fragments.append(("", f"  {description}"))
             fragments.append(("", "\n"))

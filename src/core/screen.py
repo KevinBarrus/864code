@@ -276,9 +276,9 @@ class ChatScreen:
 
     async def request_skill_picker(
         self,
-        items: list[tuple[str, str]],
-        checked: set[str],
-    ) -> set[str] | None:
+        items: list[tuple[str, str, str]],
+        checked: set[tuple[str, str]],
+    ) -> set[tuple[str, str]] | None:
         """在输入区域显示 skill 勾选列表并等待用户选择。"""
 
         picker = SkillPicker(items, checked)

@@ -85,18 +85,18 @@ async def test_skill_picker_replaces_input_and_restores_layout(tmp_path: Path) -
     with create_app_session(output=DummyOutput()):
         screen = _create_screen(tmp_path)
         task = asyncio.create_task(
-            screen.request_skill_picker([("a", "A 描述")], checked=set())
+            screen.request_skill_picker([("a", "A 描述", "project")], checked=set())
         )
         await asyncio.sleep(0)
 
         assert screen._skill_picker is not None
         assert screen._input_container.children == [screen._skill_picker.window]
 
-        screen._skill_picker.toggle()   # 勾选 a
+        screen._skill_picker.toggle()   # 勾选 ("a", "project")
         screen._skill_picker.confirm()
         result = await task
 
-        assert result == {"a"}
+        assert result == {("a", "project")}
         assert screen._skill_picker is None
         assert screen._input_window in screen._input_container.children
 

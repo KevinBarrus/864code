@@ -11,15 +11,15 @@ async def start_skill(context: CommandContext) -> None:
         context.screen.add_entry("tool", "没有可用的 skill")
         return
     selected = await context.screen.request_skill_picker(
-        [(skill.name, skill.description) for skill in skills],
-        context.skill_manager.active_names(),
+        [(skill.name, skill.description, skill.source) for skill in skills],
+        context.skill_manager.active_keys(),
     )
     if selected is None:
         return
     _apply_active_skills(context, selected)
     if selected:
         context.screen.set_status_message(
-            f"已激活 skill：{', '.join(sorted(selected))}"
+            f"已激活 skill：{', '.join(sorted(name for name, _ in selected))}"
         )
 
 

@@ -62,7 +62,7 @@ async def test_run_chat_start_skill_injects_active_skill(
             raise AssertionError("不应请求工具审批")
 
         async def request_skill_picker(self, items, checked):
-            return {"git-commit"}
+            return {("git-commit", "project")}
 
         async def run_async(self) -> None:
             await self._on_submit("/start-skill")
