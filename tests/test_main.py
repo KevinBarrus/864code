@@ -26,6 +26,22 @@ class FakePicker:
         return self.selected_id
 
 
+@pytest.fixture
+def isolated_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """隔离首次配置引导，避免依赖真实主目录配置。"""
+
+    monkeypatch.setattr(
+        main, "default_user_config_path", lambda: tmp_path / "settings.json"
+    )
+
+    async def fake_setup(target_path: Path) -> bool:
+        """模拟引导直接完成。"""
+
+        return True
+
+    monkeypatch.setattr(main, "run_setup_guide", fake_setup)
+
+
 def test_main_handles_unexpected_error_without_traceback(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -54,6 +70,7 @@ def test_main_handles_unexpected_error_without_traceback(
 async def test_run_resume_without_id_uses_picker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_setup: None,
 ) -> None:
     """测试不带 ID 的恢复流程会使用会话选择器"""
 
@@ -84,7 +101,7 @@ async def test_run_resume_without_id_uses_picker(
     monkeypatch.setattr(
         main,
         "load_settings",
-        lambda: Settings("https://example.com", "test", "key"),
+        lambda user_config_path=None: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr(main, "run_chat", fake_run_chat)
 
@@ -102,6 +119,7 @@ async def test_run_resume_without_id_uses_picker(
 async def test_run_resume_with_id_skips_picker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_setup: None,
 ) -> None:
     """测试带 ID 的恢复流程不会打开选择器"""
 
@@ -142,7 +160,7 @@ async def test_run_resume_with_id_skips_picker(
     monkeypatch.setattr(
         main,
         "load_settings",
-        lambda: Settings("https://example.com", "test", "key"),
+        lambda user_config_path=None: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr(main, "run_chat", fake_run_chat)
 
@@ -159,6 +177,7 @@ async def test_run_resume_with_id_skips_picker(
 async def test_run_creates_configured_stdio_mcp_provider(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_setup: None,
 ) -> None:
     """测试启动层会创建并传递已配置的 MCP Provider。"""
 
@@ -189,7 +208,7 @@ async def test_run_creates_configured_stdio_mcp_provider(
     monkeypatch.setattr(
         main,
         "load_settings",
-        lambda: Settings(
+        lambda user_config_path=None: Settings(
             "https://example.com",
             "test",
             "key",

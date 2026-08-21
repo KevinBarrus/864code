@@ -72,7 +72,7 @@ def load_settings(
     （<项目目录>/.epsilon/settings.json）按字段覆盖用户级配置。
     """
 
-    user_path = (user_config_path or _default_user_config_path()).resolve()
+    user_path = (user_config_path or default_user_config_path()).resolve()
     if not user_path.is_file():
         raise ConfigError(
             f"找不到用户配置文件: {user_path}\n"
@@ -85,7 +85,7 @@ def load_settings(
     return _settings_from_data(merged_data)
 
 
-def _default_user_config_path() -> Path:
+def default_user_config_path() -> Path:
     """返回用户级配置的默认位置。"""
 
     return Path.home() / ".epsilon" / "settings.json"

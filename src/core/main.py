@@ -7,13 +7,14 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from .config import ConfigError, load_settings
+from .config import ConfigError, default_user_config_path, load_settings
 from .context import ContextBudget
 from .balance import UnavailableBalanceProvider
 from .openai_client import OpenAICompatibleClient
 from .session_picker import SessionPicker
 from .session_store import SessionStore
 from .session_store import SessionStoreError
+from .setup import run_setup_guide
 from .status import create_status_info
 from .tools import StdioMcpProvider
 from .ui import run_chat
@@ -22,7 +23,11 @@ from .ui import run_chat
 logger = logging.getLogger(__name__)
 
 
-async def run(session_id: str | None = None, resume: bool = False) -> None:
+async def run(
+    session_id: str | None = None,
+    resume: bool = False,
+    config_path: Path | None = None,
+) -> None:
     """加载配置、创建模型客户端并启动终端界面"""
 
     workspace = Path.cwd().resolve()
@@ -33,7 +38,12 @@ async def run(session_id: str | None = None, resume: bool = False) -> None:
             print("没有选择会话，已退出")
             return
 
-    settings = load_settings()
+    if config_path is None and not default_user_config_path().is_file():
+        completed = await run_setup_guide(default_user_config_path())
+        if not completed:
+            print("没有完成首次配置，已退出")
+            return
+    settings = load_settings(user_config_path=config_path)
     client = OpenAICompatibleClient(settings)
     mcp_provider = (
         StdioMcpProvider(
@@ -65,6 +75,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """处理启动阶段的错误并返回进程退出码"""
 
     parser = argparse.ArgumentParser(description="启动 epsilon")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="指定配置文件路径，跳过首次配置引导",
+    )
     subparsers = parser.add_subparsers(dest="command")
     resume_parser = subparsers.add_parser("resume", help="恢复已有会话")
     resume_parser.add_argument("session_id", nargs="?", help="要恢复的会话 ID")
@@ -75,6 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             run(
                 getattr(args, "session_id", None),
                 resume=args.command == "resume",
+                config_path=args.config,
             )
         )
     except ConfigError as exc:
