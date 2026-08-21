@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.filters import has_focus
@@ -40,6 +41,30 @@ SubmitHandler = Callable[[str], Awaitable[None]]
 ConversationRole = Literal["user", "assistant", "tool"]
 
 
+class SlashCommandCompleter(Completer):
+    """输入 / 后按前缀匹配已注册的 slash command。"""
+
+    def __init__(self, commands: list[tuple[str, str]]) -> None:
+        """保存 (命令名, 描述) 列表。"""
+
+        self._commands = list(commands)
+
+    def get_completions(self, document, complete_event):
+        """仅当输入以 / 开头时按前缀生成补全。"""
+
+        text = document.text_before_cursor
+        if not text.startswith("/"):
+            return
+        prefix = text[1:]
+        for name, description in self._commands:
+            if name.startswith(prefix):
+                yield Completion(
+                    name,
+                    start_position=-len(prefix),
+                    display_meta=description,
+                )
+
+
 @dataclass(frozen=True)
 class ConversationEntry:
     """对话区中的一条展示内容。"""
@@ -67,6 +92,7 @@ class ChatScreen:
         on_submit: SubmitHandler | None = None,
         logo_provider: LogoProvider | None = None,
         input_layout: InputLayoutConfig | None = None,
+        command_names: list[tuple[str, str]] | None = None,
     ) -> None:
         """创建对话区、输入区和状态栏。"""
 
@@ -95,6 +121,8 @@ class ChatScreen:
             style="class:input-area",
             get_line_prefix=self._get_input_line_prefix,
             history=self._input_history,
+            completer=SlashCommandCompleter(command_names or []),
+            complete_while_typing=True,
         )
         self._conversation_content = HSplit(
             [],
@@ -302,11 +330,11 @@ class ChatScreen:
         self,
         items: list[str],
         title: str,
-        extra_option: str | None = None,
+        extra_options: list[str] | None = None,
     ) -> str | None:
         """在输入区域显示单选列表并等待用户选择。"""
 
-        picker = ChoicePicker(items, title, extra_option)
+        picker = ChoicePicker(items, title, extra_options)
         self._choice_picker = picker
         self._input_container.children = [picker.window]
         self._layout.focus(picker.window)

@@ -4,12 +4,13 @@ from pathlib import Path
 import pytest
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.cursor_shapes import CursorShape
+from prompt_toolkit.formatted_text import to_plain_text
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import VerticalAlign
 from prompt_toolkit.layout.screen import WritePosition
 from prompt_toolkit.output import DummyOutput
 
-from core.screen import ChatScreen, DraftState
+from core.screen import ChatScreen, DraftState, SlashCommandCompleter
 from core.status import create_status_info
 from core.model import ToolCall
 from core.tools import ApprovalDecision, ToolDefinition
@@ -484,3 +485,45 @@ async def test_cancel_request_restores_submitted_draft(tmp_path: Path) -> None:
 
     assert screen.input_area.text == "保留这段文字"
     assert screen.input_area.buffer.cursor_position == 2
+
+
+class _FakeDocument:
+    """提供补全所需的最小文本接口。"""
+
+    def __init__(self, text: str) -> None:
+        self.text_before_cursor = text
+
+
+def test_slash_command_completer_matches_prefix() -> None:
+    """测试 / 前缀输入会按命令名前缀匹配补全。"""
+
+    completer = SlashCommandCompleter(
+        [
+            ("start-skill", "选择并激活 skill"),
+            ("stop-skill", "取消已激活的 skill"),
+            ("model", "切换模型"),
+        ]
+    )
+
+    completions = list(completer.get_completions(_FakeDocument("/start"), None))
+
+    assert [completion.text for completion in completions] == ["start-skill"]
+    assert to_plain_text(completions[0].display_meta) == "选择并激活 skill"
+
+
+def test_slash_command_completer_empty_prefix_lists_all() -> None:
+    """测试仅输入 / 时列出全部命令。"""
+
+    completer = SlashCommandCompleter([("model", "切换模型"), ("start-skill", "激活")])
+
+    completions = list(completer.get_completions(_FakeDocument("/"), None))
+
+    assert [completion.text for completion in completions] == ["model", "start-skill"]
+
+
+def test_slash_command_completer_ignores_plain_text() -> None:
+    """测试不以 / 开头的输入不触发补全。"""
+
+    completer = SlashCommandCompleter([("model", "切换模型")])
+
+    assert list(completer.get_completions(_FakeDocument("hello"), None)) == []

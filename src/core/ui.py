@@ -198,7 +198,14 @@ async def run_chat(
                 )
             _update_persistence_status(screen, session)
 
-    screen = ChatScreen(status, on_submit=handle_submit)
+    screen = ChatScreen(
+        status,
+        on_submit=handle_submit,
+        command_names=[
+            (command.name, command.description)
+            for command in command_registry.list()
+        ],
+    )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),
     )
