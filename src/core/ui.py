@@ -14,11 +14,14 @@ from .commands import (
     CommandRegistry,
     start_skill_command,
     stop_skill_command,
+    model_command_slash,
 )
+from .config import Settings
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .prompts import load_prompt
 from .session import Session
 from .skills import SkillManager
+from .model import ClientHolder
 from .tools import (
     PermissionManager,
     ToolManager,
@@ -41,12 +44,14 @@ def _default_command_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.register(start_skill_command)
     registry.register(stop_skill_command)
+    registry.register(model_command_slash)
     return registry
 
 
 async def run_chat(
     client: ModelClient,
     status: StatusInfo,
+    settings: Settings,
     workspace: Path | None = None,
     session_id: str | None = None,
     context_budget: ContextBudget | None = None,
@@ -64,6 +69,7 @@ async def run_chat(
     )
     skill_manager = SkillManager(session_workspace)
     command_registry = _default_command_registry()
+    client_holder = ClientHolder(settings, client)
 
     async def handle_submit(prompt: str) -> None:
         """发送请求，并同步当前会话的消息历史"""
@@ -75,6 +81,9 @@ async def run_chat(
                 session,
                 skill_manager,
                 context_manager,
+                client_holder,
+                agent_loop,
+                session_workspace,
             )
             if await command_registry.dispatch(prompt, command_context):
                 return
@@ -98,7 +107,7 @@ async def run_chat(
 
             nonlocal fallback_used
             result = await context_manager.build_for_model_result(
-                client,
+                client_holder.client,
                 messages,
                 [*session.get_compactions(), *new_compactions],
                 force_compaction=force_compaction,

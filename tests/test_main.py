@@ -84,9 +84,10 @@ async def test_run_resume_without_id_uses_picker(
     async def fake_run_chat(
         client,
         status,
+        settings,
         workspace,
         restored_id,
-        context_budget,
+        context_budget=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:
@@ -145,9 +146,10 @@ async def test_run_resume_with_id_skips_picker(
     async def fake_run_chat(
         client,
         status,
+        settings,
         workspace,
         restored_id,
-        context_budget,
+        context_budget=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:
@@ -195,9 +197,10 @@ async def test_run_creates_configured_stdio_mcp_provider(
     async def fake_run_chat(
         client,
         status,
+        settings,
         workspace,
         restored_id,
-        context_budget,
+        context_budget=None,
         mcp_provider=None,
         max_tool_rounds=None,
     ) -> None:

@@ -8,6 +8,7 @@ from .registry import (
 )
 from .start_skill import start_skill_command
 from .stop_skill import stop_skill_command
+from .model import model_command_slash
 
 __all__ = [
     "CommandContext",
@@ -16,4 +17,5 @@ __all__ = [
     "SlashCommand",
     "start_skill_command",
     "stop_skill_command",
+    "model_command_slash",
 ]

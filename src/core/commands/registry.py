@@ -2,8 +2,11 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
+from ..agent_loop import AgentLoop
 from ..context import ContextManager
+from ..model import ClientHolder
 from ..screen import ChatScreen
 from ..session import Session
 from ..skills import SkillManager
@@ -21,6 +24,9 @@ class CommandContext:
     session: Session
     skill_manager: SkillManager
     context_manager: ContextManager
+    client_holder: ClientHolder
+    agent_loop: AgentLoop
+    project_dir: Path
 
 
 @dataclass(frozen=True)

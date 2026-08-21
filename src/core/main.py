@@ -59,9 +59,10 @@ async def run(
     await run_chat(
         client,
         status,
+        settings,
         workspace,
         session_id,
-        ContextBudget(
+        context_budget=ContextBudget(
             settings.context_window,
             settings.reserve_tokens,
             settings.keep_recent_tokens,

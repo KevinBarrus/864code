@@ -8,6 +8,7 @@ from core.model import Message, ToolResult
 from core.session import Session
 from core.status import create_status_info
 from core.tools import ApprovalDecision, ApprovalResult, ToolDefinition
+from core.config import McpStdioSettings, Settings
 
 
 class FakeApplication:
@@ -90,8 +91,9 @@ async def test_run_chat_renders_restored_history(
     await ui.run_chat(
         EmptyClient(),
         create_status_info("test", "暂不可查询", tmp_path),
-        tmp_path,
-        session.session_id,
+        settings=Settings("https://example.com", "test", "key"),
+        workspace=tmp_path,
+        session_id=session.session_id,
     )
 
     assert FakeScreen.last is not None
@@ -152,6 +154,7 @@ async def test_run_chat_registers_and_closes_mcp_provider(
         EmptyClient(),
         create_status_info("test", "暂不可查询", tmp_path),
         workspace=tmp_path,
+        settings=Settings("https://example.com", "test", "key"),
         mcp_provider=provider,  # type: ignore[arg-type]
     )
 

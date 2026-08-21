@@ -100,6 +100,11 @@ class ContextManager:
         )
         self._extra_system_messages: tuple[Message, ...] = ()
 
+    def update_budget(self, budget: ContextBudget) -> None:
+        """热切换模型时更新上下文预算，保留 skill 等额外系统消息。"""
+
+        self._budget = budget
+
     @property
     def _base_system_messages(self) -> tuple[Message, ...]:
         """返回基础提示词和额外系统消息的组合。"""

@@ -6,6 +6,7 @@ import pytest
 
 import core.ui as ui
 from core.status import create_status_info
+from core.config import McpStdioSettings, Settings
 
 
 class RecordingClient:
@@ -75,6 +76,7 @@ async def test_run_chat_start_skill_injects_active_skill(
         client,
         create_status_info("test-model", "暂不可查询", tmp_path),
         workspace=tmp_path,
+        settings=Settings("https://example.com", "test", "key"),
     )
 
     assert len(client.requests) == 1
@@ -139,6 +141,7 @@ async def test_run_chat_unknown_command_does_not_call_model(
         StrictClient(),
         create_status_info("test-model", "暂不可查询", tmp_path),
         workspace=tmp_path,
+        settings=Settings("https://example.com", "test", "key"),
     )
 
     assert any(

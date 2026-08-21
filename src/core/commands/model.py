@@ -1,0 +1,126 @@
+"""实现 /model 命令：查看并切换模型，支持新建配置。"""
+
+import asyncio
+from dataclasses import replace
+
+from ..config import Settings
+from ..context import ContextBudget
+from ..openai_client import OpenAICompatibleClient
+from ..setup import VENDORS, list_models, write_settings_atomically
+from .registry import CommandContext, SlashCommand
+
+NEW_CONFIG_OPTION = "new config"
+MANUAL_INPUT_OPTION = "manual input"
+_CHOICE_HINTS = "↑/↓ 移动，Enter 确认，Esc 取消"
+
+
+async def model_command(context: CommandContext) -> None:
+    """展示当前配置与可用模型，支持切换模型或新建配置。"""
+
+    current = context.client_holder.settings
+    context.screen.add_entry(
+        "tool",
+        f"当前配置：{current.model_name} @ {current.base_url}",
+    )
+    models = await asyncio.to_thread(list_models, current.base_url, current.api_key)
+    extra_options = [NEW_CONFIG_OPTION]
+    if not models:
+        models = []
+        extra_options.append(MANUAL_INPUT_OPTION)
+        context.screen.add_entry("tool", "无法拉取模型列表，可手动输入模型名")
+    choice = await context.screen.request_choice_picker(
+        models,
+        f"选择模型（{_CHOICE_HINTS}）",
+        extra_options=extra_options,
+    )
+    if choice is None:
+        return
+    if choice == NEW_CONFIG_OPTION:
+        await _create_new_config(context)
+        return
+    if choice == MANUAL_INPUT_OPTION:
+        model_name = await context.screen.request_text_input("手动输入模型名")
+        if model_name is None:
+            return
+        _apply_model_switch(context, replace(current, model_name=model_name))
+        context.screen.set_status_message(f"已切换到模型：{model_name}")
+        return
+    _apply_model_switch(context, replace(current, model_name=choice))
+    context.screen.set_status_message(f"已切换到模型：{choice}")
+
+
+async def _create_new_config(context: CommandContext) -> None:
+    """通过选厂商、输入 API key 新建项目级配置并热切换。"""
+
+    current = context.client_holder.settings
+    base_url = await _pick_vendor(context)
+    if base_url is None:
+        return
+    api_key = await context.screen.request_text_input(
+        "API key（输入后按 Enter 确认）",
+        is_password=True,
+    )
+    if api_key is None:
+        return
+    models = await asyncio.to_thread(list_models, base_url, api_key)
+    if models:
+        model_name = await context.screen.request_choice_picker(
+            models,
+            f"选择默认模型（{_CHOICE_HINTS}）",
+        )
+    else:
+        context.screen.add_entry("tool", "无法拉取模型列表，请手动输入模型名")
+        model_name = await context.screen.request_text_input("模型名")
+    if model_name is None:
+        return
+    settings = replace(
+        current,
+        base_url=base_url,
+        model_name=model_name,
+        api_key=api_key,
+    )
+    await write_settings_atomically(
+        context.project_dir / ".epsilon" / "settings.json",
+        {"model": {"base_url": base_url, "api_key": api_key, "model_name": model_name}},
+    )
+    _apply_model_switch(context, settings)
+    context.screen.set_status_message(f"已切换到新配置：{model_name}")
+
+
+async def _pick_vendor(context: CommandContext) -> str | None:
+    """选择模型服务厂商，手动配置时继续询问服务地址。"""
+
+    choice = await context.screen.request_choice_picker(
+        [vendor.name for vendor in VENDORS],
+        f"选择模型服务厂商（{_CHOICE_HINTS}）",
+    )
+    if choice is None:
+        return None
+    vendor = next(vendor for vendor in VENDORS if vendor.name == choice)
+    if vendor.base_url:
+        return vendor.base_url
+    return await context.screen.request_text_input(
+        "手动输入服务地址（如 https://api.example.com/v1）"
+    )
+
+
+def _apply_model_switch(context: CommandContext, settings: Settings) -> None:
+    """统一替换客户端引用并更新上下文预算，不动已持久化的会话。"""
+
+    new_client = OpenAICompatibleClient(settings)
+    context.client_holder.swap(settings, new_client)
+    context.agent_loop.swap_client(new_client)
+    context.context_manager.update_budget(
+        ContextBudget(
+            settings.context_window,
+            settings.reserve_tokens,
+            settings.keep_recent_tokens,
+        )
+    )
+
+
+model_command_slash = SlashCommand(
+    name="model",
+    description="查看并切换可用模型，或新建配置",
+    handler=model_command,
+)

@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from .config import Settings
 from .errors import AgentError, ErrorCategory
 
 
@@ -106,3 +107,19 @@ class ModelClient(Protocol):
         tools: Sequence[Mapping[str, object]] = (),
     ) -> AsyncIterator[ModelEvent]:
         """根据消息列表生成文本和工具调用事件。"""
+
+
+class ClientHolder:
+    """可变保存当前模型配置与客户端，供 /model 热切换时统一替换。"""
+
+    def __init__(self, settings: Settings, client: ModelClient) -> None:
+        """保存初始配置与客户端。"""
+
+        self.settings = settings
+        self.client = client
+
+    def swap(self, settings: Settings, client: ModelClient) -> None:
+        """替换为新的配置与客户端。"""
+
+        self.settings = settings
+        self.client = client

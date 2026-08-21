@@ -13,6 +13,7 @@ from core.screen import ChatScreen
 from core.session import Session
 from core.session_store import SessionStore
 from core.status import create_status_info
+from core.config import McpStdioSettings, Settings
 
 
 class FakeClient:
@@ -150,6 +151,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
         create_status_info("test-model", "暂不可查询", tmp_path),
         workspace=tmp_path,
         session_id="00000000-0000-0000-0000-000000000001",
+        settings=Settings("https://example.com", "test", "key"),
     )
 
     assert len(client.requests) == 2

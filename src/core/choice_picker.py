@@ -1,0 +1,83 @@
+"""提供嵌入输入区域的单选选择组件。"""
+
+import asyncio
+
+from prompt_toolkit.formatted_text import AnyFormattedText
+from prompt_toolkit.layout import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension
+
+
+class ChoicePicker:
+    """单选列表，可在末尾附加一个特殊选项（如 new config）。"""
+
+    def __init__(
+        self,
+        items: list[str],
+        title: str,
+        extra_options: list[str] | None = None,
+    ) -> None:
+        """创建单选面板，title 为提示语，extra_options 追加在列表末尾。"""
+
+        self._items = list(items)
+        self._title = title
+        self._extra_options = list(extra_options or [])
+        self._cursor = 0
+        self._result: asyncio.Future[str | None] = (
+            asyncio.get_running_loop().create_future()
+        )
+        self.window = Window(
+            content=FormattedTextControl(self._render, focusable=True),
+            height=Dimension(min=3, preferred=8),
+            dont_extend_height=True,
+            wrap_lines=True,
+            style="class:approval-area",
+        )
+
+    @property
+    def _choices(self) -> list[str]:
+        """返回全部可选项目（含尾部特殊选项）。"""
+
+        return [*self._items, *self._extra_options]
+
+    def move(self, offset: int) -> None:
+        """移动光标，限制在列表范围内。"""
+
+        choices = self._choices
+        if not choices:
+            return
+        self._cursor = max(0, min(len(choices) - 1, self._cursor + offset))
+
+    def confirm(self) -> None:
+        """确认当前光标项并返回选择结果。"""
+
+        choices = self._choices
+        if choices:
+            self._resolve(choices[self._cursor])
+
+    def cancel(self) -> None:
+        """取消本次选择。"""
+
+        self._resolve(None)
+
+    async def wait(self) -> str | None:
+        """等待用户完成选择。"""
+
+        return await self._result
+
+    def _resolve(self, result: str | None) -> None:
+        """只允许选择结果被设置一次。"""
+
+        if not self._result.done():
+            self._result.set_result(result)
+
+    def _render(self) -> AnyFormattedText:
+        """渲染提示语和单选列表。"""
+
+        fragments: list[tuple[str, str]] = [("", f"{self._title}\n\n")]
+        for index, choice in enumerate(self._choices):
+            marker = "●" if index == self._cursor else "○"
+            prefix = "> " if index == self._cursor else "  "
+            style = "class:approval-selected" if index == self._cursor else ""
+            fragments.append((style, f"{prefix}{marker} {choice}\n"))
+        return fragments

@@ -28,6 +28,8 @@ from .logo import EmptyLogoProvider, LogoProvider
 from .conversation_view import ConversationView
 from .model import ToolCall
 from .skill_picker import SkillPicker
+from .choice_picker import ChoicePicker
+from .input_prompt import InputPrompt
 from .tool_approval import ApprovalPrompt
 from .tools.permissions import ApprovalResult
 from .tools.types import ToolDefinition
@@ -77,6 +79,8 @@ class ChatScreen:
         self._submitted_draft: DraftState | None = None
         self._approval_prompt: ApprovalPrompt | None = None
         self._skill_picker: SkillPicker | None = None
+        self._choice_picker: ChoicePicker | None = None
+        self._text_input: InputPrompt | None = None
         self._status_message = ""
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
@@ -294,6 +298,47 @@ class ChatScreen:
             self._layout.focus(self.input_area)
             self.application.invalidate()
 
+    async def request_choice_picker(
+        self,
+        items: list[str],
+        title: str,
+        extra_option: str | None = None,
+    ) -> str | None:
+        """在输入区域显示单选列表并等待用户选择。"""
+
+        picker = ChoicePicker(items, title, extra_option)
+        self._choice_picker = picker
+        self._input_container.children = [picker.window]
+        self._layout.focus(picker.window)
+        self.application.invalidate()
+        try:
+            return await picker.wait()
+        finally:
+            self._input_container.children = list(self._normal_input_children)
+            self._choice_picker = None
+            self._layout.focus(self.input_area)
+            self.application.invalidate()
+
+    async def request_text_input(
+        self,
+        title: str,
+        is_password: bool = False,
+    ) -> str | None:
+        """在输入区域显示单行文本输入框并等待用户输入。"""
+
+        prompt = InputPrompt(title, is_password)
+        self._text_input = prompt
+        self._input_container.children = [prompt.window]
+        self._layout.focus(prompt.input_area)
+        self.application.invalidate()
+        try:
+            return await prompt.wait()
+        finally:
+            self._input_container.children = list(self._normal_input_children)
+            self._text_input = None
+            self._layout.focus(self.input_area)
+            self.application.invalidate()
+
     def _get_reserved_height(self, width: int, max_height: int) -> int:
         """计算对话视口下方的输入区和状态栏所需高度。"""
 
@@ -319,6 +364,11 @@ class ChatScreen:
         input_focused = has_focus(self.input_area.buffer)
         approval_active = Condition(lambda: self._approval_prompt is not None)
         skill_picker_active = Condition(lambda: self._skill_picker is not None)
+        choice_active = Condition(lambda: self._choice_picker is not None)
+        text_input_active = Condition(lambda: self._text_input is not None)
+        embedded_active = (
+            approval_active | skill_picker_active | choice_active | text_input_active
+        )
 
         @key_bindings.add("up", filter=approval_active)
         def move_approval_up(event) -> None:
@@ -388,9 +438,53 @@ class ChatScreen:
             if self._skill_picker is not None:
                 self._skill_picker.cancel()
 
+        @key_bindings.add("up", filter=choice_active)
+        def move_choice_up(event) -> None:
+            """向上移动单选光标。"""
+
+            if self._choice_picker is not None:
+                self._choice_picker.move(-1)
+                self.application.invalidate()
+
+        @key_bindings.add("down", filter=choice_active)
+        def move_choice_down(event) -> None:
+            """向下移动单选光标。"""
+
+            if self._choice_picker is not None:
+                self._choice_picker.move(1)
+                self.application.invalidate()
+
+        @key_bindings.add("enter", filter=choice_active, eager=True)
+        def confirm_choice(event) -> None:
+            """确认当前单选项目。"""
+
+            if self._choice_picker is not None:
+                self._choice_picker.confirm()
+
+        @key_bindings.add("escape", filter=choice_active)
+        def cancel_choice(event) -> None:
+            """取消单选选择。"""
+
+            if self._choice_picker is not None:
+                self._choice_picker.cancel()
+
+        @key_bindings.add("enter", filter=text_input_active, eager=True)
+        def confirm_text_input(event) -> None:
+            """确认文本输入。"""
+
+            if self._text_input is not None:
+                self._text_input.confirm()
+
+        @key_bindings.add("escape", filter=text_input_active)
+        def cancel_text_input(event) -> None:
+            """取消文本输入。"""
+
+            if self._text_input is not None:
+                self._text_input.cancel()
+
         @key_bindings.add(
             "enter",
-            filter=~approval_active & ~skill_picker_active,
+            filter=~embedded_active,
             eager=True,
         )
         def submit(event) -> None:
@@ -437,21 +531,21 @@ class ChatScreen:
 
         @key_bindings.add(
             "escape",
-            filter=~approval_active & ~skill_picker_active,
+            filter=~embedded_active,
         )
         def cancel_request(event) -> None:
             """取消当前请求，输入恢复由请求任务负责。"""
 
             self.cancel_request()
 
-        @key_bindings.add("pageup", filter=~approval_active)
+        @key_bindings.add("pageup", filter=~embedded_active)
         def page_up(event) -> None:
             """向上翻页滚动对话历史。"""
 
             self.conversation_view.scroll_page(-1)
             self.application.invalidate()
 
-        @key_bindings.add("pagedown", filter=~approval_active)
+        @key_bindings.add("pagedown", filter=~embedded_active)
         def page_down(event) -> None:
             """向下翻页滚动对话历史。"""
 

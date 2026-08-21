@@ -72,6 +72,11 @@ class AgentLoop:
         self._max_tool_rounds = max_tool_rounds
         self._error_policy = AgentErrorPolicy()
 
+    def swap_client(self, client: ModelClient) -> None:
+        """热切换模型客户端，供 /model 命令在空闲间隙调用。"""
+
+        self._client = client
+
     async def run(
         self,
         messages: Sequence[Message],
