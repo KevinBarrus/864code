@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import dotenv_values
-
 
 class ConfigError(ValueError):
     """配置文件缺失或配置项不合法时抛出的异常。"""
@@ -52,64 +50,143 @@ class Settings:
             else self.stream_idle_timeout_seconds
         )
         for name, value in (
-            ("MODEL_REQUEST_TIMEOUT_SECONDS", self.request_timeout_seconds),
-            ("MODEL_FIRST_BYTE_TIMEOUT_SECONDS", first_byte_timeout),
-            ("MODEL_STREAM_IDLE_TIMEOUT_SECONDS", stream_idle_timeout),
+            ("request_timeout_seconds", self.request_timeout_seconds),
+            ("first_byte_timeout_seconds", first_byte_timeout),
+            ("stream_idle_timeout_seconds", stream_idle_timeout),
         ):
             if value <= 0:
                 raise ConfigError(f"{name} 必须大于 0")
         if self.max_tool_rounds <= 0:
-            raise ConfigError("AGENT_MAX_TOOL_ROUNDS 必须大于 0")
+            raise ConfigError("max_tool_rounds 必须大于 0")
         object.__setattr__(self, "first_byte_timeout_seconds", first_byte_timeout)
         object.__setattr__(self, "stream_idle_timeout_seconds", stream_idle_timeout)
 
 
-def load_settings(env_path: Path | None = None) -> Settings:
-    """从 .env 文件读取配置，并在启动前完成基础校验。"""
+def load_settings(
+    project_dir: Path | None = None,
+    user_config_path: Path | None = None,
+) -> Settings:
+    """从用户级与项目级 settings.json 读取配置并完成基础校验。
 
-    config_path = env_path or _find_env_file()
-    if not config_path.is_file():
-        raise ConfigError(f"找不到配置文件: {config_path}")
+    用户级配置（~/.epsilon/settings.json）提供默认值；项目级配置
+    （<项目目录>/.epsilon/settings.json）按字段覆盖用户级配置。
+    """
 
-    values = dotenv_values(config_path)
-    base_url = _required_value(values.get("MODEL_BASE_URL"), "MODEL_BASE_URL")
-    model_name = _required_value(values.get("MODEL_NAME"), "MODEL_NAME")
-    api_key = _required_value(values.get("MODEL_API_KEY"), "MODEL_API_KEY")
-    context_window = _optional_int(values.get("MODEL_CONTEXT_WINDOW"), 100_000)
-    reserve_tokens = _optional_int(values.get("MODEL_RESERVE_TOKENS"), 16_000)
-    keep_recent_tokens = _optional_int(values.get("MODEL_KEEP_RECENT_TOKENS"), 20_000)
+    user_path = (user_config_path or _default_user_config_path()).resolve()
+    if not user_path.is_file():
+        raise ConfigError(
+            f"找不到用户配置文件: {user_path}\n"
+            "请先运行 epsilon 完成首次配置，或手动创建该文件"
+        )
+    merged_data = _read_config_json(user_path)
+    project_path = _project_config_path(project_dir)
+    if project_path.is_file():
+        merged_data = _merge_configs(merged_data, _read_config_json(project_path))
+    return _settings_from_data(merged_data)
+
+
+def _default_user_config_path() -> Path:
+    """返回用户级配置的默认位置。"""
+
+    return Path.home() / ".epsilon" / "settings.json"
+
+
+def _project_config_path(project_dir: Path | None) -> Path:
+    """返回项目级配置的位置，未指定项目目录时使用当前工作目录。"""
+
+    root = (project_dir or Path.cwd()).resolve()
+    return root / ".epsilon" / "settings.json"
+
+
+def _read_config_json(path: Path) -> dict:
+    """读取并解析 settings.json，非法 JSON 或非对象时报配置错误。"""
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"读取配置文件失败: {path}") from exc
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"配置文件不是合法的 JSON: {path}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"配置文件必须是 JSON 对象: {path}")
+    return data
+
+
+def _merge_configs(user_data: dict, project_data: dict) -> dict:
+    """项目级配置按字段覆盖用户级配置，null 字段表示未设置不参与覆盖。"""
+
+    merged = dict(user_data)
+    project_model = project_data.get("model")
+    if isinstance(project_model, dict):
+        user_model = merged.get("model")
+        if not isinstance(user_model, dict):
+            user_model = {}
+        merged["model"] = {
+            **user_model,
+            **{name: value for name, value in project_model.items() if value is not None},
+        }
+    if "mcp_stdio" in project_data and project_data["mcp_stdio"] is not None:
+        merged["mcp_stdio"] = project_data["mcp_stdio"]
+    return merged
+
+
+def _settings_from_data(data: dict) -> Settings:
+    """从合并后的配置字典构造 Settings，并完成必填项与取值校验。"""
+
+    model = data.get("model")
+    if not isinstance(model, dict):
+        raise ConfigError("配置中的 model 必须是对象")
+    base_url = _required_value(model.get("base_url"), "model.base_url")
+    model_name = _required_value(model.get("model_name"), "model.model_name")
+    api_key = _required_value(model.get("api_key"), "model.api_key")
+    context_window = _optional_int(
+        model.get("context_window"),
+        100_000,
+        "model.context_window",
+    )
+    reserve_tokens = _optional_int(
+        model.get("reserve_tokens"),
+        16_000,
+        "model.reserve_tokens",
+    )
+    keep_recent_tokens = _optional_int(
+        model.get("keep_recent_tokens"),
+        20_000,
+        "model.keep_recent_tokens",
+    )
     request_timeout_seconds = _optional_float(
-        values.get("MODEL_REQUEST_TIMEOUT_SECONDS"),
+        model.get("request_timeout_seconds"),
         120.0,
-        "MODEL_REQUEST_TIMEOUT_SECONDS",
+        "model.request_timeout_seconds",
     )
     first_byte_timeout_seconds = _optional_float(
-        values.get("MODEL_FIRST_BYTE_TIMEOUT_SECONDS"),
+        model.get("first_byte_timeout_seconds"),
         None,
-        "MODEL_FIRST_BYTE_TIMEOUT_SECONDS",
+        "model.first_byte_timeout_seconds",
     )
     stream_idle_timeout_seconds = _optional_float(
-        values.get("MODEL_STREAM_IDLE_TIMEOUT_SECONDS"),
+        model.get("stream_idle_timeout_seconds"),
         None,
-        "MODEL_STREAM_IDLE_TIMEOUT_SECONDS",
+        "model.stream_idle_timeout_seconds",
     )
-    mcp_stdio = _optional_mcp_stdio_settings(values)
     stream_usage = _optional_bool(
-        values.get("MODEL_STREAM_USAGE"),
+        model.get("stream_usage"),
         False,
-        "MODEL_STREAM_USAGE",
+        "model.stream_usage",
     )
     max_tool_rounds = _optional_int(
-        values.get("AGENT_MAX_TOOL_ROUNDS"),
+        model.get("max_tool_rounds"),
         10,
-        "AGENT_MAX_TOOL_ROUNDS",
+        "model.max_tool_rounds",
     )
     if context_window <= 0:
-        raise ConfigError("MODEL_CONTEXT_WINDOW 必须大于 0")
+        raise ConfigError("model.context_window 必须大于 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
-        raise ConfigError("MODEL_RESERVE_TOKENS 必须小于 MODEL_CONTEXT_WINDOW")
+        raise ConfigError("model.reserve_tokens 必须小于 model.context_window")
     if keep_recent_tokens <= 0:
-        raise ConfigError("MODEL_KEEP_RECENT_TOKENS 必须大于 0")
+        raise ConfigError("model.keep_recent_tokens 必须大于 0")
     _validate_base_url(base_url)
 
     return Settings(
@@ -122,93 +199,84 @@ def load_settings(env_path: Path | None = None) -> Settings:
         request_timeout_seconds=request_timeout_seconds,
         first_byte_timeout_seconds=first_byte_timeout_seconds,
         stream_idle_timeout_seconds=stream_idle_timeout_seconds,
-        mcp_stdio=mcp_stdio,
+        mcp_stdio=_optional_mcp_stdio_settings(data),
         stream_usage=stream_usage,
         max_tool_rounds=max_tool_rounds,
     )
 
 
-def _required_value(value: str | None, name: str) -> str:
+def _required_value(value: object, name: str) -> str:
     """读取必填配置项，避免把空配置传给模型客户端。"""
 
-    if value is None or not value.strip():
+    if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"缺少必填配置项: {name}")
     return value.strip()
 
 
-def _optional_int(value: str | None, default: int, name: str = "上下文预算") -> int:
+def _optional_int(value: object, default: int, name: str) -> int:
     """读取可选整数配置，未设置时使用默认值。"""
 
-    if value is None or not value.strip():
+    if value is None:
         return default
     try:
-        return int(value.strip())
-    except ValueError as exc:
-        raise ConfigError(f"{name}配置必须是整数") from exc
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{name} 必须是整数") from exc
 
 
 def _optional_float(
-    value: str | None,
+    value: object,
     default: float | None,
     name: str,
 ) -> float | None:
     """读取可选小数配置，未设置时使用默认值。"""
 
-    if value is None or not value.strip():
+    if value is None:
         return default
     try:
-        return float(value.strip())
-    except ValueError as exc:
+        return float(value)
+    except (TypeError, ValueError) as exc:
         raise ConfigError(f"{name} 必须是数字") from exc
 
 
-def _optional_bool(value: str | None, default: bool, name: str) -> bool:
+def _optional_bool(value: object, default: bool, name: str) -> bool:
     """读取可选布尔配置，未设置时使用默认值。"""
 
-    if value is None or not value.strip():
+    if value is None:
         return default
-    normalized = value.strip().lower()
-    if normalized in {"true", "1", "yes", "on"}:
-        return True
-    if normalized in {"false", "0", "no", "off"}:
-        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
     raise ConfigError(f"{name} 必须是布尔值")
 
 
-def _optional_mcp_stdio_settings(values: dict[str, str | None]) -> McpStdioSettings | None:
-    """读取可选单个 stdio MCP 配置，并校验参数 JSON 数组。"""
+def _optional_mcp_stdio_settings(data: dict) -> McpStdioSettings | None:
+    """读取可选 stdio MCP 配置，并校验参数数组。"""
 
-    command = values.get("MCP_STDIO_COMMAND")
-    arguments = values.get("MCP_STDIO_ARGS")
-    provider_id = values.get("MCP_STDIO_PROVIDER_ID")
-    if not any(value is not None and value.strip() for value in (command, arguments, provider_id)):
+    mcp = data.get("mcp_stdio")
+    if mcp is None:
         return None
-
-    raw_arguments = arguments.strip() if arguments else "[]"
-    try:
-        parsed_arguments = json.loads(raw_arguments)
-    except json.JSONDecodeError as exc:
-        raise ConfigError("MCP_STDIO_ARGS 必须是 JSON 字符串数组") from exc
-    if not isinstance(parsed_arguments, list) or not all(
-        isinstance(argument, str) for argument in parsed_arguments
+    if not isinstance(mcp, dict):
+        raise ConfigError("配置中的 mcp_stdio 必须是对象")
+    command = mcp.get("command")
+    arguments = mcp.get("arguments")
+    provider_id = mcp.get("provider_id")
+    if all(value is None for value in (command, arguments, provider_id)):
+        return None
+    if not isinstance(arguments, list) or not all(
+        isinstance(argument, str) for argument in arguments
     ):
-        raise ConfigError("MCP_STDIO_ARGS 必须是 JSON 字符串数组")
+        raise ConfigError("mcp_stdio.arguments 必须是字符串数组")
     return McpStdioSettings(
-        command=_required_value(command, "MCP_STDIO_COMMAND"),
-        arguments=tuple(parsed_arguments),
-        provider_id=_required_value(provider_id, "MCP_STDIO_PROVIDER_ID"),
+        command=_required_value(command, "mcp_stdio.command"),
+        arguments=tuple(arguments),
+        provider_id=_required_value(provider_id, "mcp_stdio.provider_id"),
     )
-
-
-def _find_env_file() -> Path:
-    """从当前目录开始向父目录查找 .env 文件。"""
-
-    current_directory = Path.cwd().resolve()
-    for directory in (current_directory, *current_directory.parents):
-        env_path = directory / ".env"
-        if env_path.is_file():
-            return env_path
-    return current_directory / ".env"
 
 
 def _validate_base_url(base_url: str) -> None:
@@ -216,4 +284,4 @@ def _validate_base_url(base_url: str) -> None:
 
     parsed_url = urlparse(base_url)
     if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-        raise ConfigError("MODEL_BASE_URL 必须是有效的 http 或 https 地址")
+        raise ConfigError("model.base_url 必须是有效的 http 或 https 地址")

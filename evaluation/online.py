@@ -310,31 +310,29 @@ def _error_category(error: Exception) -> str:
     return "runner"
 
 
-async def run_online_smoke(env_path: Path | None = None) -> EvaluationResult:
+async def run_online_smoke() -> EvaluationResult:
     """兼容原入口，执行单文件真实任务。"""
 
-    return await run_online_file_task(ONLINE_FILE_TASKS[0], env_path)
+    return await run_online_file_task(ONLINE_FILE_TASKS[0])
 
 
 async def run_online_file_task(
     task: _OnlineFileTask,
-    env_path: Path | None = None,
 ) -> EvaluationResult:
     """在独立工作区执行一条真实文件任务并保留诊断结果。"""
 
     state = _OnlineRunState(task.name, "real-task")
-    return await _run_with_diagnostics(state, _run_online_file_task(state, task, env_path))
+    return await _run_with_diagnostics(state, _run_online_file_task(state, task))
 
 
 async def _run_online_file_task(
     state: _OnlineRunState,
     task: _OnlineFileTask,
-    env_path: Path | None,
 ) -> EvaluationResult:
     """执行真实文件任务并持续更新诊断状态。"""
 
     state.stage = "load-settings"
-    settings = load_settings(env_path)
+    settings = load_settings()
     with tempfile.TemporaryDirectory(prefix="epsilon-online-") as directory:
         workspace = Path(directory)
         for path, content in task.initial_files:
@@ -443,23 +441,21 @@ async def _run_online_file_task(
 
 async def run_online_code_task(
     task: _OnlineCodeTask,
-    env_path: Path | None = None,
 ) -> EvaluationResult:
     """在独立工作区执行一条代码正确性任务并保留诊断结果。"""
 
     state = _OnlineRunState(task.name, "code-correctness")
-    return await _run_with_diagnostics(state, _run_online_code_task(state, task, env_path))
+    return await _run_with_diagnostics(state, _run_online_code_task(state, task))
 
 
 async def _run_online_code_task(
     state: _OnlineRunState,
     task: _OnlineCodeTask,
-    env_path: Path | None,
 ) -> EvaluationResult:
     """执行代码正确性任务并用独立 pytest 结果判断成功。"""
 
     state.stage = "load-settings"
-    settings = load_settings(env_path)
+    settings = load_settings()
     with tempfile.TemporaryDirectory(prefix="epsilon-code-") as directory:
         workspace = Path(directory)
         for path, content in task.initial_files:
@@ -728,7 +724,6 @@ def _contains_keywords(content: str, keywords: tuple[str, ...]) -> bool:
 
 
 async def run_online_suite(
-    env_path: Path | None = None,
     repetitions: int = DEFAULT_ONLINE_REPETITIONS,
     scenario: str = "main",
 ) -> list[EvaluationResult]:
@@ -749,21 +744,21 @@ async def run_online_suite(
                 result = await _run_suite_task(
                     task.name,
                     "real-task",
-                    run_online_file_task(task, env_path),
+                    run_online_file_task(task),
                 )
                 results.append(replace(result, repetition=repetition))
             for task in ONLINE_CODE_TASKS:
                 result = await _run_suite_task(
                     task.name,
                     "code-correctness",
-                    run_online_code_task(task, env_path),
+                    run_online_code_task(task),
                 )
                 results.append(replace(result, repetition=repetition))
         else:
             result = await _run_suite_task(
                 f"online_{scenario}",
                 "online-special",
-                runners[scenario](env_path),
+                runners[scenario](),
             )
             results.append(replace(result, repetition=repetition))
     return results
@@ -805,26 +800,20 @@ async def _run_suite_task(
         )
 
 
-async def run_online_compaction_smoke(
-    env_path: Path | None = None,
-) -> EvaluationResult:
+async def run_online_compaction_smoke() -> EvaluationResult:
     """使用真实模型执行一次上下文压缩和 Session 恢复冒烟评测"""
 
     state = _OnlineRunState("online_context_compaction", "online-special")
-    return await _run_with_diagnostics(
-        state,
-        _run_online_compaction_smoke(state, env_path),
-    )
+    return await _run_with_diagnostics(state, _run_online_compaction_smoke(state))
 
 
 async def _run_online_compaction_smoke(
     state: _OnlineRunState,
-    env_path: Path | None,
 ) -> EvaluationResult:
     """执行上下文压缩专项并持续更新诊断状态。"""
 
     state.stage = "load-settings"
-    settings = load_settings(env_path)
+    settings = load_settings()
     with tempfile.TemporaryDirectory(prefix="epsilon-compaction-") as directory:
         workspace = Path(directory)
         client = TimedModelClient(OpenAICompatibleClient(settings))
@@ -881,26 +870,20 @@ async def _run_online_compaction_smoke(
         )
 
 
-async def run_online_network_error_smoke(
-    env_path: Path | None = None,
-) -> EvaluationResult:
+async def run_online_network_error_smoke() -> EvaluationResult:
     """通过本机不可用端口验证真实网络异常处理"""
 
     state = _OnlineRunState("online_network_error", "online-special")
-    return await _run_with_diagnostics(
-        state,
-        _run_online_network_error_smoke(state, env_path),
-    )
+    return await _run_with_diagnostics(state, _run_online_network_error_smoke(state))
 
 
 async def _run_online_network_error_smoke(
     state: _OnlineRunState,
-    env_path: Path | None,
 ) -> EvaluationResult:
     """执行网络异常专项并持续更新诊断状态。"""
 
     state.stage = "load-settings"
-    settings = load_settings(env_path)
+    settings = load_settings()
     unavailable_settings = replace(settings, base_url="http://127.0.0.1:1")
     client = TimedModelClient(OpenAICompatibleClient(unavailable_settings))
     state.client = client
@@ -958,7 +941,6 @@ def main() -> int:
         action="store_true",
         help="确认发起真实模型请求并可能产生费用",
     )
-    parser.add_argument("--env", type=Path, help="指定 .env 配置文件")
     parser.add_argument(
         "--repetitions",
         type=int,
@@ -991,7 +973,7 @@ def main() -> int:
         print("在线评测会发起真实模型请求，请添加 --confirm 后运行")
         return 2
 
-    settings = load_settings(args.env)
+    settings = load_settings()
     metadata = {
         "model_name": settings.model_name,
         "base_url": settings.base_url,
@@ -1003,7 +985,6 @@ def main() -> int:
     }
     results = asyncio.run(
         run_online_suite(
-            args.env,
             args.repetitions,
             scenario=args.scenario,
         )

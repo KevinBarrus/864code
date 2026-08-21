@@ -90,7 +90,7 @@ async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
 
     calls: list[str] = []
 
-    async def fake_run_file(task, env_path=None):
+    async def fake_run_file(task):
         calls.append(task.name)
         if task.name == "online_multi_file_edit":
             raise RuntimeError("模拟在线失败")
@@ -101,7 +101,7 @@ async def test_online_suite_runs_requested_repetitions_and_keeps_failures(
             assertions=(EvaluationAssertion("ok", True),),
         )
 
-    async def fake_run_code(task, env_path=None):
+    async def fake_run_code(task):
         calls.append(task.name)
         return EvaluationResult(
             scenario=task.name,
@@ -129,7 +129,7 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
 ) -> None:
     """测试默认主套件会生成至少二十个性能样本。"""
 
-    async def fake_run_file(task, env_path=None):
+    async def fake_run_file(task):
         return EvaluationResult(
             scenario=task.name,
             duration_ms=10,
@@ -137,7 +137,7 @@ async def test_online_suite_default_repetitions_reach_performance_sample_count(
             assertions=(EvaluationAssertion("ok", True),),
         )
 
-    async def fake_run_code(task, env_path=None):
+    async def fake_run_code(task):
         return EvaluationResult(
             scenario=task.name,
             duration_ms=10,
@@ -247,7 +247,7 @@ async def test_online_file_tasks_validate_expected_agent_behavior(
     client = FakeModelClient(responses)
     monkeypatch.setattr(
         "evaluation.online.load_settings",
-        lambda env_path=None: Settings("https://example.com", "test", "key"),
+        lambda: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr("evaluation.online.OpenAICompatibleClient", lambda settings: client)
 
@@ -305,7 +305,7 @@ async def test_online_code_task_validates_pytest_result(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "evaluation.online.load_settings",
-        lambda env_path=None: Settings("https://example.com", "test", "key"),
+        lambda: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr(
         "evaluation.online.OpenAICompatibleClient",
@@ -343,7 +343,7 @@ async def test_online_code_task_fails_when_test_file_modified(monkeypatch) -> No
     )
     monkeypatch.setattr(
         "evaluation.online.load_settings",
-        lambda env_path=None: Settings("https://example.com", "test", "key"),
+        lambda: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr(
         "evaluation.online.OpenAICompatibleClient",
@@ -384,7 +384,7 @@ async def test_online_code_task_fails_when_pytest_does_not_pass(monkeypatch) -> 
     )
     monkeypatch.setattr(
         "evaluation.online.load_settings",
-        lambda env_path=None: Settings("https://example.com", "test", "key"),
+        lambda: Settings("https://example.com", "test", "key"),
     )
     monkeypatch.setattr(
         "evaluation.online.OpenAICompatibleClient",
@@ -404,7 +404,7 @@ async def test_online_code_task_fails_when_pytest_does_not_pass(monkeypatch) -> 
 async def test_online_suite_dispatches_network_error_scenario(monkeypatch) -> None:
     """测试在线评测套件能调度网络异常专项场景"""
 
-    async def fake_run(env_path=None):
+    async def fake_run():
         return EvaluationResult(
             scenario="online_network_error",
             duration_ms=10,
@@ -423,7 +423,7 @@ async def test_online_suite_dispatches_network_error_scenario(monkeypatch) -> No
 async def test_online_smoke_keeps_configuration_failure_diagnostics(monkeypatch) -> None:
     """测试在线场景会保留配置失败的类别和阶段。"""
 
-    def fail_load_settings(env_path=None):
+    def fail_load_settings():
         raise ConfigError("缺少模型配置")
 
     monkeypatch.setattr("evaluation.online.load_settings", fail_load_settings)
