@@ -102,3 +102,22 @@ async def test_choice_picker_wraps_and_follows_scroll() -> None:
     picker.move(15)   # 5 + 15 = 20 % 20 = 0，回到顶部
     assert picker._cursor == 0
     assert picker.window.vertical_scroll == 0
+
+
+@pytest.mark.asyncio
+async def test_choice_picker_renders_selected_with_prefix() -> None:
+    """测试选中项用 › 前缀且不显示圆圈。"""
+
+    picker = ChoicePicker(["a", "b"], "选择")
+
+    fragments = picker._render()
+
+    rendered = "".join(text for _style, text in fragments)
+    assert "› a" in rendered
+    assert "  b" in rendered
+    assert "●" not in rendered
+    assert "○" not in rendered
+    assert any(
+        style == "class:approval-selected" and "›" in content
+        for style, content in fragments
+    )

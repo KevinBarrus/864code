@@ -84,12 +84,11 @@ class ChoicePicker:
             self._result.set_result(result)
 
     def _render(self) -> AnyFormattedText:
-        """渲染提示语和单选列表。"""
+        """渲染提示语和单选列表，选中行用 › 前缀。"""
 
         fragments: list[tuple[str, str]] = [("", f"{self._title}\n\n")]
         for index, choice in enumerate(self._choices):
-            marker = "●" if index == self._cursor else "○"
-            prefix = "> " if index == self._cursor else "  "
+            prefix = "› " if index == self._cursor else "  "
             style = "class:approval-selected" if index == self._cursor else ""
-            fragments.append((style, f"{prefix}{marker} {choice}\n"))
+            fragments.append((style, f"{prefix}{choice}\n"))
         return fragments

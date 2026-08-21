@@ -174,14 +174,13 @@ async def _pick_single(title: str, items: Sequence[str]) -> str | None:
     selected = items[0] if items else None
 
     def render() -> AnyFormattedText:
-        """渲染提示语、单选标记和列表。"""
+        """渲染提示语和单选列表，选中行用 › 前缀。"""
 
         fragments: list[tuple[str, str]] = [("", f"{title}\n\n")]
         for index, item in enumerate(items):
-            marker = "●" if item == selected else "○"
-            prefix = "> " if index == cursor_index else "  "
+            prefix = "› " if index == cursor_index else "  "
             style = "class:selected" if index == cursor_index else ""
-            fragments.append((style, f"{prefix}{marker} {item}\n"))
+            fragments.append((style, f"{prefix}{item}\n"))
         return fragments
 
     key_bindings = KeyBindings()
