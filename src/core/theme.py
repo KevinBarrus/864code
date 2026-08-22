@@ -33,5 +33,12 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "approval-area": "bg:#303030",
             "approval-selected": "fg:ansibrightcyan",
             "tool-activity": "fg:#808080",
+            # Markdown 基础渲染样式
+            "md-heading": "bold #f5d76e",
+            "md-bold": "bold",
+            "md-italic": "italic",
+            "md-code-block": "bg:#2d2d2d fg:#a0a0a0",
+            "md-quote": "fg:#808080",
+            "md-hr": "fg:#505050",
         }
     )

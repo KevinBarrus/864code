@@ -28,6 +28,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 
 from .clipboard import Osc52Clipboard, copy_text_to_clipboard
+from .markdown import render_markdown
 from .status import StatusInfo
 from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
@@ -391,12 +392,16 @@ class ChatScreen:
 
     @staticmethod
     def _create_entry(role: ConversationRole, content: str) -> ConversationEntry:
-        """创建保存独立文本控件的对话条目。"""
+        """创建保存独立文本控件的对话条目，助手消息渲染 Markdown。"""
 
+        if role == "assistant":
+            control_text: object = render_markdown(content)
+        else:
+            control_text = content
         return ConversationEntry(
             role,
             content,
-            FormattedTextControl(content, focusable=False),
+            FormattedTextControl(control_text, focusable=False),
         )
 
     def append_to_entry(self, index: int, content: str) -> None:
@@ -416,7 +421,10 @@ class ChatScreen:
         """更新已有条目的内容和控件，不重建整个对话布局。"""
 
         entry = self._conversation[index]
-        entry.control.text = content
+        if entry.role == "assistant":
+            entry.control.text = render_markdown(content)
+        else:
+            entry.control.text = content
         entry.control.reset()
         self._conversation[index] = replace(entry, content=content)
 

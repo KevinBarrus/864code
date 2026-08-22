@@ -195,7 +195,7 @@ def test_streaming_entry_update_does_not_rebuild_conversation_layout(
 
     assert sync_calls == 0
     assert screen._conversation_content.children is children
-    assert control.text == "第一段第二段第三段"
+    assert to_plain_text(control.text) == "第一段第二段第三段"
 
 
 def test_adding_history_entries_syncs_conversation_layout_once(
