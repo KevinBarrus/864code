@@ -1,6 +1,7 @@
 """构造 epsilon 的全屏终端界面。"""
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -268,6 +269,9 @@ from .ui_config import InputLayoutConfig
 SubmitHandler = Callable[[str], Awaitable[None]]
 ConversationRole = Literal["user", "assistant", "tool", "logo", "thinking"]
 
+# working 提示的转圈动画帧（对齐 Pi Loader）
+_WORKING_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
 
 class SlashCommandCompleter(Completer):
     """输入 / 后按前缀匹配已注册的 slash command。"""
@@ -421,6 +425,9 @@ class ChatScreen:
         self._text_input: InputPrompt | None = None
         self._command_picker: CommandPicker | None = None
         self._status_message = ""
+        self._working_message: str | None = None
+        self._working_started = 0.0
+        self._working_task: asyncio.Task | None = None
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
         self._last_input_length = 0
@@ -1222,6 +1229,9 @@ class ChatScreen:
                 else self._status.balance
             )
             info = f"Balance: {balance}"
+        working = self._working_text()
+        if working:
+            info = f"{working}   {info}"
         model_name = (
             self._model_name_provider()
             if self._model_name_provider is not None
@@ -1250,3 +1260,37 @@ class ChatScreen:
 
         self._status_message = message
         self.application.invalidate()
+
+    def set_working(self, message: str | None) -> None:
+        """设置状态栏信息行的 working 提示（spinner + 消息 + 耗时）。"""
+
+        self._working_message = message
+        self._working_started = time.monotonic() if message else 0.0
+        if message and self._working_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                self._working_task = loop.create_task(self._animate_working())
+        elif message is None:
+            self._working_task = None
+        self.application.invalidate()
+
+    def _working_text(self) -> str:
+        """生成当前 working 提示文本，spinner 帧按时间轮转。"""
+
+        if not self._working_message:
+            return ""
+        elapsed = int(time.monotonic() - self._working_started)
+        frame = _WORKING_FRAMES[
+            int(time.monotonic() * 12.5) % len(_WORKING_FRAMES)
+        ]
+        return f"{frame} {self._working_message} {elapsed}s"
+
+    async def _animate_working(self) -> None:
+        """working 提示存在期间持续刷新界面（spinner 动画与秒数）。"""
+
+        while self._working_message:
+            self.application.invalidate()
+            await asyncio.sleep(0.08)

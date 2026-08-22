@@ -46,6 +46,9 @@ class FakeScreen:
         self.application = FakeApplication()
         FakeScreen.last = self
 
+    def set_working(self, message):
+        return None
+
     def add_entry(self, role: str, content: str, style: str = "") -> int:
         """记录一条展示消息"""
 

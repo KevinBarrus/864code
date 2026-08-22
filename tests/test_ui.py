@@ -137,6 +137,10 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
         def set_status_message(self, message: str) -> None:
             pass
 
+
+        def set_working(self, message: str | None) -> None:
+            return None
+
         async def request_approval(self, definition, tool_call, allow_session=True):
             raise AssertionError("本测试不应请求工具审批")
 
@@ -334,6 +338,10 @@ async def test_run_chat_refreshes_balance_after_turn(
         def set_status_message(self, message: str) -> None:
             pass
 
+
+        def set_working(self, message: str | None) -> None:
+            return None
+
         def invalidate(self) -> None:
             pass
 
@@ -413,6 +421,9 @@ class _ThinkingScreen:
         self.entries[index] = (role, content)
 
     def set_entry_style(self, index: int, style: str) -> None:
+        return None
+
+    def set_working(self, message: str | None) -> None:
         return None
 
     async def request_approval(self, definition, tool_call, allow_session=True):

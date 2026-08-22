@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator, Sequence
 import pytest
 
 from core.agent_loop import AgentLoop, AgentLoopCancelled, ToolExecutionEvent
+from types import SimpleNamespace
+import core.agent_loop as agent_loop
 from core.context import ContextBuildResult
 from core.errors import AgentError
 from core.model import (
@@ -296,3 +298,38 @@ async def test_agent_loop_keeps_completed_tool_chain_when_cancelled(tmp_path) ->
         ),
         Message(role="tool", content="项目说明", tool_call_id="call-1"),
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_emits_retry_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    """测试重试前通过 on_event 发出 RetryEvent 供界面展示。"""
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(agent_loop, "asyncio", SimpleNamespace(sleep=sleep))
+
+    class RetryClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_response(self, messages, tools=(), thinking_level=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise AgentError("network", "model_request", "网络失败")
+            yield TextDelta("成功")
+
+    events: list[object] = []
+
+    async def on_event(event) -> None:
+        events.append(event)
+
+    await AgentLoop(RetryClient(), ToolManager()).run(
+        [Message(role="user", content="继续")],
+        on_event=on_event,
+    )
+
+    retries = [e for e in events if isinstance(e, agent_loop.RetryEvent)]
+    assert len(retries) == 1
+    assert retries[0].attempt == 1
+    assert retries[0].max_attempts == 2

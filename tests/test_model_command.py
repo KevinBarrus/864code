@@ -76,6 +76,9 @@ class FakeScreen:
     def set_status_message(self, message: str) -> None:
         """记录状态消息。"""
 
+
+    def set_working(self, message: str | None) -> None:
+        return None
         self.status_message = message
 
     async def request_choice_picker(

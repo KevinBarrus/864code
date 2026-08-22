@@ -3,7 +3,13 @@
 import asyncio
 from pathlib import Path
 
-from .agent_loop import AgentLoop, AgentLoopCancelled, AgentLoopError
+from .agent_loop import (
+    AgentLoop,
+    AgentLoopCancelled,
+    AgentLoopError,
+    RetryEvent,
+    ToolExecutionEvent,
+)
 from .errors import AgentError
 from .screen import ChatScreen
 from .status import StatusInfo
@@ -160,6 +166,7 @@ async def run_chat(
         thinking_index: int | None = None
         tool_activity_indices: dict[str, int] = {}
         awaiting_response_after_tool = False
+        screen.set_working("thinking")
 
         # 用户消息必须先进入会话，模型才能在本轮请求中看到它
         session.add_user_message(prompt)
@@ -210,6 +217,12 @@ async def run_chat(
                     style="class:tool-pending",
                 )
                 awaiting_response_after_tool = True
+                screen.set_working(f"running {event.tool_call.name}")
+            elif isinstance(event, RetryEvent):
+                screen.set_working(
+                    f"Retrying ({event.attempt}/{event.max_attempts}) "
+                    f"in {event.delay_seconds:.0f}s"
+                )
             elif isinstance(event, ToolExecutionEvent):
                 index = tool_activity_indices.get(event.tool_call.call_id)
                 if index is not None:
@@ -219,6 +232,7 @@ async def run_chat(
                     else:
                         screen.set_entry_style(index, "class:tool-success")
                         _update_tool_result(screen, index, event)
+                screen.set_working("thinking")
             elif isinstance(event, UsageEvent):
                 latest_usage = event
                 usage_totals.add(event, client_holder.settings.price)
@@ -281,6 +295,9 @@ async def run_chat(
                 )
             _update_persistence_status(screen, session)
             await refresh_balance()
+        finally:
+            # 本轮请求结束（成功/失败/取消），清除 working 提示
+            screen.set_working(None)
 
     def _render_startup_info() -> list[list[tuple[str, str]]]:
         """渲染新建会话的操作引导：命令、选择、背景图、缩放与输入框说明。"""

@@ -59,6 +59,9 @@ async def test_run_chat_start_skill_injects_active_skill(
         def set_status_message(self, message: str) -> None:
             pass
 
+        def set_working(self, message: str | None) -> None:
+            return None
+
         async def request_approval(self, definition, tool_call, allow_session=True):
             raise AssertionError("不应请求工具审批")
 
@@ -124,6 +127,9 @@ async def test_run_chat_unknown_command_does_not_call_model(
 
         def set_status_message(self, message: str) -> None:
             pass
+
+        def set_working(self, message: str | None) -> None:
+            return None
 
         async def request_approval(self, definition, tool_call, allow_session=True):
             raise AssertionError("不应请求工具审批")

@@ -28,7 +28,16 @@ class ToolExecutionEvent:
     result: ToolResult
 
 
-AgentEvent = ModelEvent | ToolExecutionEvent
+@dataclass(frozen=True)
+class RetryEvent:
+    """表示一次模型请求失败后即将重试。"""
+
+    attempt: int
+    max_attempts: int
+    delay_seconds: float
+
+
+AgentEvent = ModelEvent | ToolExecutionEvent | RetryEvent
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
 ContextBuilder = Callable[[Sequence[Message], bool], Awaitable[ContextBuildResult]]
 RETRY_BASE_DELAY_SECONDS = 0.5
@@ -131,6 +140,7 @@ class AgentLoop:
                             request_messages,
                             tools=self._tool_manager.model_tools(),
                             thinking_level=self._thinking_level,
+                            on_event=on_event,
                         ):
                             if isinstance(event, TextDelta):
                                 text_parts.append(event.content)
@@ -193,6 +203,7 @@ class AgentLoop:
         messages: Sequence[Message],
         tools: Sequence[dict[str, object]],
         thinking_level: str | None = None,
+        on_event: EventHandler | None = None,
     ) -> AsyncIterator[ModelEvent]:
         """在不重复展示部分输出的前提下重试模型请求。"""
 
@@ -215,7 +226,12 @@ class AgentLoop:
                 ):
                     raise
                 attempt += 1
-                await asyncio.sleep(_retry_delay_seconds(decision, attempt))
+                delay = _retry_delay_seconds(decision, attempt)
+                if on_event is not None:
+                    await on_event(
+                        RetryEvent(attempt, decision.max_attempts, delay)
+                    )
+                await asyncio.sleep(delay)
 
 
 def _mark_last_assistant_cancelled(messages: list[Message]) -> None:

@@ -1119,3 +1119,21 @@ def test_completions_changed_does_not_rebuild_picker(tmp_path: Path) -> None:
     )
     assert screen._command_picker is first_picker
     assert first_picker.selected.text == "mcp"
+
+
+def test_working_indicator_renders_spinner_and_elapsed(tmp_path: Path) -> None:
+    """测试 working 提示显示 spinner、消息与耗时。"""
+
+    screen = _create_screen(tmp_path)
+    screen.set_working("thinking")
+
+    text = screen._working_text()
+
+    from core.screen import _WORKING_FRAMES
+    assert text[0] in _WORKING_FRAMES
+    assert "thinking" in text
+    assert "s" in text
+
+    screen.set_working(None)
+
+    assert screen._working_text() == ""
