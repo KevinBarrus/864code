@@ -134,6 +134,8 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             role, _ = self.entries[index]
             self.entries[index] = (role, content)
 
+        def set_tool_result(self, index: int, content: str) -> None:
+            return None
         def set_status_message(self, message: str) -> None:
             pass
 
@@ -335,6 +337,8 @@ async def test_run_chat_refreshes_balance_after_turn(
         def set_entry_content(self, index: int, content: str) -> None:
             pass
 
+        def set_tool_result(self, index: int, content: str) -> None:
+            return None
         def set_status_message(self, message: str) -> None:
             pass
 
@@ -420,6 +424,8 @@ class _ThinkingScreen:
         role, _ = self.entries[index]
         self.entries[index] = (role, content)
 
+    def set_tool_result(self, index: int, content: str) -> None:
+        return None
     def set_entry_style(self, index: int, style: str) -> None:
         return None
 

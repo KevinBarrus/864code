@@ -271,6 +271,8 @@ ConversationRole = Literal["user", "assistant", "tool", "logo", "thinking"]
 
 # working 提示的转圈动画帧（对齐 Pi Loader）
 _WORKING_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+# 工具输出折叠阈值（超过时显示省略提示，对齐 Pi）
+_MAX_TOOL_LINES = 8
 
 
 class SlashCommandCompleter(Completer):
@@ -428,6 +430,8 @@ class ChatScreen:
         self._working_message: str | None = None
         self._working_started = 0.0
         self._working_task: asyncio.Task | None = None
+        self._expanded_entries: set[int] = set()
+        self._last_tool_index: int | None = None
         self._conversation: list[ConversationEntry] = []
         self._input_history = InMemoryHistory()
         self._last_input_length = 0
@@ -575,14 +579,51 @@ class ChatScreen:
         self._sync_conversation_view()
         self.application.invalidate()
 
-    def set_entry_diff_result(self, index: int, summary: str, diff_text: str) -> None:
-        """设置工具结果条目：摘要行 + diff 红绿行。"""
+    def set_tool_result(self, index: int, content: str) -> None:
+        """设置工具结果条目：按展开状态折叠 + diff 红绿渲染。"""
 
         entry = self._conversation[index]
-        entry.control.text = _render_tool_diff(summary, diff_text)
+        expanded = index in self._expanded_entries
+        entry.control.text = self._tool_entry_fragments(content, expanded)
         entry.control.reset()
-        self._conversation[index] = replace(entry, content=summary)
+        self._conversation[index] = replace(entry, content=content)
+        self._last_tool_index = index
         self.application.invalidate()
+
+    def toggle_tool_expansion(self) -> None:
+        """切换最近一个工具结果条目的展开/折叠状态。"""
+
+        if self._last_tool_index is None:
+            return
+        index = self._last_tool_index
+        if index in self._expanded_entries:
+            self._expanded_entries.discard(index)
+        else:
+            self._expanded_entries.add(index)
+        entry = self._conversation[index]
+        entry.control.text = self._tool_entry_fragments(
+            entry.content, index in self._expanded_entries
+        )
+        entry.control.reset()
+        self.application.invalidate()
+
+    def _tool_entry_fragments(self, content: str, expanded: bool):
+        """折叠超长工具输出，未折叠时按 diff 行渲染红绿。"""
+
+        if not expanded:
+            lines = content.split("\n")
+            if len(lines) > _MAX_TOOL_LINES:
+                visible = lines[:_MAX_TOOL_LINES]
+                hidden = len(lines) - _MAX_TOOL_LINES
+                return [
+                    (
+                        "",
+                        "\n".join(visible)
+                        + f"\n... {hidden} more lines (ctrl+o to expand)",
+                    )
+                ]
+        summary, _, diff = content.partition("\n")
+        return _render_tool_diff(summary, diff)
 
     def _set_entry_content(self, index: int, content: str) -> None:
         """更新已有条目的内容和控件，不重建整个对话布局。"""
@@ -977,6 +1018,12 @@ class ChatScreen:
             if completion is not None:
                 buffer.apply_completion(completion)
                 self.application.invalidate()
+
+        @key_bindings.add("c-o", filter=input_focused)
+        def toggle_tool_expand(event) -> None:
+            """展开/折叠最近一个工具结果（对齐 Pi app.tools.expand）。"""
+
+            self.toggle_tool_expansion()
 
         @key_bindings.add("c-j", filter=input_focused)
         def insert_newline(event) -> None:

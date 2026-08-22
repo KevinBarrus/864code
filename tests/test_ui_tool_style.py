@@ -77,6 +77,8 @@ class FakeScreen:
         role, _ = self.entries[index]
         self.entries[index] = (role, content)
 
+    def set_tool_result(self, index: int, content: str) -> None:
+        return None
     def set_status_message(self, message: str) -> None:
         pass
 

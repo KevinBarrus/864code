@@ -56,6 +56,8 @@ async def test_run_chat_start_skill_injects_active_skill(
         def set_entry_content(self, index: int, content: str) -> None:
             pass
 
+        def set_tool_result(self, index: int, content: str) -> None:
+            return None
         def set_status_message(self, message: str) -> None:
             pass
 
@@ -125,6 +127,8 @@ async def test_run_chat_unknown_command_does_not_call_model(
         def set_entry_content(self, index: int, content: str) -> None:
             pass
 
+        def set_tool_result(self, index: int, content: str) -> None:
+            return None
         def set_status_message(self, message: str) -> None:
             pass
 

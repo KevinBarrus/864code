@@ -1137,3 +1137,55 @@ def test_working_indicator_renders_spinner_and_elapsed(tmp_path: Path) -> None:
     screen.set_working(None)
 
     assert screen._working_text() == ""
+
+
+def test_tool_result_folds_long_output(tmp_path: Path) -> None:
+    """测试超长工具输出折叠并显示省略提示。"""
+
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    screen = _create_screen(tmp_path)
+    long_output = "\n".join(f"line {i}" for i in range(20))
+    index = screen.add_entry("tool", "")
+
+    screen.set_tool_result(index, long_output)
+
+    text = to_plain_text(screen._conversation[index].control.text)
+    assert "line 0" in text
+    assert "line 19" not in text
+    assert "12 more lines (ctrl+o to expand)" in text
+
+
+def test_tool_result_expands_on_toggle(tmp_path: Path) -> None:
+    """测试 ctrl+o 切换后工具输出完整展开。"""
+
+    from prompt_toolkit.formatted_text import to_plain_text
+
+    screen = _create_screen(tmp_path)
+    long_output = "\n".join(f"line {i}" for i in range(20))
+    index = screen.add_entry("tool", "")
+
+    screen.set_tool_result(index, long_output)
+    screen.toggle_tool_expansion()
+
+    text = to_plain_text(screen._conversation[index].control.text)
+    assert "line 19" in text
+    assert "more lines" not in text
+
+    # 再切换回折叠
+    screen.toggle_tool_expansion()
+    text = to_plain_text(screen._conversation[index].control.text)
+    assert "more lines" in text
+
+
+def test_tool_result_short_output_no_folding(tmp_path: Path) -> None:
+    """测试短工具输出不折叠，diff 红绿仍生效。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("tool", "")
+
+    screen.set_tool_result(index, "file edited\n-old\n+new")
+
+    fragments = screen._conversation[index].control.text
+    assert ("class:tool-diff-del", "-old") in fragments
+    assert ("class:tool-diff-add", "+new") in fragments

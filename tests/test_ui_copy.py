@@ -57,6 +57,8 @@ class FakeScreen:
     def set_entry_content(self, index: int, content: str) -> None:
         pass
 
+    def set_tool_result(self, index: int, content: str) -> None:
+        return None
     def set_entry_style(self, index: int, style: str) -> None:
         pass
 

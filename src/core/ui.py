@@ -431,13 +431,9 @@ def _tool_result_summary(event: ToolExecutionEvent) -> str:
 
 
 def _update_tool_result(screen, index: int, event: ToolExecutionEvent) -> None:
-    """按工具类型展示成功结果：写/编辑工具显示 diff 红绿，其他保持单行摘要。"""
+    """展示工具成功结果：按内容折叠 + diff 红绿，超长输出省略提示。"""
 
-    if event.tool_call.name in ("write_file", "edit_file"):
-        summary, _, diff = event.result.content.partition("\n")
-        screen.set_entry_diff_result(index, summary, diff)
-    else:
-        screen.set_entry_content(index, _tool_result_summary(event))
+    screen.set_tool_result(index, event.result.content)
 
 
 def _update_persistence_status(screen: ChatScreen, session: Session) -> None:
