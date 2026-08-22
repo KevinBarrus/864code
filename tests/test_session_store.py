@@ -342,3 +342,31 @@ def test_list_sessions_rejects_corrupted_file(tmp_path: Path) -> None:
 
     with pytest.raises(SessionStoreError, match=f"cannot read session {session_id}"):
         store.list_sessions()
+
+
+def test_delete_session_removes_file(tmp_path: Path) -> None:
+    """测试删除会话会移除 JSONL 文件。"""
+
+    from core.session_store import SessionStore
+
+    store = SessionStore(tmp_path)
+    session_id = "11111111-1111-1111-1111-111111111111"
+    store.append_message(session_id, Message(role="user", content="你好"))
+
+    session_path = store._session_path(session_id)
+    assert session_path.exists()
+
+    assert store.delete_session(session_id) is True
+    assert not session_path.exists()
+
+
+def test_delete_session_missing_returns_false(tmp_path: Path) -> None:
+    """测试删除不存在的会话返回 False。"""
+
+    from core.session_store import SessionStore
+
+    store = SessionStore(tmp_path)
+
+    assert (
+        store.delete_session("22222222-2222-2222-2222-222222222222") is False
+    )

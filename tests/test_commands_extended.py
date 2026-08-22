@@ -25,10 +25,11 @@ from core.tools.types import ToolDefinition
 
 
 class _Screen:
-    """记录 add_entry 调用与退出请求的假界面。"""
+    """记录 add_entry 调用、选择器输入与退出请求的假界面。"""
 
     def __init__(self) -> None:
         self.entries: list[tuple[str, str]] = []
+        self.choices: list[str | None] = []
         self.exited = False
         self.application = SimpleNamespace(exit=lambda: setattr(self, "exited", True))
 
@@ -39,6 +40,11 @@ class _Screen:
     def clear_conversation(self) -> None:
         self.entries.append(("tool", "cleared"))
 
+    async def request_choice_picker(
+        self, items, title, extra_options=None
+    ) -> str | None:
+        return self.choices.pop(0) if self.choices else None
+
 
 def _context(**overrides) -> CommandContext:
     """构造最小可用命令上下文，缺省字段用桩对象填充。"""
@@ -46,6 +52,7 @@ def _context(**overrides) -> CommandContext:
     defaults = {
         "screen": _Screen(),
         "session": SimpleNamespace(
+            session_id=None,
             get_messages=lambda: [], get_compactions=lambda: [], add_compaction=lambda r: True
         ),
         "skill_manager": SimpleNamespace(
@@ -275,3 +282,56 @@ async def test_diff_command_reports_non_git_dir(tmp_path: Path) -> None:
     await diff_command_slash.handler(_context(screen=screen, project_dir=tmp_path))
 
     assert "git diff failed" in screen.entries[0][1]
+
+
+@pytest.mark.asyncio
+async def test_delete_command_confirms_then_exits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """测试 /delete 确认后删除会话并退出。"""
+
+    from core.commands import delete_command_slash
+
+    session_id = "33333333-3333-3333-3333-333333333333"
+    screen = _Screen()
+    screen.choices = ["yes"]
+    context = _context(screen=screen, project_dir=tmp_path)
+
+    # 构造带 session_id 的会话对象与真实 SessionStore 文件
+    from core.session_store import SessionStore
+
+    store = SessionStore(tmp_path)
+    store.append_message(
+        session_id,
+        Message(role="user", content="你好"),
+    )
+    session_path = store._session_path(session_id)
+    assert session_path.exists()
+
+    # 替换 _context 里默认的 session
+    from dataclasses import replace
+
+    context = replace(
+        context,
+        session=SimpleNamespace(session_id=session_id),
+    )
+
+    await delete_command_slash.handler(context)
+
+    assert not session_path.exists()
+    assert screen.exited is True
+
+
+@pytest.mark.asyncio
+async def test_delete_command_aborts_on_no() -> None:
+    """测试 /delete 选择 no 时不删除不退出。"""
+
+    from core.commands import delete_command_slash
+
+    screen = _Screen()
+    screen.choices = ["no"]
+    context = _context(screen=screen)
+
+    await delete_command_slash.handler(context)
+
+    assert screen.exited is False

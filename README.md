@@ -30,6 +30,7 @@ uv run epsilon            # 首次运行进入配置引导
 | `/export` | 导出会话为 Markdown 文件 |
 | `/diff` | 显示当前 git diff |
 | `/clear` | 清空对话区展示 |
+| `/delete` | 永久删除当前会话并退出（先回收站后直接删） |
 | `/quit` | 退出 |
 
 ### 终端支持说明

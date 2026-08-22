@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -188,6 +189,16 @@ class SessionStore:
                     return self._create_title([message], session_id)
         return session_id[:8]
 
+    def delete_session(self, session_id: str) -> bool:
+        """删除会话文件（先 trash 后 unlink），返回是否删除了文件。"""
+
+        deleted = False
+        for path in (self._session_path(session_id), self._pending_path(session_id)):
+            if path.exists():
+                _delete_file(path)
+                deleted = True
+        return deleted
+
     def _session_path(self, session_id: str) -> Path:
         """校验 Session ID 后生成对应文件路径。"""
 
@@ -359,3 +370,17 @@ class SessionStore:
         if len(title) <= 40:
             return title
         return f"{title[:37]}..."
+
+
+def _delete_file(path: Path) -> None:
+    """先尝试系统 trash 命令，失败时永久删除文件。"""
+
+    try:
+        result = subprocess.run(
+            ["trash", str(path)], capture_output=True, timeout=5
+        )
+        if result.returncode == 0 or not path.exists():
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    path.unlink(missing_ok=True)
