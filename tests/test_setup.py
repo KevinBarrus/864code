@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from core import setup
-from core.setup import VENDORS, list_models, run_setup_guide, write_settings_atomically
+from core.setup import (
+    VENDORS,
+    infer_provider,
+    list_models,
+    run_setup_guide,
+    write_settings_atomically,
+)
 
 
 class FakeModel:
@@ -54,6 +60,18 @@ def test_vendors_include_manual_config() -> None:
 
     assert "Manual" in names
     assert next(vendor for vendor in VENDORS if vendor.name == "Manual").base_url == ""
+
+
+def test_infer_provider_matches_base_url() -> None:
+    """测试根据 base_url 推断厂商名。"""
+
+    assert infer_provider("https://api.deepseek.com/") == "deepseek"
+    assert (
+        infer_provider("https://dashscope.aliyuncs.com/compatible-mode/v1")
+        == "alibaba"
+    )
+    assert infer_provider("https://api.siliconflow.cn/v1") == "siliconflow"
+    assert infer_provider("https://example.com/v1") == ""
 
 
 def test_list_models_returns_model_ids(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -12,7 +12,7 @@ from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
@@ -110,8 +110,12 @@ class ChatScreen:
         command_names: list[tuple[str, str]] | None = None,
         model_name_provider: Callable[[], str] | None = None,
         balance_text_provider: Callable[[], str] | None = None,
+        provider_name_provider: Callable[[], str] | None = None,
+        thinking_level_provider: Callable[[], str] | None = None,
+        info_line_provider: Callable[[], str] | None = None,
+        copy_hint_provider: Callable[[], str] | None = None,
     ) -> None:
-        """创建对话区、输入区和状态栏。"""
+        """创建对话区、输入区和两行式状态栏。"""
 
         self._status = status
         self._on_submit = on_submit
@@ -119,6 +123,10 @@ class ChatScreen:
         self._input_layout = input_layout or InputLayoutConfig()
         self._model_name_provider = model_name_provider
         self._balance_text_provider = balance_text_provider
+        self._provider_name_provider = provider_name_provider
+        self._thinking_level_provider = thinking_level_provider
+        self._info_line_provider = info_line_provider
+        self._copy_hint_provider = copy_hint_provider
         self._request_active = False
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
@@ -160,8 +168,21 @@ class ChatScreen:
             reserved_height=self._get_reserved_height,
         )
         self._logo_control = FormattedTextControl(self._render_logo, focusable=False)
-        self._status_control = FormattedTextControl(
-            self._render_status,
+        # 两行式状态栏：行一左工作区、右复制提示；行二左信息、右模型名·推理强度
+        self._status_cwd_control = FormattedTextControl(
+            self._render_cwd_line,
+            focusable=False,
+        )
+        self._status_copy_hint_control = FormattedTextControl(
+            self._render_copy_hint,
+            focusable=False,
+        )
+        self._status_info_control = FormattedTextControl(
+            self._render_info_line,
+            focusable=False,
+        )
+        self._status_model_control = FormattedTextControl(
+            self._render_model_line,
             focusable=False,
         )
         self._layout = Layout(
@@ -271,9 +292,30 @@ class ChatScreen:
             self.conversation_view,
             filter=Condition(lambda: bool(self._conversation)),
         )
-        self._status_window = Window(
-            content=self._status_control,
+        # 两行式状态栏（对齐 Pi footer）：每行左区占剩余宽度、右区右对齐
+        cwd_window = Window(
+            content=self._status_cwd_control,
             height=1,
+            width=Dimension(weight=1),
+        )
+        copy_hint_window = Window(
+            content=self._status_copy_hint_control,
+            height=1,
+        )
+        info_window = Window(
+            content=self._status_info_control,
+            height=1,
+            width=Dimension(weight=1),
+        )
+        model_window = Window(
+            content=self._status_model_control,
+            height=1,
+        )
+        self._status_window = HSplit(
+            [
+                VSplit([cwd_window, copy_hint_window]),
+                VSplit([info_window, model_window]),
+            ]
         )
         bottom_container = HSplit(
             [self._status_window],
@@ -776,34 +818,62 @@ class ChatScreen:
         for child in children:
             child.content.mouse_handler = self.conversation_view.handle_mouse_event
 
-    def _render_status(self) -> list[tuple[str, str]]:
-        """将状态信息转换为带独立颜色的底部状态栏。"""
+    def _render_cwd_line(self) -> list[tuple[str, str]]:
+        """状态栏行一左侧：当前工作目录，附运行时提示。"""
+
+        fragments: list[tuple[str, str]] = [
+            ("class:status-working-directory", str(self._status.working_directory)),
+        ]
+        if self._status_message:
+            fragments.extend(
+                [("", "   "), ("class:status-error", self._status_message)]
+            )
+        return fragments
+
+    def _render_copy_hint(self) -> list[tuple[str, str]]:
+        """状态栏行一右侧：复制提示，默认空。"""
+
+        hint = self._copy_hint_provider() if self._copy_hint_provider is not None else ""
+        return [( "class:status-copy-hint", hint)] if hint else []
+
+    def _render_info_line(self) -> list[tuple[str, str]]:
+        """状态栏行二左侧：用量信息行，缺省显示余额。"""
+
+        info = self._info_line_provider() if self._info_line_provider is not None else None
+        if info is None:
+            balance = (
+                self._balance_text_provider()
+                if self._balance_text_provider is not None
+                else self._status.balance
+            )
+            info = f"Balance: {balance}"
+        return [("", info)]
+
+    def _render_model_line(self) -> list[tuple[str, str]]:
+        """状态栏行二右侧：厂商名、模型名与推理强度。"""
 
         model_name = (
             self._model_name_provider()
             if self._model_name_provider is not None
             else self._status.model_name
         )
-        balance = (
-            self._balance_text_provider()
-            if self._balance_text_provider is not None
-            else self._status.balance
+        provider = (
+            self._provider_name_provider()
+            if self._provider_name_provider is not None
+            else ""
         )
-        fragments = [
-            ("class:status-model", f"Model: {model_name}"),
-            ("", "    "),
-            ("class:status-balance", f"Balance: {balance}"),
-            ("", "    "),
-            (
-                "class:status-working-directory",
-                f"Working directory: {self._status.working_directory}",
-            ),
-        ]
-        if self._status_message:
-            fragments.extend(
-                [("", "    "), ("class:status-error", self._status_message)]
-            )
-        return fragments
+        thinking = (
+            self._thinking_level_provider()
+            if self._thinking_level_provider is not None
+            else ""
+        )
+        parts: list[str] = []
+        if provider:
+            parts.append(f"({provider})")
+        parts.append(model_name)
+        if thinking:
+            parts.append(f"· {thinking}")
+        return [("class:status-model", " ".join(parts))]
 
     def set_status_message(self, message: str) -> None:
         """更新状态栏中的运行时提示。"""

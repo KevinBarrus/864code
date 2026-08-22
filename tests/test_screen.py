@@ -106,29 +106,29 @@ async def test_skill_picker_replaces_bottom_area_and_restores_layout(tmp_path: P
 def test_chat_screen_renders_status_with_separate_style_classes(
     tmp_path: Path,
 ) -> None:
-    """测试状态栏分别使用模型、余额和工作目录样式。"""
+    """测试两行式状态栏分别使用工作目录、模型和余额样式。"""
 
     screen = _create_screen(tmp_path)
 
-    fragments = screen._render_status()
-    styles = [style for style, _ in fragments]
-    text = "".join(content for _, content in fragments)
+    cwd_fragments = screen._render_cwd_line()
+    model_fragments = screen._render_model_line()
+    info_fragments = screen._render_info_line()
 
-    assert "class:status-model" in styles
-    assert "class:status-balance" in styles
-    assert "class:status-working-directory" in styles
-    assert "test-model" in text
-    assert "暂不可查询" in text
-    assert str(tmp_path) in text
+    assert [style for style, _ in cwd_fragments] == ["class:status-working-directory"]
+    assert "class:status-model" in [style for style, _ in model_fragments]
+    assert "class:status-balance" not in [style for style, _ in info_fragments]
+    assert "test-model" in "".join(text for _, text in model_fragments)
+    assert "暂不可查询" in "".join(text for _, text in info_fragments)
+    assert str(tmp_path) in "".join(text for _, text in cwd_fragments)
 
 
 def test_chat_screen_renders_runtime_status_message(tmp_path: Path) -> None:
-    """测试状态栏可以展示运行时降级提示。"""
+    """测试状态栏行一可以展示运行时降级提示。"""
 
     screen = _create_screen(tmp_path)
     screen.set_status_message("Session persistence degraded")
 
-    fragments = screen._render_status()
+    fragments = screen._render_cwd_line()
     styles = [style for style, _ in fragments]
     text = "".join(content for _, content in fragments)
 
@@ -282,7 +282,7 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         empty_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
         # 根布局的第 5、7 项分别是输入区和状态栏，中间的 0 是布局间隔。
-        assert empty_sizes[4:7] == [3, 0, 1]
+        assert empty_sizes[4:7] == [3, 0, 2]
 
         screen.add_entry("user", "用户输入")
         screen.add_entry("assistant", "")
@@ -290,7 +290,7 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
 
         # 用户消息（含上下留白）1+1+1 + 间隔 padding，assistant 1 行 + 间隔
         assert conversation_sizes[2] == 7
-        assert conversation_sizes[4:7] == [3, 0, 1]
+        assert conversation_sizes[4:7] == [3, 0, 2]
 
 
 def test_input_container_has_border_lines_above_and_below(tmp_path: Path) -> None:
@@ -721,7 +721,7 @@ def test_status_model_name_uses_provider(tmp_path: Path) -> None:
         model_name_provider=lambda: provider_value,
     )
 
-    fragments = screen._render_status()
+    fragments = screen._render_model_line()
 
     assert any("dynamic-model" in text for _style, text in fragments)
     assert not any("static-model" in text for _style, text in fragments)
@@ -732,13 +732,28 @@ def test_status_model_name_falls_back_to_status(tmp_path: Path) -> None:
 
     screen = ChatScreen(create_status_info("static-model", "n/a", tmp_path))
 
-    fragments = screen._render_status()
+    fragments = screen._render_model_line()
 
     assert any("static-model" in text for _style, text in fragments)
 
 
+def test_status_provider_and_thinking_level_appear(tmp_path: Path) -> None:
+    """测试状态栏模型行显示厂商名与推理强度。"""
+
+    screen = ChatScreen(
+        create_status_info("deepseek-v4-pro", "n/a", tmp_path),
+        provider_name_provider=lambda: "deepseek",
+        thinking_level_provider=lambda: "high",
+    )
+
+    fragments = screen._render_model_line()
+    text = "".join(content for _, content in fragments)
+
+    assert "(deepseek) deepseek-v4-pro · high" in text
+
+
 def test_status_balance_uses_provider(tmp_path: Path) -> None:
-    """测试状态栏余额优先使用动态 provider 的值。"""
+    """测试状态栏信息行缺省时优先使用动态余额。"""
 
     provider_value = "9.99 CNY"
     screen = ChatScreen(
@@ -746,7 +761,7 @@ def test_status_balance_uses_provider(tmp_path: Path) -> None:
         balance_text_provider=lambda: provider_value,
     )
 
-    fragments = screen._render_status()
+    fragments = screen._render_info_line()
 
     assert any("9.99 CNY" in text for _style, text in fragments)
     assert not any("unavailable" in text for _style, text in fragments)
@@ -757,6 +772,24 @@ def test_status_balance_falls_back_to_status(tmp_path: Path) -> None:
 
     screen = ChatScreen(create_status_info("test-model", "2.00 CNY", tmp_path))
 
-    fragments = screen._render_status()
+    fragments = screen._render_info_line()
 
     assert any("2.00 CNY" in text for _style, text in fragments)
+
+
+def test_status_copy_hint_provider(tmp_path: Path) -> None:
+    """测试状态栏行一右侧显示复制提示，默认空。"""
+
+    screen = ChatScreen(create_status_info("test-model", "n/a", tmp_path))
+    assert screen._render_copy_hint() == []
+
+    hint_screen = ChatScreen(
+        create_status_info("test-model", "n/a", tmp_path),
+        copy_hint_provider=lambda: "Copied 42 chars to clipboard",
+    )
+    fragments = hint_screen._render_copy_hint()
+
+    assert [style for style, _ in fragments] == ["class:status-copy-hint"]
+    assert "Copied 42 chars to clipboard" in "".join(
+        text for _, text in fragments
+    )

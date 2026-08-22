@@ -114,7 +114,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             yield ui.TextDelta("已压缩后重试")
 
     class FakeScreen:
-        def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None) -> None:
+        def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None, provider_name_provider=None, thinking_level_provider=None, info_line_provider=None, copy_hint_provider=None) -> None:
             self._on_submit = on_submit
             self.application = self
             self.entries: list[tuple[str, str]] = []
@@ -305,6 +305,10 @@ async def test_run_chat_refreshes_balance_after_turn(
             command_names=None,
             model_name_provider=None,
             balance_text_provider=None,
+            provider_name_provider=None,
+            thinking_level_provider=None,
+            info_line_provider=None,
+            copy_hint_provider=None,
         ) -> None:
             self._on_submit = on_submit
             self.application = self

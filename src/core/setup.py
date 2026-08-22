@@ -40,6 +40,25 @@ VENDORS = (
 )
 
 
+def infer_provider(base_url: str) -> str:
+    """根据 base_url 推断厂商名（小写），无法识别时返回空字符串。"""
+
+    normalized = base_url.lower()
+    if "deepseek" in normalized:
+        return "deepseek"
+    if "dashscope" in normalized or "aliyun" in normalized:
+        return "alibaba"
+    if "bigmodel" in normalized or "zhipu" in normalized:
+        return "zhipu"
+    if "siliconflow" in normalized:
+        return "siliconflow"
+    if "openai" in normalized:
+        return "openai"
+    if "moonshot" in normalized:
+        return "moonshot"
+    return ""
+
+
 def list_models(base_url: str, api_key: str, timeout: float = 15.0) -> list[str] | None:
     """调用服务商的 /models 接口获取可用模型列表，失败时返回 None。"""
 

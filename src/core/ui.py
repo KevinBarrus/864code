@@ -18,6 +18,7 @@ from .commands import (
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .config import Settings
+from .setup import infer_provider
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .prompts import load_prompt
 from .session import Session
@@ -65,6 +66,7 @@ async def run_chat(
     screen: ChatScreen
     session_workspace = (workspace or Path.cwd()).resolve()
     current_balance = status.balance
+    current_thinking_level = "high"
 
     async def refresh_balance() -> None:
         """每轮对话后刷新余额，失败保留旧值。"""
@@ -226,6 +228,10 @@ async def run_chat(
         ],
         model_name_provider=lambda: client_holder.settings.model_name,
         balance_text_provider=lambda: current_balance,
+        provider_name_provider=lambda: infer_provider(
+            client_holder.settings.base_url
+        ),
+        thinking_level_provider=lambda: current_thinking_level,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),
