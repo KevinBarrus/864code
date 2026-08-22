@@ -43,7 +43,7 @@ async def test_run_chat_start_skill_injects_active_skill(
             self.application = self
             self.entries: list[tuple[str, str]] = []
 
-        def add_entry(self, role: str, content: str) -> int:
+        def add_entry(self, role: str, content: str, style: str = "") -> int:
             self.entries.append((role, content))
             return len(self.entries) - 1
 
@@ -109,7 +109,7 @@ async def test_run_chat_unknown_command_does_not_call_model(
             self.entries: list[tuple[str, str]] = []
             FakeScreen.instances.append(self)
 
-        def add_entry(self, role: str, content: str) -> int:
+        def add_entry(self, role: str, content: str, style: str = "") -> int:
             self.entries.append((role, content))
             return len(self.entries) - 1
 

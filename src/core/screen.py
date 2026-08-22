@@ -244,6 +244,7 @@ class ConversationEntry:
     role: ConversationRole
     content: str
     control: FormattedTextControl
+    style: str = ""
 
 
 @dataclass(frozen=True)
@@ -365,10 +366,10 @@ class ChatScreen:
             clipboard=Osc52Clipboard(),
         )
 
-    def add_entry(self, role: ConversationRole, content: str) -> int:
+    def add_entry(self, role: ConversationRole, content: str, style: str = "") -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
 
-        self._conversation.append(self._create_entry(role, content))
+        self._conversation.append(self._create_entry(role, content, style))
         self._sync_conversation_view()
         if role == "user":
             self.conversation_view.scroll_to_bottom()
@@ -391,7 +392,9 @@ class ChatScreen:
         self.application.invalidate()
 
     @staticmethod
-    def _create_entry(role: ConversationRole, content: str) -> ConversationEntry:
+    def _create_entry(
+        role: ConversationRole, content: str, style: str = ""
+    ) -> ConversationEntry:
         """创建保存独立文本控件的对话条目，助手消息渲染 Markdown。"""
 
         if role == "assistant":
@@ -402,6 +405,7 @@ class ChatScreen:
             role,
             content,
             FormattedTextControl(control_text, focusable=False),
+            style,
         )
 
     def append_to_entry(self, index: int, content: str) -> None:
@@ -415,6 +419,16 @@ class ChatScreen:
         """替换指定对话条目的展示内容。"""
 
         self._set_entry_content(index, content)
+        self.application.invalidate()
+
+    def set_entry_style(self, index: int, style: str) -> None:
+        """替换指定对话条目的展示样式（如工具调用三色）。"""
+
+        entry = self._conversation[index]
+        if entry.style == style:
+            return
+        self._conversation[index] = replace(entry, style=style)
+        self._sync_conversation_view()
         self.application.invalidate()
 
     def _set_entry_content(self, index: int, content: str) -> None:
@@ -973,7 +987,7 @@ class ChatScreen:
                 children.append(
                     Window(
                         content=entry.control,
-                        style="class:tool-activity",
+                        style=entry.style or "class:tool-activity",
                         wrap_lines=True,
                         dont_extend_height=True,
                     )

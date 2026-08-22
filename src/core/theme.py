@@ -33,6 +33,10 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "approval-area": "bg:#303030",
             "approval-selected": "fg:ansibrightcyan",
             "tool-activity": "fg:#808080",
+            # 工具调用三色背景（对齐 Pi tool-execution.ts）
+            "tool-pending": "bg:#282832",
+            "tool-success": "bg:#283228",
+            "tool-error": "bg:#3c2828",
             # Markdown 基础渲染样式
             "md-heading": "bold #f5d76e",
             "md-bold": "bold",

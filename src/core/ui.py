@@ -169,12 +169,19 @@ async def run_chat(
                 tool_activity_indices[event.tool_call.call_id] = screen.add_entry(
                     "tool",
                     summary,
+                    style="class:tool-pending",
                 )
                 awaiting_response_after_tool = True
             elif isinstance(event, ToolExecutionEvent):
                 index = tool_activity_indices.get(event.tool_call.call_id)
                 if index is not None:
                     screen.set_entry_content(index, _tool_result_summary(event))
+                    style = (
+                        "class:tool-error"
+                        if event.result.is_error
+                        else "class:tool-success"
+                    )
+                    screen.set_entry_style(index, style)
             elif isinstance(event, UsageEvent):
                 latest_usage = event
                 usage_totals.add(event, client_holder.settings.price)

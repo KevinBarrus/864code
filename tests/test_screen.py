@@ -155,6 +155,22 @@ def test_chat_screen_supports_tool_activity_style(tmp_path: Path) -> None:
     assert screen._conversation_content.children[index].style == "class:tool-activity"
 
 
+def test_tool_entry_style_can_be_updated(tmp_path: Path) -> None:
+    """测试工具条目样式可从待执行更新为成功/错误。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry(
+        "tool", "▸ read_file  ...", style="class:tool-pending"
+    )
+
+    assert screen._conversation_content.children[index].style == "class:tool-pending"
+
+    screen.set_entry_style(index, "class:tool-success")
+
+    assert screen._conversation_content.children[index].style == "class:tool-success"
+    assert screen._conversation[index].style == "class:tool-success"
+
+
 def test_chat_screen_uses_scrollable_conversation_view(
     tmp_path: Path,
 ) -> None:

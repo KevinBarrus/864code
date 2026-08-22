@@ -119,7 +119,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             self.application = self
             self.entries: list[tuple[str, str]] = []
 
-        def add_entry(self, role: str, content: str) -> int:
+        def add_entry(self, role: str, content: str, style: str = "") -> int:
             self.entries.append((role, content))
             return len(self.entries) - 1
 
@@ -317,7 +317,7 @@ async def test_run_chat_refreshes_balance_after_turn(
             self.balance_text_provider = balance_text_provider
             FakeScreen.instances.append(self)
 
-        def add_entry(self, role: str, content: str) -> int:
+        def add_entry(self, role: str, content: str, style: str = "") -> int:
             self.entries.append((role, content))
             return len(self.entries) - 1
 

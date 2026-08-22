@@ -46,7 +46,7 @@ class FakeScreen:
         self.application = FakeApplication()
         FakeScreen.last = self
 
-    def add_entry(self, role: str, content: str) -> int:
+    def add_entry(self, role: str, content: str, style: str = "") -> int:
         """记录一条展示消息"""
 
         self.entries.append((role, content))
