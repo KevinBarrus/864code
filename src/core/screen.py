@@ -3,18 +3,19 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Literal
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.clipboard import Clipboard
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.cursor_shapes import CursorShape
-from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
+from prompt_toolkit.formatted_text import AnyFormattedText, StyleAndTextTuples, to_plain_text
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.controls import FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
     Container,
@@ -26,9 +27,58 @@ from prompt_toolkit.layout.screen import Char, Screen, WritePosition
 from prompt_toolkit.mouse_events import MouseEvent
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
+from wcwidth import wcswidth
 
 from .clipboard import Osc52Clipboard, copy_text_to_clipboard
 from .markdown import render_markdown
+from .status import format_cwd_for_footer
+
+
+class StatusControl(UIControl):
+    """两行状态栏控件：每行左右分区，右侧右对齐（对齐 Pi footer 整行渲染）。"""
+
+    def __init__(self, get_rows) -> None:
+        """get_rows 返回两行 (左侧文本, 右侧文本)。"""
+
+        self._get_rows = get_rows
+
+    def preferred_width(self, max_available_width: int) -> Dimension:
+        """宽度跟随容器。"""
+
+        return Dimension(min=1)
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+        wrap_lines: bool,
+        get_line_width: Callable[[str], int],
+    ) -> Dimension:
+        """固定两行高度。"""
+
+        return Dimension.exact(2)
+
+    def is_focusable(self) -> bool:
+        """状态栏不可聚焦。"""
+
+        return False
+
+    def create_content(self, width: int, height: int) -> UIContent:
+        """按容器宽度生成两行内容，右侧右对齐（对齐 Pi footer 整行渲染）。"""
+
+        lines: list[StyleAndTextTuples] = []
+        for left, right in self._get_rows()[:2]:
+            gap = max(1, width - wcswidth(left) - (wcswidth(right) if right else 0))
+            lines.append([("", left + " " * gap + right)])
+
+        def get_line(lineno: int) -> StyleAndTextTuples:
+            """返回指定行的片段。"""
+
+            return lines[lineno] if lineno < len(lines) else []
+
+        return UIContent(get_line=get_line, line_count=2)
+
+
 from .status import StatusInfo
 from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
@@ -334,23 +384,8 @@ class ChatScreen:
             on_copy=self._on_copy,
         )
         self._logo_control = FormattedTextControl(self._render_logo, focusable=False)
-        # 两行式状态栏：行一左工作区、右复制提示；行二左信息、右模型名·推理强度
-        self._status_cwd_control = FormattedTextControl(
-            self._render_cwd_line,
-            focusable=False,
-        )
-        self._status_copy_hint_control = FormattedTextControl(
-            self._render_copy_hint,
-            focusable=False,
-        )
-        self._status_info_control = FormattedTextControl(
-            self._render_info_line,
-            focusable=False,
-        )
-        self._status_model_control = FormattedTextControl(
-            self._render_model_line,
-            focusable=False,
-        )
+        # 两行式状态栏（对齐 Pi footer）：整行渲染，行一左工作区右复制提示、行二左信息右模型
+        self._status_control = StatusControl(self._status_rows)
         self._layout = Layout(
             self._create_layout(),
             focused_element=self.input_area,
@@ -479,35 +514,14 @@ class ChatScreen:
             self.selection_pane,
             filter=Condition(lambda: bool(self._conversation)),
         )
-        # 两行式状态栏（对齐 Pi footer）：每行左区占剩余宽度、右区右对齐
-        cwd_window = Window(
-            content=self._status_cwd_control,
-            height=1,
-            width=Dimension(weight=1),
+        # 两行式状态栏（对齐 Pi footer）：整行渲染，无背景，右侧右对齐
+        self._status_window = Window(
+            content=self._status_control,
+            height=2,
+            style="class:status-bar",
         )
-        copy_hint_window = Window(
-            content=self._status_copy_hint_control,
-            height=1,
-        )
-        info_window = Window(
-            content=self._status_info_control,
-            height=1,
-            width=Dimension(weight=1),
-        )
-        model_window = Window(
-            content=self._status_model_control,
-            height=1,
-        )
-        self._status_window = HSplit(
-            [
-                VSplit([cwd_window, copy_hint_window]),
-                VSplit([info_window, model_window]),
-            ]
-        )
-        bottom_container = HSplit(
-            [self._status_window],
-            style="class:approval-area",
-        )
+        # 底部区域无背景，内容直接落在命令行窗口默认背景上（对齐 Pi）
+        bottom_container = HSplit([self._status_window])
         self._bottom_container = bottom_container
         # 输入区上下各一条水平线框住（对齐 Pi DynamicBorder），不使用灰色背景
         border_line = Window(
@@ -1005,28 +1019,25 @@ class ChatScreen:
         for child in children:
             child.content.mouse_handler = self.conversation_view.handle_mouse_event
 
-    def _render_cwd_line(self) -> list[tuple[str, str]]:
-        """状态栏行一左侧：当前工作目录，附运行时提示。"""
+    def _status_rows(self) -> list[tuple[str, str]]:
+        """返回状态栏两行内容（左侧、右侧），供 StatusControl 整行右对齐渲染。"""
 
-        fragments: list[tuple[str, str]] = [
-            ("class:status-working-directory", str(self._status.working_directory)),
-        ]
+        cwd = format_cwd_for_footer(
+            str(self._status.working_directory), str(Path.home())
+        )
+        left1 = cwd
         if self._status_message:
-            fragments.extend(
-                [("", "   "), ("class:status-error", self._status_message)]
-            )
-        return fragments
-
-    def _render_copy_hint(self) -> list[tuple[str, str]]:
-        """状态栏行一右侧：复制提示，默认空。"""
-
-        hint = self._copy_hint_provider() if self._copy_hint_provider is not None else ""
-        return [( "class:status-copy-hint", hint)] if hint else []
-
-    def _render_info_line(self) -> list[tuple[str, str]]:
-        """状态栏行二左侧：用量信息行，缺省显示余额。"""
-
-        info = self._info_line_provider() if self._info_line_provider is not None else None
+            left1 = f"{left1}   {self._status_message}"
+        hint = (
+            self._copy_hint_provider()
+            if self._copy_hint_provider is not None
+            else ""
+        )
+        info = (
+            self._info_line_provider()
+            if self._info_line_provider is not None
+            else None
+        )
         if info is None:
             balance = (
                 self._balance_text_provider()
@@ -1034,11 +1045,6 @@ class ChatScreen:
                 else self._status.balance
             )
             info = f"Balance: {balance}"
-        return [("", info)]
-
-    def _render_model_line(self) -> list[tuple[str, str]]:
-        """状态栏行二右侧：厂商名、模型名与推理强度。"""
-
         model_name = (
             self._model_name_provider()
             if self._model_name_provider is not None
@@ -1060,7 +1066,7 @@ class ChatScreen:
         parts.append(model_name)
         if thinking:
             parts.append(f"· {thinking}")
-        return [("class:status-model", " ".join(parts))]
+        return [(left1, hint), (info, " ".join(parts))]
 
     def set_status_message(self, message: str) -> None:
         """更新状态栏中的运行时提示。"""

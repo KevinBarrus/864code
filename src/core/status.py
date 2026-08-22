@@ -4,6 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def format_cwd_for_footer(cwd: str, home: str | None = None) -> str:
+    """把 home 目录缩写为 ~（对齐 Pi formatCwdForFooter），不在 home 下时原样返回。"""
+
+    if not home:
+        return cwd
+    try:
+        relative = Path(cwd).resolve().relative_to(Path(home).resolve())
+    except ValueError:
+        return cwd
+    if str(relative) == ".":
+        return "~"
+    return f"~/{relative}"
+
+
 @dataclass(frozen=True)
 class StatusInfo:
     """状态栏中的模型、余额和当前工作目录。"""

@@ -246,7 +246,7 @@ async def run_chat(
             await refresh_balance()
 
     def _render_info_line() -> str:
-        """渲染状态栏信息行：用量、成本、上下文与余额。"""
+        """渲染状态栏信息行：用量、成本、余额、上下文与压缩模式。"""
 
         parts: list[str] = []
         if usage_totals.prompt_tokens:
@@ -261,11 +261,12 @@ async def run_chat(
                 parts.append(f"CH{hit_rate:.1f}%")
         if usage_totals.cost:
             parts.append(f"${usage_totals.cost:.3f}")
+        parts.append(f"Balance: {current_balance}")
         estimated = context_manager.estimate_tokens(session.get_messages())
         window = context_manager.context_window
         percent = estimated / window * 100 if window else 0
-        parts.append(f"{percent:.1f}%/{format_tokens(window)}")
-        parts.append(f"Balance: {current_balance}")
+        # 支持自动压缩时末尾标注 (auto)（对齐 Pi）
+        parts.append(f"{percent:.1f}%/{format_tokens(window)} (auto)")
         return " ".join(parts)
 
     screen = ChatScreen(

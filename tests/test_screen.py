@@ -103,23 +103,18 @@ async def test_skill_picker_replaces_bottom_area_and_restores_layout(tmp_path: P
         assert screen._bottom_container.children == [screen._status_window]
 
 
-def test_chat_screen_renders_status_with_separate_style_classes(
-    tmp_path: Path,
-) -> None:
-    """测试两行式状态栏分别使用工作目录、模型和余额样式。"""
+def test_chat_screen_renders_status_rows(tmp_path: Path) -> None:
+    """测试两行式状态栏：行一左工作区、行二左信息、右模型名。"""
 
     screen = _create_screen(tmp_path)
 
-    cwd_fragments = screen._render_cwd_line()
-    model_fragments = screen._render_model_line()
-    info_fragments = screen._render_info_line()
+    row1_left, row1_right = screen._status_rows()[0]
+    row2_left, row2_right = screen._status_rows()[1]
 
-    assert [style for style, _ in cwd_fragments] == ["class:status-working-directory"]
-    assert "class:status-model" in [style for style, _ in model_fragments]
-    assert "class:status-balance" not in [style for style, _ in info_fragments]
-    assert "test-model" in "".join(text for _, text in model_fragments)
-    assert "暂不可查询" in "".join(text for _, text in info_fragments)
-    assert str(tmp_path) in "".join(text for _, text in cwd_fragments)
+    assert "test-model" in row2_right
+    assert "暂不可查询" in row2_left
+    assert str(tmp_path) in row1_left
+    assert row1_right == ""
 
 
 def test_chat_screen_renders_runtime_status_message(tmp_path: Path) -> None:
@@ -128,12 +123,9 @@ def test_chat_screen_renders_runtime_status_message(tmp_path: Path) -> None:
     screen = _create_screen(tmp_path)
     screen.set_status_message("Session persistence degraded")
 
-    fragments = screen._render_cwd_line()
-    styles = [style for style, _ in fragments]
-    text = "".join(content for _, content in fragments)
+    left, _ = screen._status_rows()[0]
 
-    assert "class:status-error" in styles
-    assert "Session persistence degraded" in text
+    assert "Session persistence degraded" in left
 
 
 def test_chat_screen_appends_conversation_entries(tmp_path: Path) -> None:
@@ -361,7 +353,7 @@ def test_user_entry_uses_full_width_gray_style_without_prefix(
         screen.application.style.get_attrs_for_style_str(
             "class:conversation-user"
         ).bgcolor
-        == "303030"
+        == "343541"
     )
     assert screen._render_entry(0) == "用户输入"
 
@@ -737,10 +729,11 @@ def test_status_model_name_uses_provider(tmp_path: Path) -> None:
         model_name_provider=lambda: provider_value,
     )
 
-    fragments = screen._render_model_line()
+    fragments = screen._status_rows()
+    row2_right = fragments[1][1]
 
-    assert any("dynamic-model" in text for _style, text in fragments)
-    assert not any("static-model" in text for _style, text in fragments)
+    assert "dynamic-model" in row2_right
+    assert "static-model" not in row2_right
 
 
 def test_status_model_name_falls_back_to_status(tmp_path: Path) -> None:
@@ -748,9 +741,9 @@ def test_status_model_name_falls_back_to_status(tmp_path: Path) -> None:
 
     screen = ChatScreen(create_status_info("static-model", "n/a", tmp_path))
 
-    fragments = screen._render_model_line()
+    row2_right = screen._status_rows()[1][1]
 
-    assert any("static-model" in text for _style, text in fragments)
+    assert "static-model" in row2_right
 
 
 def test_status_provider_and_thinking_level_appear(tmp_path: Path) -> None:
@@ -762,10 +755,9 @@ def test_status_provider_and_thinking_level_appear(tmp_path: Path) -> None:
         thinking_level_provider=lambda: "high",
     )
 
-    fragments = screen._render_model_line()
-    text = "".join(content for _, content in fragments)
+    row2_right = screen._status_rows()[1][1]
 
-    assert "(deepseek) deepseek-v4-pro · high" in text
+    assert "(deepseek) deepseek-v4-pro · high" in row2_right
 
 
 def test_status_balance_uses_provider(tmp_path: Path) -> None:
@@ -777,10 +769,10 @@ def test_status_balance_uses_provider(tmp_path: Path) -> None:
         balance_text_provider=lambda: provider_value,
     )
 
-    fragments = screen._render_info_line()
+    row2_left = screen._status_rows()[1][0]
 
-    assert any("9.99 CNY" in text for _style, text in fragments)
-    assert not any("unavailable" in text for _style, text in fragments)
+    assert "9.99 CNY" in row2_left
+    assert "unavailable" not in row2_left
 
 
 def test_status_balance_falls_back_to_status(tmp_path: Path) -> None:
@@ -788,24 +780,21 @@ def test_status_balance_falls_back_to_status(tmp_path: Path) -> None:
 
     screen = ChatScreen(create_status_info("test-model", "2.00 CNY", tmp_path))
 
-    fragments = screen._render_info_line()
+    row2_left = screen._status_rows()[1][0]
 
-    assert any("2.00 CNY" in text for _style, text in fragments)
+    assert "2.00 CNY" in row2_left
 
 
 def test_status_copy_hint_provider(tmp_path: Path) -> None:
     """测试状态栏行一右侧显示复制提示，默认空。"""
 
     screen = ChatScreen(create_status_info("test-model", "n/a", tmp_path))
-    assert screen._render_copy_hint() == []
+    assert screen._status_rows()[0][1] == ""
 
     hint_screen = ChatScreen(
         create_status_info("test-model", "n/a", tmp_path),
         copy_hint_provider=lambda: "Copied 42 chars to clipboard",
     )
-    fragments = hint_screen._render_copy_hint()
+    row1_right = hint_screen._status_rows()[0][1]
 
-    assert [style for style, _ in fragments] == ["class:status-copy-hint"]
-    assert "Copied 42 chars to clipboard" in "".join(
-        text for _, text in fragments
-    )
+    assert row1_right == "Copied 42 chars to clipboard"

@@ -1,24 +1,28 @@
-from core.theme import DEFAULT_THEME, ThemeColors, create_ui_style
+from core.theme import create_ui_style
 
 
-def test_default_theme_contains_status_colors() -> None:
-    """测试默认主题为三类状态栏信息提供独立颜色。"""
+def test_ui_style_status_bar_is_dim_gray() -> None:
+    """测试状态栏使用统一的淡灰前景色。"""
 
-    assert DEFAULT_THEME.model
-    assert DEFAULT_THEME.balance
-    assert DEFAULT_THEME.working_directory
+    style = create_ui_style()
+
+    assert style.get_attrs_for_style_str("class:status-bar").color == "666666"
 
 
-def test_create_ui_style_uses_custom_theme_colors() -> None:
-    """测试修改主题配置后，界面样式会使用新的颜色。"""
+def test_ui_style_has_no_approval_background() -> None:
+    """测试底部区域不再使用灰色背景（对齐 Pi，字体落在默认背景）。"""
 
-    theme = ThemeColors(model="#111111", balance="#222222", working_directory="#333333")
+    style = create_ui_style()
 
-    style = create_ui_style(theme)
+    assert not style.get_attrs_for_style_str("class:approval-area").bgcolor
 
-    assert style.get_attrs_for_style_str("class:status-model").color == "111111"
-    assert style.get_attrs_for_style_str("class:status-balance").color == "222222"
-    assert (
-        style.get_attrs_for_style_str("class:status-working-directory").color
-        == "333333"
-    )
+
+def test_ui_style_keeps_markdown_and_tool_colors() -> None:
+    """测试 Markdown 与工具三色样式保留。"""
+
+    style = create_ui_style()
+
+    assert style.get_attrs_for_style_str("class:tool-pending").bgcolor == "282832"
+    assert style.get_attrs_for_style_str("class:tool-success").bgcolor == "283228"
+    assert style.get_attrs_for_style_str("class:tool-error").bgcolor == "3c2828"
+    assert style.get_attrs_for_style_str("class:md-heading").color == "f5d76e"
