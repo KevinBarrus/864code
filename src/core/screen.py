@@ -344,6 +344,22 @@ def _indent_markdown(
     return result
 
 
+def _fragments_to_lines(
+    fragments: StyleAndTextTuples,
+) -> list[list[tuple[str, str]]]:
+    """把带换行的样式片段拆成行列表，保留每段的样式。"""
+
+    lines: list[list[tuple[str, str]]] = [[]]
+    for style, text in fragments:
+        parts = text.split("\n")
+        for index, part in enumerate(parts):
+            if index > 0:
+                lines.append([])
+            if part:
+                lines[-1].append((style, part))
+    return lines
+
+
 @dataclass(frozen=True)
 class ConversationEntry:
     """对话区中的一条展示内容。"""
@@ -1100,19 +1116,39 @@ class ChatScreen:
         return self._conversation[index].content
 
     def _render_logo(self) -> AnyFormattedText:
-        """渲染 Logo 与新建会话时的起始信息（操作提示、skill、Context 栏）。"""
+        """渲染 Logo 与新建会话时的起始信息，整体按终端宽度居中。"""
 
-        logo = to_formatted_text(self._logo_provider.render())
-        if self._startup_info_provider is None:
-            return logo
-        info = self._startup_info_provider()
-        if not info:
-            return logo
-        fragments: list[tuple[str, str]] = list(logo)
-        for line in info:
-            fragments.append(("", "\n"))
+        lines: list[list[tuple[str, str]]] = _fragments_to_lines(
+            to_formatted_text(self._logo_provider.render())
+        )
+        if self._startup_info_provider is not None:
+            for info_line in self._startup_info_provider():
+                lines.append(list(info_line))
+        width = self._terminal_width()
+        if width:
+            max_line_width = max(
+                (wcswidth("".join(text for _, text in line)) for line in lines),
+                default=0,
+            )
+            indent = max(0, (width - max_line_width) // 2)
+        else:
+            indent = 0
+        fragments: list[tuple[str, str]] = []
+        for line in lines:
+            fragments.append(("", " " * indent))
             fragments.extend(line)
+            fragments.append(("", "\n"))
+        if fragments:
+            fragments.pop()
         return fragments
+
+    def _terminal_width(self) -> int:
+        """返回终端当前列数，无法获取时返回 0。"""
+
+        try:
+            return self.application.output.get_size().columns
+        except Exception:
+            return 0
 
     def _sync_conversation_view(self) -> None:
         """将对话数据同步到带样式的可滚动视图。"""

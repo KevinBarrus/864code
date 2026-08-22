@@ -9,10 +9,14 @@ def _create_view() -> ConversationView:
     return ConversationView(HSplit([Window()]))
 
 
-def test_conversation_view_follows_output_by_default() -> None:
-    """测试对话滚动容器默认跟随最新输出。"""
+def test_conversation_view_stays_at_top_until_content() -> None:
+    """测试新建会话（仅 Logo）不跟随底部，出现内容后由 scroll_to_bottom 接管。"""
 
     view = _create_view()
+
+    assert view.follow_output is False
+
+    view.scroll_to_bottom()
 
     assert view.follow_output is True
 

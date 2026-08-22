@@ -22,7 +22,8 @@ class ConversationView(ScrollablePane):
 
         super().__init__(content, show_scrollbar=False)
         self._reserved_height = reserved_height or (lambda _width, _height: 0)
-        self._follow_output = True
+        # 新建会话仅有 Logo 时保持顶部展示；出现对话消息后由 scroll_to_bottom 接管
+        self._follow_output = False
         self._max_vertical_scroll: int | None = None
         self._viewport_height = 0
 

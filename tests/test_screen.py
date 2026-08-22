@@ -315,7 +315,11 @@ def test_logo_merges_startup_info(tmp_path: Path) -> None:
 
     rendered = to_plain_text(screen._render_logo())
 
-    assert rendered == "logo-line\nhint-line\n[Context]"
+    # 居中后各行带相同缩进，行内容保持
+    assert rendered.split("\n")[0].lstrip() == "logo-line"
+    assert rendered.split("\n")[1].lstrip() == "hint-line"
+    assert rendered.split("\n")[2].lstrip() == "[Context]"
+    assert len(set(len(line) - len(line.lstrip()) for line in rendered.split("\n"))) == 1
 
     # 未提供起始信息时只显示 Logo
     plain_screen = ChatScreen(
@@ -323,7 +327,7 @@ def test_logo_merges_startup_info(tmp_path: Path) -> None:
         logo_provider=TestLogo(),
     )
 
-    assert to_plain_text(plain_screen._render_logo()) == "logo-line"
+    assert to_plain_text(plain_screen._render_logo()).lstrip() == "logo-line"
 
 
 def test_empty_custom_logo_takes_no_layout_space(tmp_path: Path) -> None:
@@ -585,7 +589,7 @@ def test_chat_screen_accepts_logo_provider(tmp_path: Path) -> None:
     status = create_status_info("test-model", "暂不可查询", tmp_path)
     screen = ChatScreen(status, logo_provider=TestLogo())
 
-    assert to_plain_text(screen._render_logo()) == "epsilon"
+    assert to_plain_text(screen._render_logo()).lstrip() == "epsilon"
 
 
 def test_chat_screen_page_keys_scroll_conversation(tmp_path: Path) -> None:
