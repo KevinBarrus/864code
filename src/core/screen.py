@@ -657,12 +657,9 @@ class ChatScreen:
         return bool(to_plain_text(self._logo_provider.render()).strip())
 
     def _get_input_line_prefix(self, lineno: int, wrap_count: int):
-        """为输入文字提供可配置的左右内边距和 > 前缀。"""
+        """为输入文字提供可配置的左右内边距（不使用 > 前缀，对齐 Pi 输入框）。"""
 
-        padding = " " * self._input_layout.horizontal_padding
-        if lineno == 0 and wrap_count == 0:
-            return [("", f"{padding}> ")]
-        return [("", f"{padding}  ")]
+        return [("", " " * self._input_layout.horizontal_padding)]
 
     def _create_key_bindings(self) -> KeyBindings:
         """创建提交、换行和退出快捷键。"""

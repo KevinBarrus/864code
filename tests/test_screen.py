@@ -330,6 +330,24 @@ def test_chat_screen_uses_configured_input_spacing(tmp_path: Path) -> None:
     assert screen._input_layout.horizontal_padding == 4
 
 
+def test_input_line_prefix_has_no_prompt_marker(tmp_path: Path) -> None:
+    """测试输入行前缀只包含内边距，不使用 > 标记。"""
+
+    screen = ChatScreen(
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        input_layout=InputLayoutConfig(horizontal_padding=2),
+    )
+
+    prefix = screen._get_input_line_prefix(0, 0)
+    text = "".join(content for _, content in prefix)
+    wrapped = screen._get_input_line_prefix(1, 1)
+    wrapped_text = "".join(content for _, content in wrapped)
+
+    assert text == "  "
+    assert ">" not in text
+    assert wrapped_text == "  "
+
+
 def test_chat_screen_uses_blinking_cursor(tmp_path: Path) -> None:
     """测试输入框启用闪烁光标。"""
 
