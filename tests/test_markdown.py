@@ -97,6 +97,22 @@ def test_inline_renders_bold_and_italic() -> None:
     assert ("class:md-bold", "b") in fragments
 
 
+def test_multiline_renders_with_line_breaks() -> None:
+    """测试多行内容行与行之间插入换行。"""
+
+    fragments = render_markdown("第一行\n第二行\n第三行")
+
+    assert _plain("第一行\n第二行\n第三行") == "第一行\n第二行\n第三行"
+
+
+def test_ordered_list_lines_break() -> None:
+    """测试有序列表每项独立成行。"""
+
+    plain = _plain("1. 第一点\n2. 第二点")
+
+    assert plain == "· 第一点\n· 第二点"
+
+
 def test_inline_code_uses_code_style() -> None:
     """测试行内代码使用代码样式并去掉反引号。"""
 

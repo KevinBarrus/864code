@@ -18,6 +18,7 @@ from .commands import (
     thinking_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
+from .clipboard import copy_text_to_clipboard
 from .config import Settings
 from .cost import UsageTotals, cache_hit_rate, format_tokens
 from .setup import infer_provider
@@ -74,9 +75,10 @@ async def run_chat(
     copy_hint = ""
 
     async def flash_copy_hint(text: str) -> None:
-        """显示复制提示 5 秒后自动消失。"""
+        """写入系统剪贴板并显示复制提示 5 秒后自动消失。"""
 
         nonlocal copy_hint
+        await asyncio.to_thread(copy_text_to_clipboard, text)
         copy_hint = f"Copied {len(text)} chars to clipboard"
         screen.application.invalidate()
         await asyncio.sleep(5)
