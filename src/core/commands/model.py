@@ -79,12 +79,27 @@ async def _create_new_config(context: CommandContext) -> None:
         model_name=model_name,
         api_key=api_key,
     )
-    await write_settings_atomically(
+    await _save_model_config(
         context.project_dir / ".epsilon" / "settings.json",
-        {"model": {"base_url": base_url, "api_key": api_key, "model_name": model_name}},
+        {"base_url": base_url, "api_key": api_key, "model_name": model_name},
     )
     _apply_model_switch(context, settings)
     context.screen.add_entry("tool", f"Switched to model: {model_name}")
+
+
+async def _save_model_config(path, model: dict) -> None:
+    """把 model 配置合并写回 settings.json，保留 background 等其他字段。"""
+
+    import json
+
+    data = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data["model"] = model
+    await write_settings_atomically(path, data)
 
 
 async def _pick_vendor(context: CommandContext) -> str | None:

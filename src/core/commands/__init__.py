@@ -19,6 +19,7 @@ from .clear import clear_command_slash
 from .quit import quit_command_slash
 from .export import export_command_slash
 from .diff import diff_command_slash
+from .background_image import background_image_command_slash
 
 __all__ = [
     "CommandContext",
@@ -38,4 +39,5 @@ __all__ = [
     "quit_command_slash",
     "export_command_slash",
     "diff_command_slash",
+    "background_image_command_slash",
 ]

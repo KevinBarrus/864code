@@ -25,6 +25,7 @@ from .commands import (
     quit_command_slash,
     export_command_slash,
     diff_command_slash,
+    background_image_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .clipboard import copy_text_to_clipboard
@@ -69,6 +70,7 @@ def _default_command_registry() -> CommandRegistry:
     registry.register(quit_command_slash)
     registry.register(export_command_slash)
     registry.register(diff_command_slash)
+    registry.register(background_image_command_slash)
     return registry
 
 
