@@ -1,6 +1,7 @@
 """提供嵌入输入区域的单选选择组件。"""
 
 import asyncio
+from collections.abc import Callable
 
 from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.layout import Window
@@ -19,12 +20,14 @@ class ChoicePicker:
         items: list[str],
         title: str,
         extra_options: list[str] | None = None,
+        on_interact: Callable[[], None] | None = None,
     ) -> None:
         """创建单选面板，title 为提示语，extra_options 追加在列表末尾。"""
 
         self._items = list(items)
         self._title = title
         self._extra_options = list(extra_options or [])
+        self._on_interact = on_interact
         self._cursor = 0
         self._result: asyncio.Future[str | None] = (
             asyncio.get_running_loop().create_future()
@@ -83,12 +86,22 @@ class ChoicePicker:
         if not self._result.done():
             self._result.set_result(result)
 
-    def _render(self) -> AnyFormattedText:
-        """渲染提示语和单选列表，选中行用 › 前缀。"""
+    def _click(self, index: int) -> None:
+        """鼠标点击某行：选中该项并立即确认。"""
 
-        fragments: list[tuple[str, str]] = [("", f"{self._title}\n\n")]
+        self._cursor = index
+        self._follow_cursor()
+        if self._on_interact is not None:
+            self._on_interact()
+        self.confirm()
+
+    def _render(self) -> AnyFormattedText:
+        """渲染提示语和单选列表，选中行用 › 前缀，支持鼠标点击选中。"""
+
+        fragments: list[tuple[str, str, Callable]] = [("", f"{self._title}\n\n")]
         for index, choice in enumerate(self._choices):
             prefix = "› " if index == self._cursor else "  "
             style = "class:approval-selected" if index == self._cursor else ""
-            fragments.append((style, f"{prefix}{choice}\n"))
+            handler = lambda event, i=index: self._click(i)
+            fragments.append((style, f"{prefix}{choice}\n", handler))
         return fragments

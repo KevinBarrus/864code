@@ -1,5 +1,7 @@
 """提供命令补全单选列表组件。"""
 
+from collections.abc import Callable
+
 from prompt_toolkit.completion import Completion
 from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.layout import Window
@@ -17,10 +19,15 @@ class CommandPicker:
     # 窗口优先高度下可同时展示的行数，用于滚动跟随
     _VISIBLE_ROWS = 6
 
-    def __init__(self, completions: list[Completion]) -> None:
-        """保存补全项并默认选中第一项。"""
+    def __init__(
+        self,
+        completions: list[Completion],
+        on_apply: Callable[[Completion], None] | None = None,
+    ) -> None:
+        """保存补全项并默认选中第一项，点击行时应用该补全。"""
 
         self._completions = list(completions)
+        self._on_apply = on_apply
         self._cursor = 0
         self.window = Window(
             content=FormattedTextControl(self._render, focusable=True),
@@ -53,8 +60,16 @@ class CommandPicker:
         desired_scroll = max(0, self._cursor - (self._VISIBLE_ROWS - 1))
         self.window.vertical_scroll = min(max_scroll, desired_scroll)
 
+    def _click(self, index: int) -> None:
+        """鼠标点击某行：选中该项并应用补全。"""
+
+        self._cursor = index
+        self._follow_cursor()
+        if self._on_apply is not None and self._completions:
+            self._on_apply(self._completions[index])
+
     def _render(self) -> AnyFormattedText:
-        """渲染命令名与描述：name 列按最大宽度对齐，description 左对齐（对齐 Pi select-list）。"""
+        """渲染命令名与描述：name 列按最大宽度对齐，支持鼠标点击应用。"""
 
         names = [f"/{completion.text}" for completion in self._completions]
         metas = [
@@ -64,20 +79,21 @@ class CommandPicker:
             for completion in self._completions
         ]
         name_width = max((wcswidth(name) for name in names), default=0)
-        fragments: list[tuple[str, str]] = []
+        fragments: list[tuple[str, str, Callable]] = []
         for index, completion in enumerate(self._completions):
             prefix = "› " if index == self._cursor else "  "
             spacing = " " * max(1, name_width - wcswidth(names[index]) + _DESCRIPTION_GAP)
+            handler = lambda event, i=index: self._click(i)
             if index == self._cursor:
                 # 选中项整行亮青（对齐 Pi selectedText）
                 fragments.append(
-                    ("class:approval-selected", f"{prefix}{names[index]}{spacing}{metas[index]}")
+                    ("class:approval-selected", f"{prefix}{names[index]}{spacing}{metas[index]}", handler)
                 )
             else:
-                fragments.append(("", f"{prefix}{names[index]}"))
+                fragments.append(("", f"{prefix}{names[index]}", handler))
                 if metas[index]:
                     fragments.append(
-                        ("class:completion-description", f"{spacing}{metas[index]}")
+                        ("class:completion-description", f"{spacing}{metas[index]}", handler)
                     )
-            fragments.append(("", "\n"))
+            fragments.append(("", "\n", handler))
         return fragments

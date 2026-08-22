@@ -1,6 +1,7 @@
 """提供 skill 勾选选择组件。"""
 
 import asyncio
+from collections.abc import Callable
 
 from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.layout import Window
@@ -18,11 +19,13 @@ class SkillPicker:
         self,
         items: list[tuple[str, str, str]],
         checked: set[tuple[str, str]],
+        on_interact: Callable[[], None] | None = None,
     ) -> None:
         """创建 skill 选择面板，items 为 (name, description, source) 列表。"""
 
         self._items = list(items)
         self._checked = set(checked)
+        self._on_interact = on_interact
         self._cursor = 0
         self._result: asyncio.Future[set[tuple[str, str]] | None] = (
             asyncio.get_running_loop().create_future()
@@ -75,10 +78,18 @@ class SkillPicker:
         if not self._result.done():
             self._result.set_result(result)
 
-    def _render(self) -> AnyFormattedText:
-        """渲染带来源后缀的勾选列表。"""
+    def _click(self, index: int) -> None:
+        """鼠标点击某行：选中该项并切换勾选状态。"""
 
-        fragments: list[tuple[str, str]] = [
+        self._cursor = index
+        self.toggle()
+        if self._on_interact is not None:
+            self._on_interact()
+
+    def _render(self) -> AnyFormattedText:
+        """渲染带来源后缀的勾选列表，支持鼠标点击切换勾选。"""
+
+        fragments: list[tuple[str, str, Callable]] = [
             ("", "↑/↓ move, Space toggle, Enter confirm, Esc cancel\n\n")
         ]
         for index, (name, description, source) in enumerate(self._items):
@@ -87,8 +98,9 @@ class SkillPicker:
             prefix = "> " if index == self._cursor else "  "
             style = "class:approval-selected" if index == self._cursor else ""
             source_label = _SOURCE_LABELS.get(source, source)
-            fragments.append((style, f"{prefix}[{marker}] {name} [{source_label}]"))
+            handler = lambda event, i=index: self._click(i)
+            fragments.append((style, f"{prefix}[{marker}] {name} [{source_label}]", handler))
             if description:
-                fragments.append(("", f"  {description}"))
-            fragments.append(("", "\n"))
+                fragments.append((style, f"  {description}", handler))
+            fragments.append((style, "\n", handler))
         return fragments

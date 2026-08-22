@@ -112,12 +112,30 @@ async def test_choice_picker_renders_selected_with_prefix() -> None:
 
     fragments = picker._render()
 
-    rendered = "".join(text for _style, text in fragments)
+    rendered = "".join(item[1] for item in fragments)
     assert "› a" in rendered
     assert "  b" in rendered
     assert "●" not in rendered
     assert "○" not in rendered
     assert any(
-        style == "class:approval-selected" and "›" in content
-        for style, content in fragments
+        item[0] == "class:approval-selected" and "›" in item[1]
+        for item in fragments
     )
+
+
+@pytest.mark.asyncio
+async def test_choice_picker_click_selects_and_confirms() -> None:
+    """测试鼠标点击某行立即选中并确认。"""
+
+    picker = ChoicePicker(["a", "b", "c"], "选择")
+    fragments = picker._render()
+    # 找到第二行（b）的鼠标处理器并触发
+    handler = None
+    for item in fragments:
+        if item[1].startswith("  b"):
+            handler = item[2]
+            break
+    assert handler is not None
+    handler(None)
+
+    assert await picker.wait() == "b"

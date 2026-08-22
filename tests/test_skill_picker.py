@@ -96,7 +96,27 @@ async def test_skill_picker_renders_source_suffix() -> None:
         checked=set(),
     )
 
-    rendered = "".join(text for _style, text in picker._render())
+    rendered = "".join(item[1] for item in picker._render())
 
     assert "grill-me [projects]" in rendered
     assert "teach [global]" in rendered
+
+
+@pytest.mark.asyncio
+async def test_skill_picker_click_toggles_check() -> None:
+    """测试鼠标点击某行选中并切换勾选。"""
+
+    picker = SkillPicker(
+        [("grill-me", "提问练习", "project")],
+        checked=set(),
+    )
+    fragments = picker._render()
+    handler = None
+    for item in fragments:
+        if "[ ]" in item[1] and "grill-me" in item[1]:
+            handler = item[2]
+            break
+    assert handler is not None
+    handler(None)
+
+    assert ("grill-me", "project") in picker._checked

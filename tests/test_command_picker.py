@@ -1,5 +1,7 @@
 """测试命令补全单选列表组件。"""
 
+import pytest
+
 from prompt_toolkit.completion import Completion
 
 from core.command_picker import CommandPicker
@@ -39,7 +41,7 @@ def test_command_picker_renders_name_and_meta() -> None:
 
     picker = CommandPicker(_completions(["model"]))
 
-    rendered = "".join(text for _style, text in picker._render())
+    rendered = "".join(item[1] for item in picker._render())
 
     assert "/model" in rendered
     assert "model 的描述" in rendered
@@ -69,12 +71,12 @@ def test_command_picker_aligns_description_column() -> None:
     fragments = picker._render()
 
     # 选中行：name 列宽 = max(/model, /start-skill) = 12 + GAP 3
-    selected_line = "".join(text for style, text in fragments if text.startswith("›"))
+    selected_line = "".join(item[1] for item in fragments if item[1].startswith("›"))
     assert selected_line.startswith("› /model")
     assert "切换模型" in selected_line
 
     # 未选中行 /start-skill 的描述与选中行描述左对齐（列宽一致）
-    all_text = "".join(text for _, text in fragments)
+    all_text = "".join(item[1] for item in fragments)
     lines = [line for line in all_text.split("\n") if line.strip()]
     desc_positions = [
         pos for line in lines for pos in (line.find("激活 skill"), line.find("切换模型"))
@@ -84,9 +86,9 @@ def test_command_picker_aligns_description_column() -> None:
 
     # 未选中行的描述使用独立淡灰样式
     description_styles = [
-        style
-        for style, text in fragments
-        if "切换模型" in text or "激活 skill" in text
+        item[0]
+        for item in fragments
+        if "切换模型" in item[1] or "激活 skill" in item[1]
     ]
     assert "class:completion-description" in description_styles
 
@@ -113,3 +115,25 @@ def test_command_picker_scrolls_to_keep_selection_visible() -> None:
     max_scroll = max(0, 20 - CommandPicker._VISIBLE_ROWS)
 
     assert picker.window.vertical_scroll == max_scroll
+
+
+@pytest.mark.asyncio
+async def test_command_picker_click_applies_completion() -> None:
+    """测试鼠标点击某行应用对应补全。"""
+
+    applied: list[Completion] = []
+    picker = CommandPicker(
+        _completions(["model", "thinking"]),
+        on_apply=applied.append,
+    )
+    fragments = picker._render()
+    handler = None
+    for item in fragments:
+        if item[1].startswith("  /thinking"):
+            handler = item[2]
+            break
+    assert handler is not None
+    handler(None)
+
+    assert len(applied) == 1
+    assert applied[0].text == "thinking"

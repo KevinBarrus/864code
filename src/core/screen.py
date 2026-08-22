@@ -634,7 +634,7 @@ class ChatScreen:
     ) -> set[tuple[str, str]] | None:
         """在输入区下方显示 skill 勾选列表并等待用户选择。"""
 
-        picker = SkillPicker(items, checked)
+        picker = SkillPicker(items, checked, on_interact=self.application.invalidate)
         self._skill_picker = picker
         self._bottom_container.children = [picker.window]
         self._layout.focus(picker.window)
@@ -655,7 +655,7 @@ class ChatScreen:
     ) -> str | None:
         """在输入区下方显示单选列表并等待用户选择。"""
 
-        picker = ChoicePicker(items, title, extra_options)
+        picker = ChoicePicker(items, title, extra_options, on_interact=self.application.invalidate)
         self._choice_picker = picker
         self._bottom_container.children = [picker.window]
         self._layout.focus(picker.window)
@@ -976,12 +976,18 @@ class ChatScreen:
         state = buffer.complete_state
         completions = list(state.completions) if state is not None else []
         if completions:
-            picker = CommandPicker(completions)
+            picker = CommandPicker(completions, on_apply=self._apply_clicked_completion)
             self._command_picker = picker
             self._bottom_container.children = [picker.window]
         else:
             self._command_picker = None
             self._bottom_container.children = [self._status_window]
+        self.application.invalidate()
+
+    def _apply_clicked_completion(self, completion: Completion) -> None:
+        """应用鼠标点击选中的补全项（对齐 Tab 行为）。"""
+
+        self.input_area.buffer.apply_completion(completion)
         self.application.invalidate()
 
     def _on_input_text_changed(self, buffer) -> None:
