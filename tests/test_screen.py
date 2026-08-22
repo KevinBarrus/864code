@@ -1049,3 +1049,34 @@ def test_zoom_font_writes_osc50_sequence(tmp_path: Path) -> None:
 
     screen._zoom_font(-1)
     assert written[-1] == "\x1b]50;SetFontSize=13\x07"
+
+
+def test_user_message_renders_markdown(tmp_path: Path) -> None:
+    """测试用户消息中的加粗等 Markdown 标记被渲染。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("user", "**加粗** 与 `code`")
+
+    fragments = screen._conversation[index].control.text
+    assert ("class:md-bold", " 加粗") in fragments
+    assert ("class:md-code", "code") in fragments
+
+
+def test_user_message_keeps_padding_with_markdown(tmp_path: Path) -> None:
+    """测试用户消息渲染 Markdown 后仍保留左右留白与上下空行。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("user", "你好")
+
+    children = screen._conversation_content.children
+    user_window = children[index]
+
+    height = user_window.content.preferred_height(
+        100, 10, False, lambda text: len(text)
+    )
+    assert height == 3
+    assert user_window.style == "class:conversation-user"
+
+    rendered = to_plain_text(user_window.content.text)
+    lines = [line for line in rendered.split("\n") if line.strip()]
+    assert lines == [" 你好"]

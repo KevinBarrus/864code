@@ -326,6 +326,24 @@ def _render_tool_diff(summary: str, diff_text: str) -> StyleAndTextTuples:
     return fragments
 
 
+def _indent_markdown(
+    fragments: StyleAndTextTuples, indent: str
+) -> StyleAndTextTuples:
+    """在 Markdown 片段的每行行首插入缩进，保留原有样式。"""
+
+    result: StyleAndTextTuples = []
+    at_line_start = True
+    for style, text in fragments:
+        if at_line_start and text:
+            result.append((style, indent + text))
+            at_line_start = False
+        else:
+            result.append((style, text))
+        if "\n" in text:
+            at_line_start = True
+    return result
+
+
 @dataclass(frozen=True)
 class ConversationEntry:
     """对话区中的一条展示内容。"""
@@ -502,13 +520,13 @@ class ChatScreen:
 
     @staticmethod
     def _control_text(role: ConversationRole, content: str) -> object:
-        """按角色生成控件文本：用户消息左右留白并上下各加一行，助手消息渲染 Markdown。"""
+        """按角色生成控件文本：用户消息渲染 Markdown 并留白，助手消息渲染 Markdown。"""
 
         if role == "assistant":
             return render_markdown(content)
         if role == "user":
-            padded = "\n".join(f" {line}" for line in content.split("\n"))
-            return f"\n{padded}\n"
+            fragments = render_markdown(content)
+            return [("", "\n"), *_indent_markdown(fragments, " "), ("", "\n")]
         return content
 
     def append_to_entry(self, index: int, content: str) -> None:
