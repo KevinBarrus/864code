@@ -33,9 +33,10 @@ class ToolResult:
 
 @dataclass(frozen=True)
 class TextDelta:
-    """模型流式返回的一段文本。"""
+    """模型流式返回的一段文本，content 为正文，reasoning 为思考过程。"""
 
     content: str
+    reasoning: str = ""
 
 
 @dataclass(frozen=True)

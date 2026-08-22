@@ -266,7 +266,7 @@ from .ui_config import InputLayoutConfig
 
 
 SubmitHandler = Callable[[str], Awaitable[None]]
-ConversationRole = Literal["user", "assistant", "tool", "logo"]
+ConversationRole = Literal["user", "assistant", "tool", "logo", "thinking"]
 
 
 class SlashCommandCompleter(Completer):
@@ -1170,6 +1170,15 @@ class ChatScreen:
                     Window(
                         content=entry.control,
                         style=entry.style or "class:tool-activity",
+                        wrap_lines=True,
+                        dont_extend_height=True,
+                    )
+                )
+            elif entry.role == "thinking":
+                children.append(
+                    Window(
+                        content=entry.control,
+                        style="class:md-thinking",
                         wrap_lines=True,
                         dont_extend_height=True,
                     )

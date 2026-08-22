@@ -669,3 +669,28 @@ async def test_client_skips_incomplete_usage() -> None:
     client = OpenAICompatibleClient(settings, fake_sdk)  # type: ignore[arg-type]
 
     assert await _collect_events(client) == [TextDelta("ok")]
+
+
+@pytest.mark.asyncio
+async def test_client_streams_reasoning_content() -> None:
+    """测试客户端采集 DeepSeek 的 reasoning_content 作为思考事件。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(reasoning_content="分析"))]
+            ),
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="结论"))]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    events = [event async for event in client.stream_response([Message(role="user", content="hi")])]
+
+    reasoning = [event.reasoning for event in events if getattr(event, "reasoning", "")]
+    content = [event.content for event in events if getattr(event, "content", "")]
+
+    assert reasoning == ["分析"]
+    assert content == ["结论"]

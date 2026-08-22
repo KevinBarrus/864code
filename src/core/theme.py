@@ -48,5 +48,7 @@ def create_ui_style() -> Style:
             "md-table-header": "bold",
             "md-quote": "fg:#808080",
             "md-hr": "fg:#505050",
+            # 模型思考过程：斜体灰（对齐 Pi thinkingText）
+            "md-thinking": "fg:#8a8a8a italic",
         }
     )

@@ -97,9 +97,12 @@ class OpenAICompatibleClient:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
-                content = delta.content
+                content = getattr(delta, "content", None)
                 if content:
                     yield TextDelta(content)
+                reasoning = getattr(delta, "reasoning_content", None)
+                if reasoning:
+                    yield TextDelta("", reasoning=reasoning)
                 for tool_call_delta in getattr(delta, "tool_calls", None) or ():
                     _append_tool_call_delta(tool_calls, tool_call_delta)
 

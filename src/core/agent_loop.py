@@ -73,6 +73,7 @@ class AgentLoop:
         self._max_tool_rounds = max_tool_rounds
         self._error_policy = AgentErrorPolicy()
         self._thinking_level = thinking_level
+        self._show_thinking = True
 
     @property
     def thinking_level(self) -> str:
@@ -84,6 +85,17 @@ class AgentLoop:
         """切换推理强度档位，后续请求生效。"""
 
         self._thinking_level = level
+
+    @property
+    def show_thinking(self) -> bool:
+        """是否展示模型思考过程。"""
+
+        return self._show_thinking
+
+    def set_show_thinking(self, show: bool) -> None:
+        """切换思考过程展示，后续流式输出生效。"""
+
+        self._show_thinking = show
 
     def swap_client(self, client: ModelClient) -> None:
         """热切换模型客户端，供 /model 命令在空闲间隙调用。"""

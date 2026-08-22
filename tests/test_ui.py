@@ -376,3 +376,116 @@ async def test_run_chat_refreshes_balance_after_turn(
 
     assert probe.calls >= 1
     assert FakeScreen.instances[0].balance_text_provider() == "9.99 CNY"
+
+
+class ThinkingClient:
+    """先返回思考过程再返回正文的测试客户端。"""
+
+    async def stream_response(self, messages, tools=(), thinking_level=None):
+        yield ui.TextDelta("", reasoning="推理中")
+        yield ui.TextDelta("结论文本")
+
+
+class _ThinkingScreen:
+    """记录思考与回复条目的假界面。"""
+
+    instances: list["_ThinkingScreen"] = []
+
+    def __init__(self, status, on_submit, command_names=None, **kwargs) -> None:
+        self._on_submit = on_submit
+        self.application = self
+        self.entries: list[tuple[str, str]] = []
+        _ThinkingScreen.instances.append(self)
+
+    def add_entry(self, role: str, content: str, style: str = "") -> int:
+        self.entries.append((role, content))
+        return len(self.entries) - 1
+
+    def add_history_entries(self, entries) -> None:
+        self.entries.extend(entries)
+
+    def append_to_entry(self, index: int, content: str) -> None:
+        role, current = self.entries[index]
+        self.entries[index] = (role, current + content)
+
+    def set_entry_content(self, index: int, content: str) -> None:
+        role, _ = self.entries[index]
+        self.entries[index] = (role, content)
+
+    def set_entry_style(self, index: int, style: str) -> None:
+        return None
+
+    async def request_approval(self, definition, tool_call, allow_session=True):
+        return None
+
+    async def run_async(self) -> None:
+        await self._on_submit("继续完成任务")
+
+
+@pytest.mark.asyncio
+async def test_reasoning_renders_as_thinking_entry(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试思考过程渲染为独立 thinking 条目，正文照常。"""
+
+    from core.status import create_status_info
+    from core.config import Settings
+
+    _ThinkingScreen.instances = []
+    monkeypatch.setattr(ui, "ChatScreen", _ThinkingScreen)
+
+    await ui.run_chat(
+        ThinkingClient(),
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        Settings("https://example.com", "test", "key"),
+        workspace=tmp_path,
+    )
+
+    screen = _ThinkingScreen.instances[0]
+    roles = [role for role, _ in screen.entries]
+
+    assert roles[0] == "user"
+    assert "thinking" in roles
+    assert "assistant" in roles
+    thinking_content = next(
+        content for role, content in screen.entries if role == "thinking"
+    )
+    assert thinking_content == "推理中"
+
+
+@pytest.mark.asyncio
+async def test_reasoning_hidden_shows_thinking_label(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试关闭思考展示时只显示 Thinking... 标签。"""
+
+    from core.status import create_status_info
+    from core.config import Settings
+    from core.agent_loop import AgentLoop
+    from core.tools.manager import ToolManager
+
+    _ThinkingScreen.instances = []
+    monkeypatch.setattr(ui, "ChatScreen", _ThinkingScreen)
+    hidden_loop = AgentLoop(
+        ThinkingClient(),
+        ToolManager(),
+        thinking_level="high",
+    )
+    hidden_loop.set_show_thinking(False)
+
+    await ui.run_chat(
+        ThinkingClient(),
+        create_status_info("test-model", "暂不可查询", tmp_path),
+        Settings("https://example.com", "test", "key"),
+        workspace=tmp_path,
+        agent_loop=hidden_loop,
+    )
+
+    screen = _ThinkingScreen.instances[0]
+    thinking = [
+        content for role, content in screen.entries if role == "thinking"
+    ]
+
+    assert thinking == ["Thinking..."]

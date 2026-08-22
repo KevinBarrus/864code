@@ -27,6 +27,7 @@ from .commands import (
     diff_command_slash,
     background_image_command_slash,
     delete_command_slash,
+    thinking_toggle_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .clipboard import copy_text_to_clipboard
@@ -73,6 +74,7 @@ def _default_command_registry() -> CommandRegistry:
     registry.register(diff_command_slash)
     registry.register(background_image_command_slash)
     registry.register(delete_command_slash)
+    registry.register(thinking_toggle_command_slash)
     return registry
 
 
@@ -86,6 +88,7 @@ async def run_chat(
     balance_provider: BalanceProvider | None = None,
     mcp_provider: StdioMcpProvider | None = None,
     max_tool_rounds: int = 10,
+    agent_loop: AgentLoop | None = None,
 ) -> None:
     """启动全屏界面，并处理模型的流式回复"""
 
@@ -154,6 +157,7 @@ async def run_chat(
         screen.add_entry("user", prompt)
         response_index = screen.add_entry("assistant", "")
         response_parts: list[str] = []
+        thinking_index: int | None = None
         tool_activity_indices: dict[str, int] = {}
         awaiting_response_after_tool = False
 
@@ -180,15 +184,24 @@ async def run_chat(
         async def handle_event(event) -> None:
             """将模型事件转换为回复文本或简短工具活动条目。"""
 
-            nonlocal response_index, awaiting_response_after_tool, latest_usage
+            nonlocal response_index, thinking_index, awaiting_response_after_tool, latest_usage
 
             if isinstance(event, TextDelta):
-                if awaiting_response_after_tool:
-                    response_index = screen.add_entry("assistant", "")
-                    awaiting_response_after_tool = False
-                    response_parts.clear()
-                response_parts.append(event.content)
-                screen.append_to_entry(response_index, event.content)
+                if event.reasoning:
+                    # 思考过程：单独一条目，关闭展示时只显示 Thinking... 标签
+                    if agent_loop.show_thinking:
+                        if thinking_index is None:
+                            thinking_index = screen.add_entry("thinking", "")
+                        screen.append_to_entry(thinking_index, event.reasoning)
+                    elif thinking_index is None:
+                        thinking_index = screen.add_entry("thinking", "Thinking...")
+                else:
+                    if awaiting_response_after_tool:
+                        response_index = screen.add_entry("assistant", "")
+                        awaiting_response_after_tool = False
+                        response_parts.clear()
+                    response_parts.append(event.content)
+                    screen.append_to_entry(response_index, event.content)
             elif isinstance(event, ToolCallEvent):
                 summary = _tool_call_summary(event.tool_call)
                 tool_activity_indices[event.tool_call.call_id] = screen.add_entry(
@@ -352,7 +365,9 @@ async def run_chat(
         system_prompt=AGENT_SYSTEM_PROMPT,
     )
     context_manager.set_model_name(settings.model_name)
-    agent_loop = AgentLoop(client, tool_manager, max_tool_rounds=max_tool_rounds)
+    agent_loop = agent_loop or AgentLoop(
+        client, tool_manager, max_tool_rounds=max_tool_rounds
+    )
 
     history = session.get_messages()
     screen.add_history_entries(

@@ -335,3 +335,25 @@ async def test_delete_command_aborts_on_no() -> None:
     await delete_command_slash.handler(context)
 
     assert screen.exited is False
+
+
+@pytest.mark.asyncio
+async def test_thinking_toggle_command_switches_state() -> None:
+    """测试 /thinking-toggle 切换思考展示状态。"""
+
+    from core.commands import thinking_toggle_command_slash
+
+    screen = _Screen()
+    agent_loop = SimpleNamespace(
+        thinking_level="high",
+        show_thinking=True,
+        set_show_thinking=lambda show: setattr(
+            agent_loop, "show_thinking", show
+        ),
+    )
+    context = _context(screen=screen, agent_loop=agent_loop)
+
+    await thinking_toggle_command_slash.handler(context)
+
+    assert agent_loop.show_thinking is False
+    assert "Thinking display: hidden" in screen.entries[0][1]
