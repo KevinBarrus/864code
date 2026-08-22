@@ -41,7 +41,10 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "md-heading": "bold #f5d76e",
             "md-bold": "bold",
             "md-italic": "italic",
+            "md-code": "bg:#2d2d2d",
             "md-code-block": "bg:#2d2d2d fg:#a0a0a0",
+            "md-link": "fg:#81a2be",
+            "md-table-header": "bold",
             "md-quote": "fg:#808080",
             "md-hr": "fg:#505050",
         }

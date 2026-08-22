@@ -95,3 +95,66 @@ def test_inline_renders_bold_and_italic() -> None:
     fragments = render_inline("a **b** c")
 
     assert ("class:md-bold", "b") in fragments
+
+
+def test_inline_code_uses_code_style() -> None:
+    """测试行内代码使用代码样式并去掉反引号。"""
+
+    fragments = render_markdown("运行 `uv run pytest` 即可")
+
+    assert ("class:md-code", "uv run pytest") in fragments
+    assert _plain("运行 `uv run pytest` 即可") == "运行 uv run pytest 即可"
+
+
+def test_link_uses_link_style_and_shows_text() -> None:
+    """测试链接只显示文字并使用链接样式。"""
+
+    fragments = render_markdown("访问 [官网](https://example.com) 查看")
+
+    assert ("class:md-link", "官网") in fragments
+    assert _plain("访问 [官网](https://example.com) 查看") == "访问 官网 查看"
+
+
+def test_unclosed_link_stays_plain() -> None:
+    """测试流式输出未闭合的链接保持原样。"""
+
+    assert _plain("[官网](https://ex") == "[官网](https://ex"
+
+
+def test_table_renders_aligned_with_borders() -> None:
+    """测试表格渲染为 │ 边框对齐，表头加粗，分隔行跳过。"""
+
+    markdown = "| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |\n| 香蕉 | 10 |"
+
+    fragments = render_markdown(markdown)
+    text = "\n".join(content for _, content in fragments)
+    styles = [style for style, _ in fragments]
+
+    assert styles[0] == "class:md-table-header"
+    assert "│ 名称 │ 数量 │" in text
+    assert "│ 苹果 │ 3    │" in text
+    assert "│ 香蕉 │ 10   │" in text
+    assert "---" not in text
+
+
+def test_table_flows_with_streaming_rows() -> None:
+    """测试流式输出时表格逐行累积渲染（容错）。"""
+
+    fragments = render_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")
+
+    assert ("class:md-table-header", "│ a │ b │") in fragments
+
+    # 表格未结束时（最后一行缺失）也能渲染已收集的行
+    partial = render_markdown("| a | b |\n| --- | --- |")
+
+    assert any("a" in content for _, content in partial)
+
+
+def test_table_interrupted_by_plain_text() -> None:
+    """测试表格后跟普通文本时正常收尾。"""
+
+    fragments = render_markdown("| a |\n| 1 |\n结束")
+    text = "\n".join(content for _, content in fragments)
+
+    assert "│ a │" in text
+    assert "结束" in text
