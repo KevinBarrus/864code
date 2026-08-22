@@ -34,6 +34,7 @@ from .commands import (
     background_image_command_slash,
     delete_command_slash,
     thinking_toggle_command_slash,
+    auto_copy_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .clipboard import copy_text_to_clipboard
@@ -81,6 +82,7 @@ def _default_command_registry() -> CommandRegistry:
     registry.register(background_image_command_slash)
     registry.register(delete_command_slash)
     registry.register(thinking_toggle_command_slash)
+    registry.register(auto_copy_command_slash)
     return registry
 
 
