@@ -71,6 +71,17 @@ async def run_chat(
     current_balance = status.balance
     usage_totals = UsageTotals()
     latest_usage: UsageEvent | None = None
+    copy_hint = ""
+
+    async def flash_copy_hint(text: str) -> None:
+        """显示复制提示 5 秒后自动消失。"""
+
+        nonlocal copy_hint
+        copy_hint = f"Copied {len(text)} chars to clipboard"
+        screen.application.invalidate()
+        await asyncio.sleep(5)
+        copy_hint = ""
+        screen.application.invalidate()
 
     async def refresh_balance() -> None:
         """每轮对话后刷新余额，失败保留旧值。"""
@@ -264,6 +275,8 @@ async def run_chat(
         ),
         thinking_level_provider=lambda: agent_loop.thinking_level,
         info_line_provider=_render_info_line,
+        copy_hint_provider=lambda: copy_hint,
+        on_copy=lambda text: asyncio.create_task(flash_copy_hint(text)),
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

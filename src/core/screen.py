@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from prompt_toolkit.application import Application
+from prompt_toolkit.clipboard import Clipboard
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
@@ -16,18 +17,173 @@ from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import (
     ConditionalContainer,
+    Container,
     VerticalAlign,
 )
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.layout.screen import Char, Screen, WritePosition
+from prompt_toolkit.mouse_events import MouseEvent
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 
+from .clipboard import Osc52Clipboard, copy_text_to_clipboard
 from .status import StatusInfo
 from .theme import create_ui_style
 from .logo import EmptyLogoProvider, LogoProvider
 from .conversation_view import ConversationView
 from .model import ToolCall
+
+
+class SelectionPane(Container):
+    """对话区选区容器：鼠标拖选反色高亮，松开后自动复制。"""
+
+    def __init__(
+        self,
+        content: Container,
+        scroll_handler: Callable[[int], None],
+        on_copy: Callable[[str], None] | None = None,
+    ) -> None:
+        """包裹对话内容，滚轮交给滚动处理器，拖选触发复制回调。"""
+
+        self.content = content
+        self._scroll_handler = scroll_handler
+        self._on_copy = on_copy
+        self._anchor: tuple[int, int] | None = None
+        self._focus: tuple[int, int] | None = None
+        self._last_screen: Screen | None = None
+        self._last_position: WritePosition | None = None
+
+    def preferred_width(self, max_available_width: int) -> Dimension:
+        """宽度直接委托给被包裹的内容。"""
+
+        return self.content.preferred_width(max_available_width)
+
+    def preferred_height(
+        self,
+        width: int,
+        max_available_height: int,
+    ) -> Dimension:
+        """高度直接委托给被包裹的内容。"""
+
+        return self.content.preferred_height(width, max_available_height)
+
+    def reset(self) -> None:
+        """重置内部状态。"""
+
+        self.content.reset()
+
+    def get_children(self) -> list[Container]:
+        """返回被包裹的内容。"""
+
+        return [self.content]
+
+    def is_focusable(self) -> bool:
+        """选区容器自身不可聚焦，焦点仍在输入区。"""
+
+        return False
+
+    def write_to_screen(
+        self,
+        screen: Screen,
+        mouse_handlers,
+        write_position: WritePosition,
+        parent_style: str,
+        erase_bg: bool,
+        z_index: int | None,
+    ) -> None:
+        """渲染对话内容，叠加选区反色并接管区域鼠标事件。"""
+
+        self._last_screen = screen
+        self._last_position = write_position
+        self.content.write_to_screen(
+            screen,
+            mouse_handlers,
+            write_position,
+            parent_style,
+            erase_bg,
+            z_index,
+        )
+        self._apply_selection_highlight(screen, write_position)
+        mouse_handlers.set_mouse_handler_for_range(
+            write_position.xpos,
+            write_position.xpos + write_position.width,
+            write_position.ypos,
+            write_position.ypos + write_position.height,
+            self._mouse_handler,
+        )
+
+    def _apply_selection_highlight(
+        self, screen: Screen, write_position: WritePosition
+    ) -> None:
+        """把选区矩形内的字符样式叠加反色。"""
+
+        if self._anchor is None or self._focus is None:
+            return
+        x0, x1 = sorted([self._anchor[0], self._focus[0]])
+        y0, y1 = sorted([self._anchor[1], self._focus[1]])
+        for y in range(y0, y1 + 1):
+            row = screen.data_buffer[y]
+            start = x0 if y == y0 else write_position.xpos
+            end = x1 if y == y1 else write_position.xpos + write_position.width - 1
+            for x in range(start, end + 1):
+                cell = row[x]
+                if cell.char != " ":
+                    row[x] = Char(cell.char, cell.style + " reverse")
+
+    def _mouse_handler(self, mouse_event: MouseEvent):
+        """处理对话区鼠标：滚轮滚动与左键拖选复制。"""
+
+        if mouse_event.event_type.name == "SCROLL_UP":
+            self._scroll_handler(-3)
+            return None
+        if mouse_event.event_type.name == "SCROLL_DOWN":
+            self._scroll_handler(3)
+            return None
+        if mouse_event.button.name != "LEFT":
+            return NotImplemented
+        if mouse_event.event_type.name == "MOUSE_DOWN":
+            self._anchor = (mouse_event.position.x, mouse_event.position.y)
+            self._focus = self._anchor
+            return None
+        if self._anchor is None:
+            return NotImplemented
+        if mouse_event.event_type.name == "MOUSE_MOVE":
+            self._focus = (mouse_event.position.x, mouse_event.position.y)
+            return None
+        if mouse_event.event_type.name == "MOUSE_UP":
+            # 松开位置作为选区终点（对齐 Pi release 时更新 focus）
+            self._focus = (mouse_event.position.x, mouse_event.position.y)
+            text = self._extract_selection()
+            self._anchor = None
+            self._focus = None
+            if text and self._on_copy is not None:
+                self._on_copy(text)
+            return None
+        return NotImplemented
+
+    def _extract_selection(self) -> str:
+        """从最近渲染的屏幕提取选区矩形内的文本，逐行拼接。"""
+
+        if (
+            self._anchor is None
+            or self._focus is None
+            or self._last_screen is None
+            or self._last_position is None
+        ):
+            return ""
+        x0, x1 = sorted([self._anchor[0], self._focus[0]])
+        y0, y1 = sorted([self._anchor[1], self._focus[1]])
+        lines: list[str] = []
+        for y in range(y0, y1 + 1):
+            row = self._last_screen.data_buffer[y]
+            chars: list[str] = []
+            start = x0 if y == y0 else self._last_position.xpos
+            end = x1 if y == y1 else self._last_position.xpos + self._last_position.width - 1
+            for x in range(start, end + 1):
+                chars.append(row[x].char)
+            lines.append("".join(chars).rstrip())
+        return "\n".join(lines)
 from .command_picker import CommandPicker
 from .skill_picker import SkillPicker
 from .choice_picker import ChoicePicker
@@ -114,6 +270,7 @@ class ChatScreen:
         thinking_level_provider: Callable[[], str] | None = None,
         info_line_provider: Callable[[], str] | None = None,
         copy_hint_provider: Callable[[], str] | None = None,
+        on_copy: Callable[[str], None] | None = None,
     ) -> None:
         """创建对话区、输入区和两行式状态栏。"""
 
@@ -127,6 +284,7 @@ class ChatScreen:
         self._thinking_level_provider = thinking_level_provider
         self._info_line_provider = info_line_provider
         self._copy_hint_provider = copy_hint_provider
+        self._on_copy = on_copy
         self._request_active = False
         self._request_task: asyncio.Task[None] | None = None
         self._submitted_draft: DraftState | None = None
@@ -167,6 +325,12 @@ class ChatScreen:
             self._conversation_content,
             reserved_height=self._get_reserved_height,
         )
+        # 对话区外包选区容器：拖选反色高亮、松开自动复制
+        self.selection_pane = SelectionPane(
+            self.conversation_view,
+            self.conversation_view.scroll_by,
+            on_copy=self._on_copy,
+        )
         self._logo_control = FormattedTextControl(self._render_logo, focusable=False)
         # 两行式状态栏：行一左工作区、右复制提示；行二左信息、右模型名·推理强度
         self._status_cwd_control = FormattedTextControl(
@@ -197,6 +361,7 @@ class ChatScreen:
             full_screen=True,
             mouse_support=True,
             cursor=CursorShape.BLINKING_BEAM,
+            clipboard=Osc52Clipboard(),
         )
 
     def add_entry(self, role: ConversationRole, content: str) -> int:
@@ -289,7 +454,7 @@ class ChatScreen:
             filter=Condition(self._has_logo),
         )
         self._conversation_container = ConditionalContainer(
-            self.conversation_view,
+            self.selection_pane,
             filter=Condition(lambda: bool(self._conversation)),
         )
         # 两行式状态栏（对齐 Pi footer）：每行左区占剩余宽度、右区右对齐
