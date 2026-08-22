@@ -27,6 +27,7 @@ class CommandContext:
     client_holder: ClientHolder
     agent_loop: AgentLoop
     project_dir: Path
+    tool_manager: "ToolManager | None" = None
 
 
 @dataclass(frozen=True)

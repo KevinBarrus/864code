@@ -16,6 +16,15 @@ from .commands import (
     stop_skill_command,
     model_command_slash,
     thinking_command_slash,
+    skills_command_slash,
+    mcp_command_slash,
+    compact_command_slash,
+    status_command_slash,
+    copy_command_slash,
+    clear_command_slash,
+    quit_command_slash,
+    export_command_slash,
+    diff_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .clipboard import copy_text_to_clipboard
@@ -51,6 +60,15 @@ def _default_command_registry() -> CommandRegistry:
     registry.register(stop_skill_command)
     registry.register(model_command_slash)
     registry.register(thinking_command_slash)
+    registry.register(skills_command_slash)
+    registry.register(mcp_command_slash)
+    registry.register(compact_command_slash)
+    registry.register(status_command_slash)
+    registry.register(copy_command_slash)
+    registry.register(clear_command_slash)
+    registry.register(quit_command_slash)
+    registry.register(export_command_slash)
+    registry.register(diff_command_slash)
     return registry
 
 
@@ -121,6 +139,7 @@ async def run_chat(
                 client_holder,
                 agent_loop,
                 session_workspace,
+                tool_manager,
             )
             if await command_registry.dispatch(prompt, command_context):
                 return

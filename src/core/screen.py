@@ -453,6 +453,13 @@ class ChatScreen:
         self.conversation_view.scroll_to_bottom()
         self.application.invalidate()
 
+    def clear_conversation(self) -> None:
+        """清空对话区展示内容（会话历史保留）。"""
+
+        self._conversation.clear()
+        self._sync_conversation_view()
+        self.application.invalidate()
+
     @staticmethod
     def _create_entry(
         role: ConversationRole, content: str, style: str = ""
