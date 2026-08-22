@@ -960,3 +960,92 @@ def test_status_copy_hint_provider(tmp_path: Path) -> None:
     row1_right = hint_screen._status_rows()[0][1]
 
     assert row1_right == "Copied 42 chars to clipboard"
+
+
+def test_selection_pane_ctrl_wheel_zooms_instead_of_scrolling(
+    tmp_path: Path,
+) -> None:
+    """测试 Ctrl+滚轮触发缩放回调，普通滚轮仍然滚动。"""
+
+    from prompt_toolkit.layout.screen import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType, MouseModifier
+
+    from core.screen import SelectionPane
+
+    scrolled: list[int] = []
+    zoomed: list[int] = []
+
+    class _Content:
+        """被包裹的最小内容容器。"""
+
+        def preferred_width(self, max_available_width):
+            from prompt_toolkit.layout.dimension import Dimension
+            return Dimension(weight=1)
+
+        def preferred_height(self, width, max_available_height):
+            from prompt_toolkit.layout.dimension import Dimension
+            return Dimension(weight=1)
+
+        def reset(self) -> None:
+            return None
+
+        def get_children(self):
+            return []
+
+        def write_to_screen(self, screen, mouse_handlers, write_position, parent_style, erase_bg, z_index):
+            return None
+
+    pane = SelectionPane(
+        _Content(),
+        scroll_handler=scrolled.append,
+        zoom_handler=zoomed.append,
+    )
+
+    ctrl_wheel_up = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_UP,
+        button=MouseButton.NONE,
+        modifiers=frozenset([MouseModifier.CONTROL]),
+    )
+    pane._mouse_handler(ctrl_wheel_up)
+
+    assert zoomed == [1]
+    assert scrolled == []
+
+    plain_wheel_down = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_DOWN,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    pane._mouse_handler(plain_wheel_down)
+
+    assert scrolled == [3]
+
+
+def test_zoom_font_writes_osc50_sequence(tmp_path: Path) -> None:
+    """测试缩放字体时输出 iTerm2 OSC 50 序列。"""
+
+    from prompt_toolkit.layout.screen import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType, MouseModifier
+
+    screen = _create_screen(tmp_path)
+    written: list[str] = []
+
+    class _RecordingOutput:
+        """记录 write_raw 调用的假输出。"""
+
+        def write_raw(self, text: str) -> None:
+            written.append(text)
+
+        def flush(self) -> None:
+            return None
+
+    screen.application.output = _RecordingOutput()
+
+    screen._zoom_font(1)
+
+    assert written == ["\x1b]50;SetFontSize=14\x07"]
+
+    screen._zoom_font(-1)
+    assert written[-1] == "\x1b]50;SetFontSize=13\x07"
