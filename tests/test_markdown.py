@@ -44,8 +44,8 @@ def test_fenced_code_block_uses_code_style() -> None:
     fragments = render_markdown("```python\nprint(1)\n```")
 
     assert ("class:md-code-lang", "python\n") in fragments
-    assert ("md-tok-builtin", "print") in fragments
-    assert ("md-tok-number", "1") in fragments
+    assert ("class:md-tok-builtin", "print") in fragments
+    assert ("class:md-tok-number", "1") in fragments
     assert not any(text == "```python" for _, text in fragments)
 
 
@@ -54,7 +54,7 @@ def test_unclosed_code_block_stays_in_code_style() -> None:
 
     fragments = render_markdown("```python\nprint(1)")
 
-    assert ("md-tok-builtin", "print") in fragments
+    assert ("class:md-tok-builtin", "print") in fragments
 
 
 def test_code_block_highlights_javascript() -> None:
@@ -63,7 +63,7 @@ def test_code_block_highlights_javascript() -> None:
     fragments = render_markdown("```javascript\nconst x = 1;\n```")
 
     assert ("class:md-code-lang", "javascript\n") in fragments
-    assert ("md-tok-keyword", "const") in fragments
+    assert ("class:md-tok-keyword", "const") in fragments
 
 
 def test_code_block_unknown_language_uses_base_style() -> None:

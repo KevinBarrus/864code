@@ -77,7 +77,7 @@ class FakeScreen:
         """记录状态消息。"""
 
 
-    def set_working(self, message: str | None) -> None:
+    def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
         return None
         self.status_message = message
 

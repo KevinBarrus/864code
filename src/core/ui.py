@@ -165,10 +165,10 @@ async def run_chat(
         screen.add_entry("user", prompt)
         response_index = screen.add_entry("assistant", "")
         response_parts: list[str] = []
-        thinking_index: int | None = None
+        thinking_open = False
         tool_activity_indices: dict[str, int] = {}
         awaiting_response_after_tool = False
-        screen.set_working("thinking")
+        screen.set_working("thinking", show_elapsed=False)
 
         # 用户消息必须先进入会话，模型才能在本轮请求中看到它
         session.add_user_message(prompt)
@@ -193,22 +193,34 @@ async def run_chat(
         async def handle_event(event) -> None:
             """将模型事件转换为回复文本或简短工具活动条目。"""
 
-            nonlocal response_index, thinking_index, awaiting_response_after_tool, latest_usage
+            nonlocal response_index, thinking_open, awaiting_response_after_tool, latest_usage
 
             if isinstance(event, TextDelta):
                 if event.reasoning:
-                    # 思考过程：单独一条目，关闭展示时只显示 Thinking... 标签
-                    if agent_loop.show_thinking:
-                        if thinking_index is None:
-                            thinking_index = screen.add_entry("thinking", "")
-                        screen.append_to_entry(thinking_index, event.reasoning)
-                    elif thinking_index is None:
-                        thinking_index = screen.add_entry("thinking", "Thinking...")
+                    # 思考过程合并进回复条目（\x00 标记包裹，渲染时斜体灰）
+                    if awaiting_response_after_tool:
+                        response_index = screen.add_entry("assistant", "")
+                        awaiting_response_after_tool = False
+                        response_parts.clear()
+                        thinking_open = False
+                    if not thinking_open:
+                        screen.append_to_entry(response_index, "\x00")
+                        thinking_open = True
+                        if agent_loop.show_thinking:
+                            screen.append_to_entry(response_index, event.reasoning)
+                        else:
+                            screen.append_to_entry(response_index, "Thinking...")
+                    elif agent_loop.show_thinking:
+                        screen.append_to_entry(response_index, event.reasoning)
                 else:
                     if awaiting_response_after_tool:
                         response_index = screen.add_entry("assistant", "")
                         awaiting_response_after_tool = False
                         response_parts.clear()
+                    if thinking_open:
+                        # 闭合思考块标记，正文使用普通样式
+                        screen.append_to_entry(response_index, "\x00")
+                        thinking_open = False
                     response_parts.append(event.content)
                     screen.append_to_entry(response_index, event.content)
             elif isinstance(event, ToolCallEvent):
@@ -234,7 +246,7 @@ async def run_chat(
                     else:
                         screen.set_entry_style(index, "class:tool-success")
                         _update_tool_result(screen, index, event)
-                screen.set_working("thinking")
+                screen.set_working("thinking", show_elapsed=False)
             elif isinstance(event, UsageEvent):
                 latest_usage = event
                 usage_totals.add(event, client_holder.settings.price)

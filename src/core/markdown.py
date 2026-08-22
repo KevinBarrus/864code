@@ -145,16 +145,16 @@ def _highlight_tokens(code: str, language: str):
 
 
 def _token_style(token_type, language: str) -> str:
-    """把 Pygments token 映射到样式类，语言覆盖优先。"""
+    """把 Pygments token 映射到样式类（带 class: 前缀），语言覆盖优先。"""
 
     overrides = _LANGUAGE_TOKEN_OVERRIDES.get(language)
     if overrides:
         for style_class, token_kind in overrides:
             if token_type in token_kind:
-                return style_class
+                return f"class:{style_class}"
     for style_class, token_kind in _TOKEN_STYLE_CLASSES:
         if token_type in token_kind:
-            return style_class
+            return f"class:{style_class}"
     return "class:md-code-block"
 
 

@@ -66,7 +66,7 @@ class FakeScreen:
         pass
 
 
-    def set_working(self, message: str | None) -> None:
+    def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
         return None
     async def request_approval(self, definition, tool_call, allow_session=True):
         raise AssertionError("不应请求工具审批")

@@ -46,7 +46,7 @@ class FakeScreen:
         self.application = FakeApplication()
         FakeScreen.last = self
 
-    def set_working(self, message):
+    def set_working(self, message, show_elapsed: bool = True):
         return None
 
     def add_entry(self, role: str, content: str, style: str = "") -> int:

@@ -140,7 +140,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
             pass
 
 
-        def set_working(self, message: str | None) -> None:
+        def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
             return None
 
         async def request_approval(self, definition, tool_call, allow_session=True):
@@ -343,7 +343,7 @@ async def test_run_chat_refreshes_balance_after_turn(
             pass
 
 
-        def set_working(self, message: str | None) -> None:
+        def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
             return None
 
         def invalidate(self) -> None:
@@ -429,7 +429,7 @@ class _ThinkingScreen:
     def set_entry_style(self, index: int, style: str) -> None:
         return None
 
-    def set_working(self, message: str | None) -> None:
+    def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
         return None
 
     async def request_approval(self, definition, tool_call, allow_session=True):
@@ -444,7 +444,7 @@ async def test_reasoning_renders_as_thinking_entry(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """测试思考过程渲染为独立 thinking 条目，正文照常。"""
+    """测试思考过程合并进回复条目（\x00 标记包裹）。"""
 
     from core.status import create_status_info
     from core.config import Settings
@@ -463,12 +463,12 @@ async def test_reasoning_renders_as_thinking_entry(
     roles = [role for role, _ in screen.entries]
 
     assert roles[0] == "user"
-    assert "thinking" in roles
-    assert "assistant" in roles
-    thinking_content = next(
-        content for role, content in screen.entries if role == "thinking"
+    assert roles.count("assistant") == 1
+    assert "thinking" not in roles
+    reply = next(
+        content for role, content in screen.entries if role == "assistant"
     )
-    assert thinking_content == "推理中"
+    assert reply == "\x00推理中\x00结论文本"
 
 
 @pytest.mark.asyncio
@@ -501,8 +501,9 @@ async def test_reasoning_hidden_shows_thinking_label(
     )
 
     screen = _ThinkingScreen.instances[0]
-    thinking = [
-        content for role, content in screen.entries if role == "thinking"
-    ]
+    reply = next(
+        content for role, content in screen.entries if role == "assistant"
+    )
 
-    assert thinking == ["Thinking..."]
+    assert "Thinking..." in reply
+    assert "推理中" not in reply

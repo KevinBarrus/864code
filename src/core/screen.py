@@ -293,25 +293,26 @@ _MAX_TOOL_LINES = 8
 
 
 def _create_ui_output() -> Output:
-    """创建终端输出：禁用 SGR 1006 鼠标模式。
+    """创建终端输出：定制鼠标模式序列。
 
-    SGR 1006 会把 Ctrl+滚轮作为带修饰键的鼠标事件发给应用，导致
-    Windows Terminal 不再保留为原生字体缩放；只启用基础与拖选模式。
+    保留 SGR 1006（滚轮与容错解析，未知手势不崩溃），用 1002 拖选
+    替代 1003 任意移动（减少触摸板手势产生的多余事件）。
     """
 
     output = create_output()
     if isinstance(output, Vt100_Output):
-        output.enable_mouse_support = _enable_mouse_without_sgr.__get__(  # type: ignore[method-assign]
+        output.enable_mouse_support = _enable_mouse_support.__get__(  # type: ignore[method-assign]
             output
         )
     return output
 
 
-def _enable_mouse_without_sgr(self) -> None:
-    """只启用基础与拖选鼠标模式，不启用 SGR 修饰键模式。"""
+def _enable_mouse_support(self) -> None:
+    """启用基础、拖选与 SGR 鼠标模式（不启用任意移动模式 1003）。"""
 
     self.write_raw("\x1b[?1000h")
-    self.write_raw("\x1b[?1003h")
+    self.write_raw("\x1b[?1002h")
+    self.write_raw("\x1b[?1006h")
 
 
 class _TrackedContainer(Container):
@@ -411,6 +412,20 @@ class SlashCommandCompleter(Completer):
                 )
         yield from exact
         yield from prefix_matches
+
+
+def _render_assistant_content(content: str) -> StyleAndTextTuples:
+    """渲染助手回复：\x00 包裹的思考块用斜体灰，正文渲染 Markdown。"""
+
+    if "\x00" not in content:
+        return render_markdown(content)
+    parts = content.split("\x00")
+    fragments: StyleAndTextTuples = []
+    if len(parts) > 1 and parts[1].strip():
+        fragments.append(("class:md-thinking", parts[1] + "\n"))
+    body = parts[2] if len(parts) > 2 else ""
+    fragments.extend(render_markdown(body))
+    return fragments
 
 
 def _render_tool_diff(summary: str, diff_text: str) -> StyleAndTextTuples:
@@ -528,6 +543,7 @@ class ChatScreen:
         self._command_picker: CommandPicker | None = None
         self._status_message = ""
         self._working_message: str | None = None
+        self._working_show_elapsed = True
         self._working_started = 0.0
         self._working_task: asyncio.Task | None = None
         self._expanded_entries: set[int] = set()
@@ -659,10 +675,10 @@ class ChatScreen:
 
     @staticmethod
     def _control_text(role: ConversationRole, content: str) -> object:
-        """按角色生成控件文本：用户消息渲染 Markdown 并留白，助手消息渲染 Markdown。"""
+        """按角色生成控件文本：用户消息渲染 Markdown 并留白，助手消息渲染思考块 + Markdown。"""
 
         if role == "assistant":
-            return render_markdown(content)
+            return _render_assistant_content(content)
         if role == "user":
             fragments = render_markdown(content)
             return [("", "\n"), *_indent_markdown(fragments, " "), ("", "\n")]
@@ -1446,10 +1462,11 @@ class ChatScreen:
         self._status_message = message
         self.application.invalidate()
 
-    def set_working(self, message: str | None) -> None:
-        """设置状态栏信息行的 working 提示（spinner + 消息 + 耗时）。"""
+    def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
+        """设置状态栏信息行的 working 提示（spinner + 消息，可选耗时）。"""
 
         self._working_message = message
+        self._working_show_elapsed = show_elapsed
         self._working_started = time.monotonic() if message else 0.0
         if message and self._working_task is None:
             try:
@@ -1467,11 +1484,14 @@ class ChatScreen:
 
         if not self._working_message:
             return ""
-        elapsed = int(time.monotonic() - self._working_started)
         frame = _WORKING_FRAMES[
             int(time.monotonic() * 12.5) % len(_WORKING_FRAMES)
         ]
-        return f"{frame} {self._working_message} {elapsed}s"
+        text = f"{frame} {self._working_message}"
+        if self._working_show_elapsed:
+            elapsed = int(time.monotonic() - self._working_started)
+            text = f"{text} {elapsed}s"
+        return text
 
     async def _animate_working(self) -> None:
         """working 提示存在期间持续刷新界面（spinner 动画与秒数）。"""

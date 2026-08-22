@@ -1293,10 +1293,10 @@ def test_auto_copy_can_be_disabled(tmp_path: Path) -> None:
     assert copied == []
 
 
-def test_mouse_support_skips_sgr_1006() -> None:
-    """测试自定义输出启用鼠标模式时不发送 SGR 1006（保留终端 Ctrl+滚轮缩放）。"""
+def test_mouse_support_enables_sgr_and_drag() -> None:
+    """测试自定义输出启用基础、拖选与 SGR 鼠标模式（不启用任意移动 1003）。"""
 
-    from core.screen import _enable_mouse_without_sgr
+    from core.screen import _enable_mouse_support
 
     written: list[str] = []
 
@@ -1304,8 +1304,9 @@ def test_mouse_support_skips_sgr_1006() -> None:
         def write_raw(self, text: str) -> None:
             written.append(text)
 
-    _enable_mouse_without_sgr(_Output())
+    _enable_mouse_support(_Output())
 
     assert "\x1b[?1000h" in written
-    assert "\x1b[?1003h" in written
-    assert not any("1006" in item for item in written)
+    assert "\x1b[?1002h" in written
+    assert "\x1b[?1006h" in written
+    assert not any("1003" in item for item in written)

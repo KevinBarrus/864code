@@ -61,7 +61,7 @@ async def test_run_chat_start_skill_injects_active_skill(
         def set_status_message(self, message: str) -> None:
             pass
 
-        def set_working(self, message: str | None) -> None:
+        def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
             return None
 
         async def request_approval(self, definition, tool_call, allow_session=True):
@@ -132,7 +132,7 @@ async def test_run_chat_unknown_command_does_not_call_model(
         def set_status_message(self, message: str) -> None:
             pass
 
-        def set_working(self, message: str | None) -> None:
+        def set_working(self, message: str | None, show_elapsed: bool = True) -> None:
             return None
 
         async def request_approval(self, definition, tool_call, allow_session=True):
