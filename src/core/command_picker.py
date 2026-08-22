@@ -45,6 +45,26 @@ class CommandPicker:
         self._cursor = (self._cursor + offset) % len(self._completions)
         self._follow_cursor()
 
+    def update_completions(self, completions: list[Completion]) -> None:
+        """增量替换补全项，尽量保留当前选中项与滚动位置。"""
+
+        new_texts = [completion.text for completion in completions]
+        old_texts = [completion.text for completion in self._completions]
+        if new_texts == old_texts:
+            return
+        if self._completions:
+            current = self._completions[self._cursor].text
+        self._completions = list(completions)
+        if not new_texts:
+            return
+        for index, completion in enumerate(completions):
+            if completion.text == current:
+                self._cursor = index
+                break
+        else:
+            self._cursor = min(self._cursor, len(completions) - 1)
+        self._follow_cursor()
+
     @property
     def selected(self) -> Completion | None:
         """返回当前选中的补全项。"""

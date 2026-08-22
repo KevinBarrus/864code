@@ -925,7 +925,7 @@ class ChatScreen:
                 self._submit(prompt)
             )
 
-        @key_bindings.add("up", filter=command_picker_active)
+        @key_bindings.add("up", filter=command_picker_active, eager=True)
         def move_command_up(event) -> None:
             """向上移动补全列表选中项。"""
 
@@ -933,7 +933,7 @@ class ChatScreen:
                 self._command_picker.move(-1)
                 self.application.invalidate()
 
-        @key_bindings.add("down", filter=command_picker_active)
+        @key_bindings.add("down", filter=command_picker_active, eager=True)
         def move_command_down(event) -> None:
             """向下移动补全列表选中项。"""
 
@@ -1020,14 +1020,22 @@ class ChatScreen:
         return None
 
     def _on_completions_changed(self, buffer) -> None:
-        """补全状态变化时，在底部区域显示补全列表或恢复状态栏。"""
+        """补全状态变化时，在底部区域显示补全列表或恢复状态栏。
+
+        注意：prompt_toolkit 补全加载期间每 0.3 秒触发一次本回调，
+        因此列表存在时只做增量更新（保留选中项与滚动位置），不重建。
+        """
 
         state = buffer.complete_state
         completions = list(state.completions) if state is not None else []
         if completions:
-            picker = CommandPicker(completions, on_apply=self._apply_clicked_completion)
-            self._command_picker = picker
-            self._bottom_container.children = [picker.window]
+            if self._command_picker is None:
+                self._command_picker = CommandPicker(
+                    completions, on_apply=self._apply_clicked_completion
+                )
+                self._bottom_container.children = [self._command_picker.window]
+            else:
+                self._command_picker.update_completions(completions)
         else:
             self._command_picker = None
             self._bottom_container.children = [self._status_window]

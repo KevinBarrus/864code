@@ -137,3 +137,27 @@ async def test_command_picker_click_applies_completion() -> None:
 
     assert len(applied) == 1
     assert applied[0].text == "thinking"
+
+
+def test_command_picker_update_keeps_selection_and_scroll() -> None:
+    """测试增量更新补全列表时保留选中项与滚动位置。"""
+
+    picker = CommandPicker(_completions([f"cmd-{index}" for index in range(20)]))
+    picker.move(15)
+    scroll_before = picker.window.vertical_scroll
+
+    # 相同的列表内容不重建状态
+    picker.update_completions(_completions([f"cmd-{index}" for index in range(20)]))
+    assert picker._cursor == 15
+    assert picker.window.vertical_scroll == scroll_before
+
+    # 列表收缩时尽量保留选中项，越界则钳制
+    picker.update_completions(_completions(["cmd-15", "cmd-16"]))
+    assert picker.selected.text == "cmd-15"
+    assert picker.window.vertical_scroll == 0
+
+    # 选中项仍在新列表中时精确保持
+    picker2 = CommandPicker(_completions(["a", "b", "c", "d"]))
+    picker2.move(2)
+    picker2.update_completions(_completions(["a", "b", "c", "d", "e"]))
+    assert picker2.selected.text == "c"

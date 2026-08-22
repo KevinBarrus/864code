@@ -1080,3 +1080,38 @@ def test_user_message_keeps_padding_with_markdown(tmp_path: Path) -> None:
     rendered = to_plain_text(user_window.content.text)
     lines = [line for line in rendered.split("\n") if line.strip()]
     assert lines == [" 你好"]
+
+
+def test_completions_changed_does_not_rebuild_picker(tmp_path: Path) -> None:
+    """测试补全回调重复触发时复用同一个选择器，保留选中状态。"""
+
+    from types import SimpleNamespace
+
+    from prompt_toolkit.completion import Completion
+
+    def fake_buffer(completions):
+        return SimpleNamespace(
+            complete_state=SimpleNamespace(completions=completions)
+        )
+
+    screen = _create_screen(tmp_path)
+
+    screen._on_completions_changed(
+        fake_buffer([Completion("model"), Completion("mcp")])
+    )
+    first_picker = screen._command_picker
+    assert first_picker is not None
+
+    # 模拟 prompt_toolkit 每 0.3 秒重复触发：内容相同的回调不重建
+    screen._on_completions_changed(
+        fake_buffer([Completion("model"), Completion("mcp")])
+    )
+    assert screen._command_picker is first_picker
+
+    # 移动选中后重复回调仍保留位置
+    first_picker.move(1)
+    screen._on_completions_changed(
+        fake_buffer([Completion("model"), Completion("mcp")])
+    )
+    assert screen._command_picker is first_picker
+    assert first_picker.selected.text == "mcp"
