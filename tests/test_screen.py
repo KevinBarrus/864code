@@ -1291,3 +1291,21 @@ def test_auto_copy_can_be_disabled(tmp_path: Path) -> None:
     buffer.cursor_position = 4
 
     assert copied == []
+
+
+def test_mouse_support_skips_sgr_1006() -> None:
+    """测试自定义输出启用鼠标模式时不发送 SGR 1006（保留终端 Ctrl+滚轮缩放）。"""
+
+    from core.screen import _enable_mouse_without_sgr
+
+    written: list[str] = []
+
+    class _Output:
+        def write_raw(self, text: str) -> None:
+            written.append(text)
+
+    _enable_mouse_without_sgr(_Output())
+
+    assert "\x1b[?1000h" in written
+    assert "\x1b[?1003h" in written
+    assert not any("1006" in item for item in written)

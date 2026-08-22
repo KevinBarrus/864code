@@ -31,6 +31,8 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.layout.screen import Char, Screen, WritePosition
 from prompt_toolkit.mouse_events import MouseEvent, MouseModifier
+from prompt_toolkit.output import Output, create_output
+from prompt_toolkit.output.vt100 import Vt100_Output
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 from wcwidth import wcswidth
@@ -288,6 +290,28 @@ ConversationRole = Literal["user", "assistant", "tool", "logo", "thinking"]
 _WORKING_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 # 工具输出折叠阈值（超过时显示省略提示，对齐 Pi）
 _MAX_TOOL_LINES = 8
+
+
+def _create_ui_output() -> Output:
+    """创建终端输出：禁用 SGR 1006 鼠标模式。
+
+    SGR 1006 会把 Ctrl+滚轮作为带修饰键的鼠标事件发给应用，导致
+    Windows Terminal 不再保留为原生字体缩放；只启用基础与拖选模式。
+    """
+
+    output = create_output()
+    if isinstance(output, Vt100_Output):
+        output.enable_mouse_support = _enable_mouse_without_sgr.__get__(  # type: ignore[method-assign]
+            output
+        )
+    return output
+
+
+def _enable_mouse_without_sgr(self) -> None:
+    """只启用基础与拖选鼠标模式，不启用 SGR 修饰键模式。"""
+
+    self.write_raw("\x1b[?1000h")
+    self.write_raw("\x1b[?1003h")
 
 
 class _TrackedContainer(Container):
@@ -571,6 +595,7 @@ class ChatScreen:
             mouse_support=True,
             cursor=CursorShape.BLINKING_BEAM,
             clipboard=Osc52Clipboard(),
+            output=_create_ui_output(),
         )
         # Logo 作为对话区第一条内容，随对话增长自然上移出屏幕
         if self._has_logo():
