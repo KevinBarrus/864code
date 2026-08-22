@@ -192,11 +192,11 @@ def test_chat_screen_uses_scrollable_conversation_view(
     """测试对话区使用支持滚动的内容视图。"""
 
     screen = _create_screen(tmp_path)
-    screen.add_entry("assistant", "第一段回复")
-    screen.append_to_entry(0, "\n第二段回复")
+    index = screen.add_entry("assistant", "第一段回复")
+    screen.append_to_entry(index, "\n第二段回复")
 
     assert screen.conversation_view.show_scrollbar() is False
-    assert screen._render_entry(0) == "第一段回复\n第二段回复"
+    assert screen._render_entry(index) == "第一段回复\n第二段回复"
 
 
 def test_streaming_entry_update_does_not_rebuild_conversation_layout(
@@ -254,6 +254,7 @@ def test_adding_history_entries_syncs_conversation_layout_once(
 
     assert sync_calls == 1
     assert [entry.content for entry in screen._conversation] == [
+        "",
         "历史问题",
         "历史回答",
         "工具结果",
@@ -281,16 +282,15 @@ def test_chat_screen_does_not_add_an_implicit_fill_area(tmp_path: Path) -> None:
     assert screen._layout.container.align is VerticalAlign.JUSTIFY
 
 
-def test_default_logo_shows_and_conversation_hidden_on_new_session(
-    tmp_path: Path,
-) -> None:
-    """测试新会话默认显示 Logo 与起始信息，对话区隐藏。"""
+def test_default_logo_is_first_conversation_entry(tmp_path: Path) -> None:
+    """测试新会话 Logo 作为对话区第一条内容显示。"""
 
     screen = _create_screen(tmp_path)
 
     assert screen._has_logo() is True
-    assert screen._logo_container.filter() is True
-    assert screen._conversation_container.filter() is False
+    assert screen._conversation[0].role == "logo"
+    assert screen._conversation_container.filter() is True
+    assert len(screen._conversation) == 1
 
 
 def test_logo_merges_startup_info(tmp_path: Path) -> None:
@@ -343,7 +343,7 @@ def test_empty_custom_logo_takes_no_layout_space(tmp_path: Path) -> None:
     )
 
     assert screen._has_logo() is False
-    assert screen._logo_container.filter() is False
+    assert screen._conversation == []
 
 
 def test_input_container_does_not_expand_vertically(tmp_path: Path) -> None:
@@ -365,16 +365,16 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         root = screen._layout.container
         empty_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        # 根布局的第 5、7 项分别是输入区和状态栏，中间的 0 是布局间隔。
-        assert empty_sizes[4:7] == [3, 0, 2]
+        # 根布局第 1、3、5 项分别是对话区、输入区和状态栏，中间的 0 是布局间隔。
+        assert empty_sizes[2:5] == [3, 0, 2]
 
         screen.add_entry("user", "用户输入")
         screen.add_entry("assistant", "")
         conversation_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        # 用户消息（文本含上下留白）3 行 + 间隔 padding，assistant 1 行 + 间隔
-        assert conversation_sizes[2] == 5
-        assert conversation_sizes[4:7] == [3, 0, 2]
+        # 对话区包含 Logo 与用户消息后高度增长，输入区和状态栏位置不变
+        assert conversation_sizes[0] > empty_sizes[0]
+        assert conversation_sizes[2:5] == [3, 0, 2]
 
 
 def test_input_container_has_border_lines_above_and_below(tmp_path: Path) -> None:
@@ -483,7 +483,7 @@ def test_user_entry_uses_full_width_gray_style_without_prefix(
         ).bgcolor
         == "343541"
     )
-    assert screen._render_entry(0) == "用户输入"
+    assert screen._render_entry(1) == "用户输入"
 
 
 def test_user_entry_renders_n_plus_two_rows_all_gray(

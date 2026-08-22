@@ -252,7 +252,7 @@ from .ui_config import InputLayoutConfig
 
 
 SubmitHandler = Callable[[str], Awaitable[None]]
-ConversationRole = Literal["user", "assistant", "tool"]
+ConversationRole = Literal["user", "assistant", "tool", "logo"]
 
 
 class SlashCommandCompleter(Completer):
@@ -410,7 +410,6 @@ class ChatScreen:
             self.conversation_view.scroll_by,
             on_copy=self._on_copy,
         )
-        self._logo_control = FormattedTextControl(self._render_logo, focusable=False)
         # 两行式状态栏（对齐 Pi footer）：整行渲染，行一左工作区右复制提示、行二左信息右模型
         self._status_control = StatusControl(self._status_rows)
         self._layout = Layout(
@@ -427,6 +426,16 @@ class ChatScreen:
             cursor=CursorShape.BLINKING_BEAM,
             clipboard=Osc52Clipboard(),
         )
+        # Logo 作为对话区第一条内容，随对话增长自然上移出屏幕
+        if self._has_logo():
+            self._conversation.append(
+                ConversationEntry(
+                    "logo",
+                    "",
+                    FormattedTextControl(self._render_logo, focusable=False),
+                )
+            )
+            self._sync_conversation_view()
 
     def add_entry(self, role: ConversationRole, content: str, style: str = "") -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
@@ -548,16 +557,6 @@ class ChatScreen:
     def _create_layout(self) -> HSplit:
         """创建对话区、输入区和状态栏的垂直布局。"""
 
-        logo_window = Window(
-            content=self._logo_control,
-            height=Dimension(min=0),
-            wrap_lines=True,
-            dont_extend_height=True,
-        )
-        self._logo_container = ConditionalContainer(
-            logo_window,
-            filter=Condition(self._has_logo),
-        )
         self._conversation_container = ConditionalContainer(
             self.selection_pane,
             filter=Condition(lambda: bool(self._conversation)),
@@ -603,7 +602,6 @@ class ChatScreen:
         # 底部区域在输入栏下方：无补全显示状态栏，补全时替换为命令列表（对齐 Codex）
         return HSplit(
             [
-                self._logo_container,
                 self._conversation_container,
                 input_container,
                 bottom_container,

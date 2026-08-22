@@ -1,9 +1,18 @@
 """定义会话 Logo 的可替换渲染接口与默认实现。"""
 
-from importlib.metadata import PackageNotFoundError, version
 from typing import Protocol
 
 from prompt_toolkit.formatted_text import AnyFormattedText
+
+# ε - EPSILON 方块字（每字母 4 列用 █ 拼成，字母间距 2 空格）
+_LOGO_ART = (
+    "ε -",
+    "████  ████  ████  ████  █     ████  █  █",
+    "█     █  █  █       █  █     █  █  ██ █",
+    "████  ████  ████    █  █     █  █  █ ██",
+    "█     █     █  █    █  █     █  █  █  █",
+    "████  █     ████    █  ████  ████  █  █",
+)
 
 
 class LogoProvider(Protocol):
@@ -14,16 +23,9 @@ class LogoProvider(Protocol):
 
 
 class DefaultLogoProvider:
-    """默认 Logo：项目名与版本号，后续可替换为专属 Logo。"""
+    """默认 Logo：ε - EPSILON 方块字，使用独立样式类以便主题调整。"""
 
     def render(self) -> AnyFormattedText:
-        """渲染项目名与版本号，使用独立样式类以便主题调整。"""
+        """渲染方块字 Logo，后续可替换为专属 Logo。"""
 
-        try:
-            app_version = version("epsilon")
-        except PackageNotFoundError:
-            app_version = "0.1.0"
-        return [
-            ("class:logo-accent", "epsilon"),
-            ("", f" v{app_version}"),
-        ]
+        return [("class:logo-accent", line) for line in _LOGO_ART]
