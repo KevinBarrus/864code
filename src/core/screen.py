@@ -102,6 +102,7 @@ class SelectionPane(Container):
         scroll_handler: Callable[[int], None],
         on_copy: Callable[[str], None] | None = None,
         zoom_handler: Callable[[int], None] | None = None,
+        skip_region: Callable[[], tuple[int, int] | None] | None = None,
     ) -> None:
         """包裹对话内容，滚轮交给滚动处理器，Ctrl+滚轮交给缩放处理器。"""
 
@@ -109,6 +110,7 @@ class SelectionPane(Container):
         self._scroll_handler = scroll_handler
         self._on_copy = on_copy
         self._zoom_handler = zoom_handler
+        self._skip_region = skip_region
         self._anchor: tuple[int, int] | None = None
         self._focus: tuple[int, int] | None = None
         self._last_screen: Screen | None = None
@@ -212,6 +214,9 @@ class SelectionPane(Container):
                 return None
             self._scroll_handler(3)
             return None
+        # 输入区（随对话滚动的内容末尾）点击/拖选放行给 TextArea 自身处理
+        if self._in_skip_region(mouse_event.position.y):
+            return NotImplemented
         if mouse_event.button.name != "LEFT":
             return NotImplemented
         if mouse_event.event_type.name == "MOUSE_DOWN":
@@ -234,9 +239,19 @@ class SelectionPane(Container):
             return None
         return NotImplemented
 
+    def _in_skip_region(self, y: int) -> bool:
+        """判断鼠标行是否落在输入区渲染范围内。"""
+
+        if self._skip_region is None:
+            return False
+        region = self._skip_region()
+        if region is None:
+            return False
+        start, end = region
+        return start <= y < end
+
     def _extract_selection(self) -> str:
         """从最近渲染的屏幕提取选区矩形内的文本，逐行拼接。"""
-
         if (
             self._anchor is None
             or self._focus is None
@@ -273,6 +288,67 @@ ConversationRole = Literal["user", "assistant", "tool", "logo", "thinking"]
 _WORKING_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 # 工具输出折叠阈值（超过时显示省略提示，对齐 Pi）
 _MAX_TOOL_LINES = 8
+
+
+class _TrackedContainer(Container):
+    """包裹输入区，记录最近一次渲染的屏幕行范围供鼠标分流。"""
+
+    def __init__(self, content: Container) -> None:
+        """保存被包裹的输入区容器。"""
+
+        self.content = content
+        self.last_y_range: tuple[int, int] | None = None
+
+    def preferred_width(self, max_available_width: int) -> Dimension:
+        """宽度委托给被包裹内容。"""
+
+        return self.content.preferred_width(max_available_width)
+
+    def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
+        """高度委托给被包裹内容。"""
+
+        return self.content.preferred_height(width, max_available_height)
+
+    def reset(self) -> None:
+        """重置内部状态。"""
+
+        self.content.reset()
+
+    def get_children(self) -> list[Container]:
+        """返回被包裹的内容。"""
+
+        return [self.content]
+
+    def is_focusable(self) -> bool:
+        """可聚焦性委托给被包裹内容。"""
+
+        return self.content.is_focusable()
+
+    def write_to_screen(
+        self,
+        screen: Screen,
+        mouse_handlers,
+        write_position: WritePosition,
+        parent_style: str,
+        erase_bg: bool,
+        z_index: int | None,
+    ) -> None:
+        """记录输入区屏幕行范围后渲染内容。"""
+
+        self.last_y_range = (
+            write_position.ypos,
+            write_position.ypos + write_position.height,
+        )
+        self.content.write_to_screen(
+            screen,
+            mouse_handlers,
+            write_position,
+            parent_style,
+            erase_bg,
+            z_index,
+        )
 
 
 class SlashCommandCompleter(Completer):
@@ -461,23 +537,25 @@ class ChatScreen:
             align=VerticalAlign.JUSTIFY,
             padding=1,
         )
+        # 输入区作为对话区内容末尾（对齐 Pi：随对话滚动，向上滚时下移出屏）
+        self._build_input_container()
+        self._input_tracker = _TrackedContainer(self._input_container)
         self.conversation_view = ConversationView(
             self._conversation_content,
             reserved_height=self._get_reserved_height,
         )
-        # 对话区外包选区容器：拖选反色高亮、松开自动复制，Ctrl+滚轮缩放字体
+        # 对话区外包选区容器：拖选反色高亮、松开自动复制，Ctrl+滚轮缩放字体；
+        # 输入区区域点击/拖选放行给 TextArea，滚轮仍滚动对话区
         self.selection_pane = SelectionPane(
             self.conversation_view,
             self.conversation_view.scroll_by,
             on_copy=self._on_copy,
             zoom_handler=self._zoom_font,
+            skip_region=self._input_region,
         )
         # 两行式状态栏（对齐 Pi footer）：整行渲染，行一左工作区右复制提示、行二左信息右模型
         self._status_control = StatusControl(self._status_rows)
-        self._layout = Layout(
-            self._create_layout(),
-            focused_element=self.input_area,
-        )
+        self._layout = Layout(self._create_layout())
         self._key_bindings = self._create_key_bindings()
         self.application = Application(
             layout=self._layout,
@@ -497,7 +575,10 @@ class ChatScreen:
                     FormattedTextControl(self._render_logo, focusable=False),
                 )
             )
-            self._sync_conversation_view()
+        # 无论有无 Logo 都同步布局：输入区是对话内容的一部分
+        self._sync_conversation_view()
+        # 输入区在对话内容末尾，同步后焦点才可用
+        self._layout.focus(self.input_area)
 
     def add_entry(self, role: ConversationRole, content: str, style: str = "") -> int:
         """向对话区追加一条展示内容，并返回它的索引。"""
@@ -658,7 +739,7 @@ class ChatScreen:
 
         self._conversation_container = ConditionalContainer(
             self.selection_pane,
-            filter=Condition(lambda: bool(self._conversation)),
+            filter=Condition(lambda: True),
         )
         # 两行式状态栏（对齐 Pi footer）：整行渲染，无背景，右侧右对齐
         self._status_window = Window(
@@ -669,6 +750,20 @@ class ChatScreen:
         # 底部区域无背景，内容直接落在命令行窗口默认背景上（对齐 Pi）
         bottom_container = HSplit([self._status_window])
         self._bottom_container = bottom_container
+        # 输入区已作为对话内容末尾（_build_input_container），根布局只含对话与底部
+        return HSplit(
+            [
+                self._conversation_container,
+                bottom_container,
+            ],
+            # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
+            # 填充窗口；剩余空间应当只交给有消息时的对话视口。
+            align=VerticalAlign.JUSTIFY,
+        )
+
+    def _build_input_container(self) -> None:
+        """构建输入区（上下边框 + 输入框），作为对话区内容末尾。"""
+
         # 输入区上下各一条水平线框住（对齐 Pi DynamicBorder），不使用灰色背景；
         # 上边界在输入超行时左侧显示 ↑ n more 提示
         top_border = Window(
@@ -683,32 +778,24 @@ class ChatScreen:
             style="class:input-border",
             width=Dimension(weight=1),
         )
-        input_container = HSplit(
+        self._input_container = HSplit(
             [
                 top_border,
                 self.input_area,
                 border_line,
             ],
-            # TOP 会为剩余空间添加一个继承样式的填充窗口；
             # 输入区必须只占水平线和文字实际需要的高度。
             align=VerticalAlign.JUSTIFY,
             width=Dimension(weight=1),
         )
-        self._input_container = input_container
-        # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
+        # TextArea 自身已经限制了最大高度，直接放入对话内容 HSplit，
         # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
         self._input_window = self.input_area.window
-        # 底部区域在输入栏下方：无补全显示状态栏，补全时替换为命令列表（对齐 Codex）
-        return HSplit(
-            [
-                self._conversation_container,
-                input_container,
-                bottom_container,
-            ],
-            # 不使用 TOP，避免 prompt_toolkit 自动追加一个无样式的
-            # 填充窗口；剩余空间应当只交给有消息时的对话视口。
-            align=VerticalAlign.JUSTIFY,
-        )
+
+    def _input_region(self) -> tuple[int, int] | None:
+        """返回输入区最近一次渲染的屏幕行范围。"""
+
+        return self._input_tracker.last_y_range
 
     async def request_approval(
         self,
@@ -793,15 +880,11 @@ class ChatScreen:
             self.application.invalidate()
 
     def _get_reserved_height(self, width: int, max_height: int) -> int:
-        """计算对话视口下方的输入区和底部区域所需高度。"""
+        """计算对话视口下方的底部区域所需高度（输入区已在对话内容内）。"""
 
-        input_height = self._input_container.preferred_height(
+        return self._bottom_container.preferred_height(
             width, max_height
         ).preferred
-        bottom_height = self._bottom_container.preferred_height(
-            width, max_height
-        ).preferred
-        return input_height + bottom_height
 
     def _has_logo(self) -> bool:
         """判断 Logo 是否有实际内容，空 Logo 不占用布局空间。"""
@@ -1245,10 +1328,13 @@ class ChatScreen:
                         dont_extend_height=True,
                     )
                 )
+        # 输入区作为对话区内容末尾，随对话一起滚动（对齐 Pi）
+        children.append(self._input_tracker)
         self._conversation_content.children = children
 
         for child in children:
-            child.content.mouse_handler = self.conversation_view.handle_mouse_event
+            if hasattr(child.content, "mouse_handler"):
+                child.content.mouse_handler = self.conversation_view.handle_mouse_event
 
     def _status_rows(self) -> list[tuple[str, str]]:
         """返回状态栏两行内容（左侧、右侧），供 StatusControl 整行右对齐渲染。"""

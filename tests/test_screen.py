@@ -369,16 +369,16 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         root = screen._layout.container
         empty_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        # 根布局第 1、3、5 项分别是对话区、输入区和状态栏，中间的 0 是布局间隔。
-        assert empty_sizes[2:5] == [3, 0, 2]
+        # 根布局：对话区（含 Logo 与输入区）+ 状态栏，中间的 0 是布局间隔。
+        assert empty_sizes[1:3] == [0, 2]
 
         screen.add_entry("user", "用户输入")
         screen.add_entry("assistant", "")
         conversation_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        # 对话区包含 Logo 与用户消息后高度增长，输入区和状态栏位置不变
+        # 对话区包含 Logo 与用户消息后高度增长，状态栏位置不变
         assert conversation_sizes[0] > empty_sizes[0]
-        assert conversation_sizes[2:5] == [3, 0, 2]
+        assert conversation_sizes[1:3] == [0, 2]
 
 
 def test_input_container_has_border_lines_above_and_below(tmp_path: Path) -> None:
@@ -509,8 +509,8 @@ def test_user_entry_renders_n_plus_two_rows_all_gray(
     assert user_window.style == "class:conversation-user"
 
     # 多行内容同样前后各留 1 行（n+2）
-    screen.add_entry("user", "第一行\n第二行\n第三行")
-    multi_window = screen._conversation_content.children[-1]
+    multi_index = screen.add_entry("user", "第一行\n第二行\n第三行")
+    multi_window = screen._conversation_content.children[multi_index]
 
     multi_height = multi_window.content.preferred_height(
         100, 10, False, lambda text: len(text)
@@ -1189,3 +1189,46 @@ def test_tool_result_short_output_no_folding(tmp_path: Path) -> None:
     fragments = screen._conversation[index].control.text
     assert ("class:tool-diff-del", "-old") in fragments
     assert ("class:tool-diff-add", "+new") in fragments
+
+
+def test_input_area_is_last_conversation_child(tmp_path: Path) -> None:
+    """测试输入区作为对话内容末尾，参与滚动。"""
+
+    screen = _create_screen(tmp_path)
+
+    children = screen._conversation_content.children
+
+    assert children[-1] is screen._input_tracker
+
+
+def test_selection_pane_releases_click_on_input_region(tmp_path: Path) -> None:
+    """测试输入区区域的鼠标点击放行给 TextArea。"""
+
+    from prompt_toolkit.layout.screen import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    screen = _create_screen(tmp_path)
+    screen._input_tracker.last_y_range = (10, 13)
+    scrolled: list[int] = []
+    screen.selection_pane._scroll_handler = scrolled.append
+
+    click_in_input = MouseEvent(
+        position=Point(5, 11),
+        event_type=MouseEventType.MOUSE_DOWN,
+        button=MouseButton.LEFT,
+        modifiers=frozenset(),
+    )
+    result = screen.selection_pane._mouse_handler(click_in_input)
+
+    assert result is NotImplemented
+
+    # 输入区滚轮仍滚动对话区
+    wheel_in_input = MouseEvent(
+        position=Point(5, 11),
+        event_type=MouseEventType.SCROLL_DOWN,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    screen.selection_pane._mouse_handler(wheel_in_input)
+
+    assert scrolled == [3]
