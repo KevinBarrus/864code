@@ -404,6 +404,11 @@ def test_user_entry_renders_n_plus_two_rows_all_gray(
     assert multi_height == 5
     assert multi_window.style == "class:conversation-user"
 
+    # 内容行左右各留一个空格（对齐输出留白）
+    rendered = to_plain_text(user_window.content.text)
+    lines = [line for line in rendered.split("\n") if line.strip()]
+    assert lines == [" 你是谁"]
+
 
 def test_input_selection_can_be_copied_and_pasted(tmp_path: Path) -> None:
     """测试输入框支持复制选中文本和粘贴剪贴板内容。"""
