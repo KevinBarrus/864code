@@ -280,26 +280,25 @@ class ChatScreen:
             style="class:approval-area",
         )
         self._bottom_container = bottom_container
+        # 输入区上下各一条水平线框住（对齐 Pi DynamicBorder），不使用灰色背景
+        border_line = Window(
+            content=FormattedTextControl("─" * 4096),
+            height=1,
+            style="class:input-border",
+            width=Dimension(weight=1),
+        )
         input_container = HSplit(
             [
-                Window(
-                    height=self._input_layout.vertical_padding,
-                    style="class:input-area",
-                ),
+                border_line,
                 self.input_area,
-                Window(
-                    height=self._input_layout.vertical_padding,
-                    style="class:input-area",
-                ),
+                border_line,
             ],
-            # TOP 会为剩余空间添加一个继承灰色背景的填充窗口；
-            # 输入区必须只占上下留白和文字实际需要的高度。
+            # TOP 会为剩余空间添加一个继承样式的填充窗口；
+            # 输入区必须只占水平线和文字实际需要的高度。
             align=VerticalAlign.JUSTIFY,
-            style="class:input-area",
             width=Dimension(weight=1),
         )
         self._input_container = input_container
-        self._normal_input_children = list(input_container.children)
         # TextArea 自身已经限制了最大高度，直接把 HSplit 放入根布局，
         # 避免用 Window 错误地包裹 Container，导致焦点控件无法被找到。
         self._input_window = self.input_area.window
@@ -322,17 +321,17 @@ class ChatScreen:
         tool_call: ToolCall,
         allow_session: bool = True,
     ) -> ApprovalResult:
-        """在输入区域显示审批选项并等待用户选择。"""
+        """在输入区下方显示审批选项并等待用户选择。"""
 
         prompt = ApprovalPrompt(definition, tool_call, allow_session)
         self._approval_prompt = prompt
-        self._input_container.children = [prompt.window]
+        self._bottom_container.children = [prompt.window]
         self._layout.focus(prompt.window)
         self.application.invalidate()
         try:
             return await prompt.wait()
         finally:
-            self._input_container.children = list(self._normal_input_children)
+            self._bottom_container.children = [self._status_window]
             self._approval_prompt = None
             self._layout.focus(self.input_area)
             self.application.invalidate()
@@ -342,17 +341,17 @@ class ChatScreen:
         items: list[tuple[str, str, str]],
         checked: set[tuple[str, str]],
     ) -> set[tuple[str, str]] | None:
-        """在输入区域显示 skill 勾选列表并等待用户选择。"""
+        """在输入区下方显示 skill 勾选列表并等待用户选择。"""
 
         picker = SkillPicker(items, checked)
         self._skill_picker = picker
-        self._input_container.children = [picker.window]
+        self._bottom_container.children = [picker.window]
         self._layout.focus(picker.window)
         self.application.invalidate()
         try:
             return await picker.wait()
         finally:
-            self._input_container.children = list(self._normal_input_children)
+            self._bottom_container.children = [self._status_window]
             self._skill_picker = None
             self._layout.focus(self.input_area)
             self.application.invalidate()
@@ -363,17 +362,17 @@ class ChatScreen:
         title: str,
         extra_options: list[str] | None = None,
     ) -> str | None:
-        """在输入区域显示单选列表并等待用户选择。"""
+        """在输入区下方显示单选列表并等待用户选择。"""
 
         picker = ChoicePicker(items, title, extra_options)
         self._choice_picker = picker
-        self._input_container.children = [picker.window]
+        self._bottom_container.children = [picker.window]
         self._layout.focus(picker.window)
         self.application.invalidate()
         try:
             return await picker.wait()
         finally:
-            self._input_container.children = list(self._normal_input_children)
+            self._bottom_container.children = [self._status_window]
             self._choice_picker = None
             self._layout.focus(self.input_area)
             self.application.invalidate()
@@ -383,17 +382,17 @@ class ChatScreen:
         title: str,
         is_password: bool = False,
     ) -> str | None:
-        """在输入区域显示单行文本输入框并等待用户输入。"""
+        """在输入区下方显示单行文本输入框并等待用户输入。"""
 
         prompt = InputPrompt(title, is_password)
         self._text_input = prompt
-        self._input_container.children = [prompt.window]
+        self._bottom_container.children = [prompt.window]
         self._layout.focus(prompt.input_area)
         self.application.invalidate()
         try:
             return await prompt.wait()
         finally:
-            self._input_container.children = list(self._normal_input_children)
+            self._bottom_container.children = [self._status_window]
             self._text_input = None
             self._layout.focus(self.input_area)
             self.application.invalidate()
@@ -744,19 +743,34 @@ class ChatScreen:
         children: list[Window] = []
         for index, entry in enumerate(self._conversation):
             if entry.role == "user":
-                style = "class:conversation-user"
-            elif entry.role == "tool":
-                style = "class:tool-activity"
-            else:
-                style = ""
-            children.append(
-                Window(
-                    content=entry.control,
-                    style=style,
-                    wrap_lines=True,
-                    dont_extend_height=True,
+                # 用户消息上下各加一行留白，让灰色背景比文字更高
+                children.append(Window(height=1, style="class:conversation-user"))
+                children.append(
+                    Window(
+                        content=entry.control,
+                        style="class:conversation-user",
+                        wrap_lines=True,
+                        dont_extend_height=True,
+                    )
                 )
-            )
+                children.append(Window(height=1, style="class:conversation-user"))
+            elif entry.role == "tool":
+                children.append(
+                    Window(
+                        content=entry.control,
+                        style="class:tool-activity",
+                        wrap_lines=True,
+                        dont_extend_height=True,
+                    )
+                )
+            else:
+                children.append(
+                    Window(
+                        content=entry.control,
+                        wrap_lines=True,
+                        dont_extend_height=True,
+                    )
+                )
         self._conversation_content.children = children
 
         for child in children:

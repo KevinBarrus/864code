@@ -25,7 +25,8 @@ def create_ui_style(theme: ThemeColors = DEFAULT_THEME) -> Style:
             "status-model": f"fg:{theme.model}",
             "status-balance": f"fg:{theme.balance}",
             "status-working-directory": f"fg:{theme.working_directory}",
-            "input-area": "bg:#303030",
+            # 输入区上下水平线（对齐 Pi DynamicBorder）
+            "input-border": "fg:#5f87ff",
             "conversation-user": "bg:#303030",
             "approval-area": "bg:#303030",
             "approval-selected": "fg:ansibrightcyan",

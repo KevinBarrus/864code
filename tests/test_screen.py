@@ -55,8 +55,8 @@ def test_chat_screen_uses_full_screen_and_mouse_support(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> None:
-    """测试审批期间只替换输入区并在完成后恢复布局。"""
+async def test_approval_replaces_bottom_area_and_restores_layout(tmp_path: Path) -> None:
+    """测试审批期间显示在输入区下方并在完成后恢复状态栏。"""
 
     with create_app_session(output=DummyOutput()):
         screen = _create_screen(tmp_path)
@@ -69,20 +69,20 @@ async def test_approval_replaces_input_and_restores_layout(tmp_path: Path) -> No
         await asyncio.sleep(0)
 
         assert screen._approval_prompt is not None
-        assert screen._input_container.children == [screen._approval_prompt.window]
-        assert screen._layout.container.children[-1].children[0].content is screen._status_control
+        assert screen._bottom_container.children == [screen._approval_prompt.window]
+        assert screen._layout.container.children[-1].children[0] is screen._approval_prompt.window
 
         screen._approval_prompt.confirm()
         result = await task
 
         assert result.decision == ApprovalDecision.ALLOW_ONCE
         assert screen._approval_prompt is None
-        assert screen._input_window in screen._input_container.children
+        assert screen._bottom_container.children == [screen._status_window]
 
 
 @pytest.mark.asyncio
-async def test_skill_picker_replaces_input_and_restores_layout(tmp_path: Path) -> None:
-    """测试 skill 选择期间只替换输入区并在完成后恢复布局。"""
+async def test_skill_picker_replaces_bottom_area_and_restores_layout(tmp_path: Path) -> None:
+    """测试 skill 选择期间显示在输入区下方并在完成后恢复状态栏。"""
 
     with create_app_session(output=DummyOutput()):
         screen = _create_screen(tmp_path)
@@ -92,7 +92,7 @@ async def test_skill_picker_replaces_input_and_restores_layout(tmp_path: Path) -
         await asyncio.sleep(0)
 
         assert screen._skill_picker is not None
-        assert screen._input_container.children == [screen._skill_picker.window]
+        assert screen._bottom_container.children == [screen._skill_picker.window]
 
         screen._skill_picker.toggle()   # 勾选 ("a", "project")
         screen._skill_picker.confirm()
@@ -100,7 +100,7 @@ async def test_skill_picker_replaces_input_and_restores_layout(tmp_path: Path) -
 
         assert result == {("a", "project")}
         assert screen._skill_picker is None
-        assert screen._input_window in screen._input_container.children
+        assert screen._bottom_container.children == [screen._status_window]
 
 
 def test_chat_screen_renders_status_with_separate_style_classes(
@@ -288,53 +288,48 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         screen.add_entry("assistant", "")
         conversation_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        assert conversation_sizes[2] == 3
+        # 用户消息（含上下留白）1+1+1 + 间隔 padding，assistant 1 行 + 间隔
+        assert conversation_sizes[2] == 7
         assert conversation_sizes[4:7] == [3, 0, 1]
 
 
-def test_input_vertical_padding_comes_from_config(tmp_path: Path) -> None:
-    """测试输入区上下留白使用集中配置。"""
+def test_input_container_has_border_lines_above_and_below(tmp_path: Path) -> None:
+    """测试输入区上下各有一条水平线，不使用灰色背景。"""
 
-    screen = ChatScreen(
-        create_status_info("test-model", "暂不可查询", tmp_path),
-        input_layout=InputLayoutConfig(vertical_padding=3),
-    )
+    screen = _create_screen(tmp_path)
 
-    assert screen._input_container.children[0].height == 3
-    assert screen._input_container.children[2].height == 3
+    top, middle, bottom = screen._input_container.children
+
+    assert middle is screen._input_window
+    for line in (top, bottom):
+        assert line.height == 1
+        style = line.style
+        assert "input-border" in style
 
 
 def test_chat_screen_uses_configured_input_spacing(tmp_path: Path) -> None:
-    """测试输入区域使用集中配置的内边距和最大行数。"""
+    """测试输入区域使用集中配置的边距和最大行数。"""
 
     screen = ChatScreen(
         create_status_info("test-model", "暂不可查询", tmp_path),
         input_layout=InputLayoutConfig(
             horizontal_padding=4,
-            vertical_padding=2,
             max_lines=6,
         ),
     )
 
     assert screen.input_area.window.height.max == 6
-    assert screen._input_container.children[0].height == 2
-    assert screen._input_container.children[2].height == 2
+    assert screen._input_layout.horizontal_padding == 4
 
 
-def test_chat_screen_uses_input_box_style_and_blinking_cursor(
-    tmp_path: Path,
-) -> None:
-    """测试输入框使用独立样式并启用闪烁光标。"""
+def test_chat_screen_uses_blinking_cursor(tmp_path: Path) -> None:
+    """测试输入框启用闪烁光标。"""
 
     screen = _create_screen(tmp_path)
 
     assert (
         screen.application.cursor.get_cursor_shape(screen.application)
         == CursorShape.BLINKING_BEAM
-    )
-    assert (
-        screen.application.style.get_attrs_for_style_str("class:input-area").bgcolor
-        == "303030"
     )
 
 
