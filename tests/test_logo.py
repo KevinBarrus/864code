@@ -12,8 +12,10 @@ def test_default_logo_renders_block_art() -> None:
 
     text = to_plain_text(logo)
 
-    assert "ε" in text
     assert "████" in text
+    # ε 块字（右开口弧线）与 EPSILON 首字母 E 可区分
+    assert "   █" in text
+    assert text.count("████") >= 2
 
 
 def test_default_logo_uses_accent_style() -> None:
