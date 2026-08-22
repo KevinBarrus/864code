@@ -20,6 +20,16 @@ class McpStdioSettings:
 
 
 @dataclass(frozen=True)
+class ModelPrice:
+    """模型每百万 token 的美元单价，cache_read 缺省时视为无缓存计费。"""
+
+    input: float
+    output: float
+    cache_read: float | None = None
+    cache_write: float | None = None
+
+
+@dataclass(frozen=True)
 class Settings:
     """模型客户端运行所需的最小配置。"""
 
@@ -35,6 +45,7 @@ class Settings:
     mcp_stdio: McpStdioSettings | None = None
     stream_usage: bool = False
     max_tool_rounds: int = 10
+    price: ModelPrice | None = None
 
     def __post_init__(self) -> None:
         """统一超时默认值并校验直接构造的配置。"""
@@ -181,6 +192,7 @@ def _settings_from_data(data: dict) -> Settings:
         10,
         "model.max_tool_rounds",
     )
+    price = _optional_model_price(model.get("price"))
     if context_window <= 0:
         raise ConfigError("model.context_window must be > 0")
     if reserve_tokens < 0 or reserve_tokens >= context_window:
@@ -202,6 +214,30 @@ def _settings_from_data(data: dict) -> Settings:
         mcp_stdio=_optional_mcp_stdio_settings(data),
         stream_usage=stream_usage,
         max_tool_rounds=max_tool_rounds,
+        price=price,
+    )
+
+
+def _optional_model_price(value: object) -> ModelPrice | None:
+    """解析可选的 model.price 配置，缺省返回 None。"""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError("model.price must be an object")
+    input_price = value.get("input")
+    output_price = value.get("output")
+    if not isinstance(input_price, (int, float)) or not isinstance(
+        output_price, (int, float)
+    ):
+        raise ConfigError("model.price.input and model.price.output are required")
+    cache_read = value.get("cache_read")
+    cache_write = value.get("cache_write")
+    return ModelPrice(
+        input=float(input_price),
+        output=float(output_price),
+        cache_read=float(cache_read) if isinstance(cache_read, (int, float)) else None,
+        cache_write=float(cache_write) if isinstance(cache_write, (int, float)) else None,
     )
 
 

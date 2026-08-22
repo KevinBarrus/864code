@@ -69,11 +69,14 @@ def _settings() -> Settings:
     )
 
 
-async def _collect(client: OpenAICompatibleClient) -> str:
+async def _collect(client: OpenAICompatibleClient, thinking_level: str | None = None) -> str:
     """收集客户端产生的全部文本片段。"""
 
     result = ""
-    async for chunk in client.stream_chat([Message(role="user", content="你好")]):
+    async for chunk in client.stream_chat(
+        [Message(role="user", content="你好")],
+        thinking_level=thinking_level,
+    ):
         result += chunk
     return result
 
@@ -102,6 +105,42 @@ async def test_client_sends_openai_compatible_request_and_streams_response() -> 
         "messages": [{"role": "user", "content": "你好"}],
         "stream": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_client_sends_reasoning_effort_for_thinking_level() -> None:
+    """测试传入推理强度时请求携带 reasoning_effort。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="好"))]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    await _collect(client, thinking_level="high")
+
+    assert fake_sdk.completions.received["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_client_omits_reasoning_effort_for_off() -> None:
+    """测试 off 档位不携带 reasoning_effort。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content="好"))]
+            ),
+        ]
+    )
+    client = OpenAICompatibleClient(_settings(), fake_sdk)  # type: ignore[arg-type]
+
+    await _collect(client, thinking_level="off")
+
+    assert "reasoning_effort" not in fake_sdk.completions.received
 
 
 @pytest.mark.asyncio
@@ -532,6 +571,74 @@ async def test_client_emits_usage_event_when_stream_usage_enabled() -> None:
     ]
     assert fake_sdk.completions.received is not None
     assert fake_sdk.completions.received["stream_options"] == {"include_usage": True}
+
+
+@pytest.mark.asyncio
+async def test_client_collects_cached_tokens_from_details() -> None:
+    """测试缓存命中 token 从 prompt_tokens_details.cached_tokens 采集。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=1000,
+                    completion_tokens=10,
+                    total_tokens=1010,
+                    prompt_tokens_details=SimpleNamespace(cached_tokens=900),
+                ),
+            ),
+        ]
+    )
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        stream_usage=True,
+    )
+    client = OpenAICompatibleClient(settings, fake_sdk)  # type: ignore[arg-type]
+
+    events = await _collect_events(client)
+
+    assert events == [
+        UsageEvent(
+            prompt_tokens=1000,
+            completion_tokens=10,
+            total_tokens=1010,
+            cached_tokens=900,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_client_omits_cached_tokens_when_details_missing() -> None:
+    """测试服务端未返回缓存明细时 cached_tokens 为 None。"""
+
+    fake_sdk = FakeClient(
+        [
+            SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=12,
+                    completion_tokens=3,
+                    total_tokens=15,
+                ),
+            ),
+        ]
+    )
+    settings = Settings(
+        base_url="https://example.com/v1",
+        model_name="test-model",
+        api_key="test-key",
+        stream_usage=True,
+    )
+    client = OpenAICompatibleClient(settings, fake_sdk)  # type: ignore[arg-type]
+
+    events = await _collect_events(client)
+
+    assert events == [
+        UsageEvent(prompt_tokens=12, completion_tokens=3, total_tokens=15)
+    ]
 
 
 @pytest.mark.asyncio

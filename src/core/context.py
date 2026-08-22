@@ -123,6 +123,17 @@ class ContextManager:
         self._extra_system_messages = tuple(messages)
 
     @property
+    def context_window(self) -> int:
+        """当前上下文窗口大小，供状态栏展示。"""
+
+        return self._budget.context_window
+
+    def estimate_tokens(self, messages: Sequence[Message]) -> int:
+        """估算携带当前工具定义的完整模型请求 token 数。"""
+
+        return self._estimate(messages)
+
+    @property
     def _message_budget(self) -> int:
         """返回扣除协议和工具定义后的消息可用预算。"""
 

@@ -8,7 +8,7 @@ from .errors import AgentError
 from .screen import ChatScreen
 from .status import StatusInfo
 from .agent_loop import ToolExecutionEvent
-from .model import Message, ModelClient, TextDelta, ToolCallEvent
+from .model import Message, ModelClient, TextDelta, ToolCallEvent, UsageEvent
 from .commands import (
     CommandContext,
     CommandRegistry,
@@ -19,6 +19,7 @@ from .commands import (
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .config import Settings
+from .cost import UsageTotals, cache_hit_rate, format_tokens
 from .setup import infer_provider
 from .context import ContextBudget, ContextManager, DEFAULT_CONTEXT_BUDGET
 from .prompts import load_prompt
@@ -68,6 +69,8 @@ async def run_chat(
     screen: ChatScreen
     session_workspace = (workspace or Path.cwd()).resolve()
     current_balance = status.balance
+    usage_totals = UsageTotals()
+    latest_usage: UsageEvent | None = None
 
     async def refresh_balance() -> None:
         """每轮对话后刷新余额，失败保留旧值。"""
@@ -141,7 +144,7 @@ async def run_chat(
         async def handle_event(event) -> None:
             """将模型事件转换为回复文本或简短工具活动条目。"""
 
-            nonlocal response_index, awaiting_response_after_tool
+            nonlocal response_index, awaiting_response_after_tool, latest_usage
 
             if isinstance(event, TextDelta):
                 if awaiting_response_after_tool:
@@ -161,6 +164,10 @@ async def run_chat(
                 index = tool_activity_indices.get(event.tool_call.call_id)
                 if index is not None:
                     screen.set_entry_content(index, _tool_result_summary(event))
+            elif isinstance(event, UsageEvent):
+                latest_usage = event
+                usage_totals.add(event, client_holder.settings.price)
+                screen.application.invalidate()
 
         try:
             # 由 Agent Loop 负责模型与工具循环，界面只消费文本事件
@@ -220,6 +227,29 @@ async def run_chat(
             _update_persistence_status(screen, session)
             await refresh_balance()
 
+    def _render_info_line() -> str:
+        """渲染状态栏信息行：用量、成本、上下文与余额。"""
+
+        parts: list[str] = []
+        if usage_totals.prompt_tokens:
+            parts.append(f"↑{format_tokens(usage_totals.prompt_tokens)}")
+        if usage_totals.completion_tokens:
+            parts.append(f"↓{format_tokens(usage_totals.completion_tokens)}")
+        if usage_totals.cached_tokens:
+            parts.append(f"R{format_tokens(usage_totals.cached_tokens)}")
+        if latest_usage is not None:
+            hit_rate = cache_hit_rate(latest_usage)
+            if hit_rate is not None:
+                parts.append(f"CH{hit_rate:.1f}%")
+        if usage_totals.cost:
+            parts.append(f"${usage_totals.cost:.3f}")
+        estimated = context_manager.estimate_tokens(session.get_messages())
+        window = context_manager.context_window
+        percent = estimated / window * 100 if window else 0
+        parts.append(f"{percent:.1f}%/{format_tokens(window)}")
+        parts.append(f"Balance: {current_balance}")
+        return " ".join(parts)
+
     screen = ChatScreen(
         status,
         on_submit=handle_submit,
@@ -233,6 +263,7 @@ async def run_chat(
             client_holder.settings.base_url
         ),
         thinking_level_provider=lambda: agent_loop.thinking_level,
+        info_line_provider=_render_info_line,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

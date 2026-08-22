@@ -45,6 +45,50 @@ def test_load_settings_reads_required_values(tmp_path: Path) -> None:
     assert settings.base_url == "https://example.com/v1"
     assert settings.model_name == "test-model"
     assert settings.api_key == "test-key"
+    assert settings.price is None
+
+
+def test_load_settings_reads_model_price(tmp_path: Path) -> None:
+    """测试可选 model.price 配置被完整读取。"""
+
+    user_path = _write_user_settings(
+        tmp_path,
+        {
+            "model": {
+                **_valid_model()["model"],
+                "price": {
+                    "input": 0.55,
+                    "output": 2.19,
+                    "cache_read": 0.14,
+                },
+            }
+        },
+    )
+
+    settings = load_settings(user_config_path=user_path)
+
+    assert settings.price is not None
+    assert settings.price.input == 0.55
+    assert settings.price.output == 2.19
+    assert settings.price.cache_read == 0.14
+    assert settings.price.cache_write is None
+
+
+def test_load_settings_rejects_price_without_output(tmp_path: Path) -> None:
+    """测试 model.price 缺少 output 时配置被拒绝。"""
+
+    user_path = _write_user_settings(
+        tmp_path,
+        {
+            "model": {
+                **_valid_model()["model"],
+                "price": {"input": 0.55},
+            }
+        },
+    )
+
+    with pytest.raises(ConfigError):
+        load_settings(user_config_path=user_path)
 
 
 def test_load_settings_reads_optional_context_budget(tmp_path: Path) -> None:

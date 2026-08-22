@@ -55,10 +55,13 @@ class OpenAICompatibleClient:
     async def stream_chat(
         self,
         messages: Sequence[Message],
+        thinking_level: str | None = None,
     ) -> AsyncIterator[str]:
         """发送消息并逐段返回模型生成的文本。"""
 
-        async for event in self.stream_response(messages):
+        async for event in self.stream_response(
+            messages, thinking_level=thinking_level
+        ):
             if isinstance(event, TextDelta):
                 yield event.content
 
@@ -270,8 +273,13 @@ def _build_usage_event(usage: object) -> UsageEvent | None:
         total_tokens = prompt_tokens + completion_tokens
     if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int) or not isinstance(total_tokens, int):
         return None
+    # 缓存命中 token 来自 prompt_tokens_details.cached_tokens，缺失时置 None
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached_tokens = getattr(details, "cached_tokens", None)
+    cached = cached_tokens if isinstance(cached_tokens, int) else None
     return UsageEvent(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
+        cached_tokens=cached,
     )
