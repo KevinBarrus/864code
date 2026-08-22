@@ -6,7 +6,7 @@ from pathlib import Path
 from .agent_loop import AgentLoop, AgentLoopCancelled, AgentLoopError
 from .errors import AgentError
 from .screen import ChatScreen
-from .status import StatusInfo
+from .status import StatusInfo, format_cwd_for_footer
 from .agent_loop import ToolExecutionEvent
 from .model import Message, ModelClient, TextDelta, ToolCallEvent, UsageEvent
 from .commands import (
@@ -247,6 +247,39 @@ async def run_chat(
             _update_persistence_status(screen, session)
             await refresh_balance()
 
+    def _render_startup_info() -> list[list[tuple[str, str]]]:
+        """渲染新建会话的起始信息：操作提示、可用 skill 与 Context 栏。"""
+
+        parts: list[list[tuple[str, str]]] = [
+            [
+                (
+                    "class:startup-hint",
+                    "c-d exit · / commands · Esc cancel · ↑/↓ select",
+                )
+            ]
+        ]
+        skills = skill_manager.list_skills()
+        if skills:
+            names = " ".join(skill.name for skill in skills)
+            parts.append([("class:startup-hint", f"Skills: {names}")])
+        context_paths = [
+            str(Path(__file__).parent / "prompts" / "agent.md"),
+        ]
+        agents_file = session_workspace / "AGENTS.md"
+        if agents_file.is_file():
+            context_paths.append(str(agents_file))
+        parts.append([("class:startup-context-header", "[Context]")])
+        for path in context_paths:
+            parts.append(
+                [
+                    (
+                        "class:startup-hint",
+                        f"  {format_cwd_for_footer(path, str(Path.home()))}",
+                    )
+                ]
+            )
+        return parts
+
     def _render_info_line() -> str:
         """渲染状态栏信息行：用量、成本、余额、上下文与压缩模式。"""
 
@@ -287,6 +320,7 @@ async def run_chat(
         info_line_provider=_render_info_line,
         copy_hint_provider=lambda: copy_hint,
         on_copy=lambda text: asyncio.create_task(flash_copy_hint(text)),
+        startup_info_provider=_render_startup_info,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

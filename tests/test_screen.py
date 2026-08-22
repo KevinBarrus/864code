@@ -258,16 +258,69 @@ def test_chat_screen_does_not_add_an_implicit_fill_area(tmp_path: Path) -> None:
     assert screen._layout.container.align is VerticalAlign.JUSTIFY
 
 
-def test_empty_logo_and_conversation_do_not_take_layout_space(
+def test_default_logo_shows_and_conversation_hidden_on_new_session(
     tmp_path: Path,
 ) -> None:
-    """测试新会话不会因空 Logo 和空对话区产生额外空行。"""
+    """测试新会话默认显示 Logo 与起始信息，对话区隐藏。"""
 
     screen = _create_screen(tmp_path)
 
+    assert screen._has_logo() is True
+    assert screen._logo_container.filter() is True
+    assert screen._conversation_container.filter() is False
+
+
+def test_logo_merges_startup_info(tmp_path: Path) -> None:
+    """测试 Logo 渲染时合并起始信息（操作提示、skill、Context 栏）。"""
+
+    class TestLogo:
+        """提供测试 Logo 文本。"""
+
+        def render(self) -> str:
+            """返回 Logo 文本。"""
+
+            return "logo-line"
+
+    screen = ChatScreen(
+        create_status_info("test-model", "n/a", tmp_path),
+        logo_provider=TestLogo(),
+        startup_info_provider=lambda: [
+            [("class:startup-hint", "hint-line")],
+            [("class:startup-context-header", "[Context]")],
+        ],
+    )
+
+    rendered = to_plain_text(screen._render_logo())
+
+    assert rendered == "logo-line\nhint-line\n[Context]"
+
+    # 未提供起始信息时只显示 Logo
+    plain_screen = ChatScreen(
+        create_status_info("test-model", "n/a", tmp_path),
+        logo_provider=TestLogo(),
+    )
+
+    assert to_plain_text(plain_screen._render_logo()) == "logo-line"
+
+
+def test_empty_custom_logo_takes_no_layout_space(tmp_path: Path) -> None:
+    """测试自定义空 Logo 不占用布局空间。"""
+
+    class EmptyLogo:
+        """渲染空内容的 Logo。"""
+
+        def render(self) -> str:
+            """返回空文本。"""
+
+            return ""
+
+    screen = ChatScreen(
+        create_status_info("test-model", "n/a", tmp_path),
+        logo_provider=EmptyLogo(),
+    )
+
     assert screen._has_logo() is False
     assert screen._logo_container.filter() is False
-    assert screen._conversation_container.filter() is False
 
 
 def test_input_container_does_not_expand_vertically(tmp_path: Path) -> None:
@@ -475,7 +528,7 @@ def test_chat_screen_accepts_logo_provider(tmp_path: Path) -> None:
     status = create_status_info("test-model", "暂不可查询", tmp_path)
     screen = ChatScreen(status, logo_provider=TestLogo())
 
-    assert screen._render_logo() == "epsilon"
+    assert to_plain_text(screen._render_logo()) == "epsilon"
 
 
 def test_chat_screen_page_keys_scroll_conversation(tmp_path: Path) -> None:

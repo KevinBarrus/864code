@@ -36,6 +36,7 @@ class FakeScreen:
         info_line_provider=None,
         copy_hint_provider=None,
         on_copy=None,
+        startup_info_provider=None,
     ) -> None:
         self._on_submit = on_submit
         self.application = self

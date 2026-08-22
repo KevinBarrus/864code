@@ -37,7 +37,7 @@ class FakeScreen:
 
     last: "FakeScreen | None" = None
 
-    def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None, provider_name_provider=None, thinking_level_provider=None, info_line_provider=None, copy_hint_provider=None, on_copy=None) -> None:
+    def __init__(self, status, on_submit, command_names=None, model_name_provider=None, balance_text_provider=None, provider_name_provider=None, thinking_level_provider=None, info_line_provider=None, copy_hint_provider=None, on_copy=None, startup_info_provider=None) -> None:
         """初始化假的界面对象"""
 
         self.entries: list[tuple[str, str]] = []

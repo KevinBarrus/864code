@@ -10,7 +10,12 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.clipboard import Clipboard
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.cursor_shapes import CursorShape
-from prompt_toolkit.formatted_text import AnyFormattedText, StyleAndTextTuples, to_plain_text
+from prompt_toolkit.formatted_text import (
+    AnyFormattedText,
+    StyleAndTextTuples,
+    to_formatted_text,
+    to_plain_text,
+)
 from prompt_toolkit.filters import has_focus
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import InMemoryHistory
@@ -30,6 +35,7 @@ from prompt_toolkit.widgets import TextArea
 from wcwidth import wcswidth
 
 from .clipboard import Osc52Clipboard, copy_text_to_clipboard
+from .logo import DefaultLogoProvider, LogoProvider
 from .markdown import render_markdown
 from .status import format_cwd_for_footer
 
@@ -81,7 +87,7 @@ class StatusControl(UIControl):
 
 from .status import StatusInfo
 from .theme import create_ui_style
-from .logo import EmptyLogoProvider, LogoProvider
+from .logo import DefaultLogoProvider, LogoProvider
 from .conversation_view import ConversationView
 from .model import ToolCall
 
@@ -323,12 +329,14 @@ class ChatScreen:
         info_line_provider: Callable[[], str] | None = None,
         copy_hint_provider: Callable[[], str] | None = None,
         on_copy: Callable[[str], None] | None = None,
+        startup_info_provider: Callable[[], list[list[tuple[str, str]]]] | None = None,
     ) -> None:
         """创建对话区、输入区和两行式状态栏。"""
 
         self._status = status
         self._on_submit = on_submit
-        self._logo_provider = logo_provider or EmptyLogoProvider()
+        self._logo_provider = logo_provider or DefaultLogoProvider()
+        self._startup_info_provider = startup_info_provider
         self._input_layout = input_layout or InputLayoutConfig()
         self._model_name_provider = model_name_provider
         self._balance_text_provider = balance_text_provider
@@ -978,9 +986,19 @@ class ChatScreen:
         return self._conversation[index].content
 
     def _render_logo(self) -> AnyFormattedText:
-        """调用 Logo 接口，预留未来的个人 Logo。"""
+        """渲染 Logo 与新建会话时的起始信息（操作提示、skill、Context 栏）。"""
 
-        return self._logo_provider.render()
+        logo = to_formatted_text(self._logo_provider.render())
+        if self._startup_info_provider is None:
+            return logo
+        info = self._startup_info_provider()
+        if not info:
+            return logo
+        fragments: list[tuple[str, str]] = list(logo)
+        for line in info:
+            fragments.append(("", "\n"))
+            fragments.extend(line)
+        return fragments
 
     def _sync_conversation_view(self) -> None:
         """将对话数据同步到带样式的可滚动视图。"""

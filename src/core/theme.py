@@ -10,6 +10,10 @@ def create_ui_style() -> Style:
         {
             # 状态栏统一淡灰（对齐 Pi footer dim）
             "status-bar": "fg:#666666",
+            # 起始信息：Logo 与操作提示
+            "logo-accent": "bold #f5d76e",
+            "startup-hint": "fg:#666666",
+            "startup-context-header": "bold #f5d76e",
             # 输入区上下水平线（对齐 Pi DynamicBorder）
             "input-border": "fg:#5f87ff",
             "conversation-user": "bg:#343541",
