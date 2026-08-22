@@ -5,6 +5,10 @@ from prompt_toolkit.formatted_text import AnyFormattedText, to_plain_text
 from prompt_toolkit.layout import Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
+from wcwidth import wcswidth
+
+# name 与 description 之间的最小间距（对齐 Pi PRIMARY_COLUMN_GAP）
+_DESCRIPTION_GAP = 3
 
 
 class CommandPicker:
@@ -23,7 +27,6 @@ class CommandPicker:
             height=Dimension(min=1, preferred=self._VISIBLE_ROWS),
             dont_extend_height=True,
             wrap_lines=True,
-            style="class:approval-area",
         )
         self.window.vertical_scroll = 0
 
@@ -51,19 +54,30 @@ class CommandPicker:
         self.window.vertical_scroll = min(max_scroll, desired_scroll)
 
     def _render(self) -> AnyFormattedText:
-        """渲染命令名与描述，选中行亮青并加 › 前缀。"""
+        """渲染命令名与描述：name 列按最大宽度对齐，description 左对齐（对齐 Pi select-list）。"""
 
+        names = [f"/{completion.text}" for completion in self._completions]
+        metas = [
+            to_plain_text(completion.display_meta)
+            if completion.display_meta
+            else ""
+            for completion in self._completions
+        ]
+        name_width = max((wcswidth(name) for name in names), default=0)
         fragments: list[tuple[str, str]] = []
         for index, completion in enumerate(self._completions):
             prefix = "› " if index == self._cursor else "  "
-            style = "class:approval-selected" if index == self._cursor else ""
-            meta = (
-                to_plain_text(completion.display_meta)
-                if completion.display_meta
-                else ""
-            )
-            fragments.append((style, f"{prefix}/{completion.text}"))
-            if meta:
-                fragments.append(("", f"  {meta}"))
+            spacing = " " * max(1, name_width - wcswidth(names[index]) + _DESCRIPTION_GAP)
+            if index == self._cursor:
+                # 选中项整行亮青（对齐 Pi selectedText）
+                fragments.append(
+                    ("class:approval-selected", f"{prefix}{names[index]}{spacing}{metas[index]}")
+                )
+            else:
+                fragments.append(("", f"{prefix}{names[index]}"))
+                if metas[index]:
+                    fragments.append(
+                        ("class:completion-description", f"{spacing}{metas[index]}")
+                    )
             fragments.append(("", "\n"))
         return fragments

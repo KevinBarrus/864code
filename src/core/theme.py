@@ -14,6 +14,7 @@ def create_ui_style() -> Style:
             "input-border": "fg:#5f87ff",
             "conversation-user": "bg:#343541",
             "approval-selected": "fg:ansibrightcyan",
+            "completion-description": "fg:#808080",
             "tool-activity": "fg:#808080",
             # 工具调用三色背景（对齐 Pi tool-execution.ts）
             "tool-pending": "bg:#282832",

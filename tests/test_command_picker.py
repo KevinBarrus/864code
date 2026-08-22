@@ -54,7 +54,49 @@ def test_command_picker_renders_selected_with_prefix() -> None:
 
     assert fragments[0][0] == "class:approval-selected"
     assert fragments[0][1].startswith("› ")
-    assert not fragments[2][1].startswith("› ") or fragments[2][1].startswith("  ")
+
+
+def test_command_picker_aligns_description_column() -> None:
+    """测试描述列左对齐：name 列宽一致，间距拉大。"""
+
+    picker = CommandPicker(
+        [
+            Completion("model", display_meta="切换模型"),
+            Completion("start-skill", display_meta="激活 skill"),
+        ]
+    )
+
+    fragments = picker._render()
+
+    # 选中行：name 列宽 = max(/model, /start-skill) = 12 + GAP 3
+    selected_line = "".join(text for style, text in fragments if text.startswith("›"))
+    assert selected_line.startswith("› /model")
+    assert "切换模型" in selected_line
+
+    # 未选中行 /start-skill 的描述与选中行描述左对齐（列宽一致）
+    all_text = "".join(text for _, text in fragments)
+    lines = [line for line in all_text.split("\n") if line.strip()]
+    desc_positions = [
+        pos for line in lines for pos in (line.find("激活 skill"), line.find("切换模型"))
+        if pos != -1
+    ]
+    assert len(set(desc_positions)) == 1
+
+    # 未选中行的描述使用独立淡灰样式
+    description_styles = [
+        style
+        for style, text in fragments
+        if "切换模型" in text or "激活 skill" in text
+    ]
+    assert "class:completion-description" in description_styles
+
+
+def test_command_picker_has_no_background_style() -> None:
+    """测试补全列表无背景（字体落在终端默认背景）。"""
+
+    picker = CommandPicker(_completions(["model"]))
+
+    assert "approval-area" not in picker.window.style
 
 
 def test_command_picker_scrolls_to_keep_selection_visible() -> None:
