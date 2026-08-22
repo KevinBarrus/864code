@@ -60,7 +60,16 @@ def test_quote_prefix_and_style() -> None:
 
     fragments = render_markdown("> 引用内容")
 
-    assert fragments == [("class:md-quote", "▍ 引用内容")]
+    assert fragments == [("class:md-quote", "▍ "), ("", "引用内容")]
+
+
+def test_quote_renders_inline_markup() -> None:
+    """测试引用行内粗体与行内代码被解析。"""
+
+    fragments = render_markdown("> **重点** 与 `code`")
+
+    assert ("class:md-bold", "重点") in fragments
+    assert ("class:md-code", "code") in fragments
 
 
 def test_horizontal_rule_replaces_dashes() -> None:
@@ -84,9 +93,21 @@ def test_ordered_list_keeps_marker() -> None:
 
 
 def test_unclosed_bold_shows_as_plain_text() -> None:
-    """测试流式输出未闭合的粗体标记保持原样。"""
+    """测试未闭合的粗体标记被忽略，只保留文字。"""
 
-    assert _plain("未闭合**粗体") == "未闭合**粗体"
+    assert _plain("未闭合**粗体") == "未闭合粗体"
+
+
+def test_unclosed_backtick_stripped() -> None:
+    """测试未闭合的行内代码标记被忽略，只保留文字。"""
+
+    assert _plain("使用 `git status 查看") == "使用 git status 查看"
+
+
+def test_lone_asterisk_kept() -> None:
+    """测试普通文本中的单个星号（如乘法）不被移除。"""
+
+    assert _plain("a * b = c") == "a * b = c"
 
 
 def test_inline_renders_bold_and_italic() -> None:

@@ -60,7 +60,9 @@ def render_markdown(text: str) -> StyleAndTextTuples:
             else:
                 quote = _QUOTE_RE.match(line)
                 if quote:
-                    fragments.append(("class:md-quote", f"▍ {quote.group(1)}"))
+                    fragments.extend(
+                        [("class:md-quote", "▍ "), *render_inline(quote.group(1))]
+                    )
                 else:
                     list_match = _LIST_RE.match(line)
                     if list_match:
@@ -94,8 +96,22 @@ def render_inline(text: str) -> StyleAndTextTuples:
         elif part.startswith("*") and part.endswith("*") and len(part) > 2:
             fragments.append(("class:md-italic", part[1:-1]))
         elif part:
-            fragments.append(("", part))
+            fragments.append(("", _strip_unclosed_markers(part)))
     return fragments
+
+
+def _strip_unclosed_markers(text: str) -> str:
+    """移除未闭合的加粗（**）与行内代码（`）标记符号，只保留文字。
+
+    单个星号 * 保留（避免误伤乘法等普通用法）；只有成对标记出现奇数个
+    时才认定存在未闭合标记，去掉最后一个符号本身。
+    """
+
+    for marker in ("**", "`"):
+        if text.count(marker) % 2 == 1:
+            index = text.rfind(marker)
+            text = text[:index] + text[index + len(marker) :]
+    return text
 
 
 def _render_table(rows: list[list[str]]) -> StyleAndTextTuples:

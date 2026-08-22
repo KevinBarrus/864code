@@ -1,4 +1,6 @@
-"""实现本地文件写入和编辑工具。"""
+"""实现本地文件写入和编辑工具，结果附带行级 diff 供界面红绿展示。"""
+
+import difflib
 
 from pathlib import Path
 
@@ -8,20 +10,47 @@ from .path_utils import resolve_workspace_path
 from .types import ToolDefinition, ToolHandler
 
 
+def _file_diff(old_content: str, new_content: str, max_lines: int = 50) -> str:
+    """生成行级 diff 文本（- 删除行 / + 新增行），超长时截断。"""
+
+    lines = difflib.unified_diff(
+        old_content.splitlines(),
+        new_content.splitlines(),
+        lineterm="",
+        n=0,
+    )
+    changes = [
+        line
+        for line in lines
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    ]
+    if len(changes) > max_lines:
+        changes = changes[:max_lines] + ["… (truncated)"]
+    return "\n".join(changes)
+
+
+def _with_diff(summary: str, old_content: str, new_content: str) -> str:
+    """在工具结果摘要后附加行级 diff，内容无变化时不附加。"""
+
+    diff = _file_diff(old_content, new_content)
+    return f"{summary}\n{diff}" if diff else summary
+
+
 def create_write_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]:
     """创建写入文件最终内容的工具。"""
 
     async def write_file(tool_call: ToolCall) -> ToolResult:
         path = resolve_workspace_path(workspace, string_argument(tool_call, "path"))
         content = text_argument(tool_call, "content")
+        old_content = path.read_text(encoding="utf-8") if path.exists() else ""
         if path.exists() and not path.is_file():
             raise ValueError("target is not a file")
-        if path.exists() and path.read_text(encoding="utf-8") == content:
+        if path.exists() and old_content == content:
             return ToolResult(tool_call.call_id, "file content already matches the target")
 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        return ToolResult(tool_call.call_id, "file written")
+        return ToolResult(tool_call.call_id, _with_diff("file written", old_content, content))
 
     return (
         ToolDefinition(
@@ -60,11 +89,11 @@ def create_edit_file_tool(workspace: Path) -> tuple[ToolDefinition, ToolHandler]
                 return ToolResult(tool_call.call_id, "file content already matches the target")
             raise ValueError("file content changed, refusing to overwrite")
 
-        path.write_text(
-            current_content.replace(old_content, new_content),
-            encoding="utf-8",
+        updated_content = current_content.replace(old_content, new_content)
+        path.write_text(updated_content, encoding="utf-8")
+        return ToolResult(
+            tool_call.call_id, _with_diff("file edited", current_content, updated_content)
         )
-        return ToolResult(tool_call.call_id, "file edited")
 
     return (
         ToolDefinition(

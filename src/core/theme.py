@@ -24,12 +24,15 @@ def create_ui_style() -> Style:
             "tool-pending": "bg:#282832",
             "tool-success": "bg:#283228",
             "tool-error": "bg:#3c2828",
+            # 工具写/编辑结果的 diff 红绿行
+            "tool-diff-add": "bg:#2e4a2e",
+            "tool-diff-del": "bg:#4a2e2e",
             # Markdown 基础渲染样式
             "md-heading": "bold #f5d76e",
             "md-bold": "bold",
             "md-italic": "italic",
-            "md-code": "bg:#2d2d2d",
-            "md-code-block": "bg:#2d2d2d fg:#a0a0a0",
+            "md-code": "fg:#5fd7c7",
+            "md-code-block": "fg:#5fd7c7",
             "md-link": "fg:#81a2be",
             "md-table-header": "bold",
             "md-quote": "fg:#808080",

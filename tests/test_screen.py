@@ -163,6 +163,29 @@ def test_tool_entry_style_can_be_updated(tmp_path: Path) -> None:
     assert screen._conversation[index].style == "class:tool-success"
 
 
+def test_tool_diff_result_renders_add_and_del_lines(tmp_path: Path) -> None:
+    """测试工具 diff 结果中新增行与删除行分别着色。"""
+
+    from core.screen import _render_tool_diff
+
+    fragments = _render_tool_diff(
+        "file edited", "-old line\n+new line\n+second"
+    )
+
+    assert fragments[0] == ("", "file edited")
+    assert ("class:tool-diff-del", "-old line") in fragments
+    assert ("class:tool-diff-add", "+new line") in fragments
+    assert ("class:tool-diff-add", "+second") in fragments
+
+
+def test_tool_diff_result_without_diff_keeps_summary(tmp_path: Path) -> None:
+    """测试无 diff 内容时只保留摘要行。"""
+
+    from core.screen import _render_tool_diff
+
+    assert _render_tool_diff("file written", "") == [("", "file written")]
+
+
 def test_chat_screen_uses_scrollable_conversation_view(
     tmp_path: Path,
 ) -> None:

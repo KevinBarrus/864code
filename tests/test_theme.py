@@ -25,4 +25,8 @@ def test_ui_style_keeps_markdown_and_tool_colors() -> None:
     assert style.get_attrs_for_style_str("class:tool-pending").bgcolor == "282832"
     assert style.get_attrs_for_style_str("class:tool-success").bgcolor == "283228"
     assert style.get_attrs_for_style_str("class:tool-error").bgcolor == "3c2828"
+    assert style.get_attrs_for_style_str("class:tool-diff-add").bgcolor == "2e4a2e"
+    assert style.get_attrs_for_style_str("class:tool-diff-del").bgcolor == "4a2e2e"
     assert style.get_attrs_for_style_str("class:md-heading").color == "f5d76e"
+    assert style.get_attrs_for_style_str("class:md-code").color == "5fd7c7"
+    assert style.get_attrs_for_style_str("class:md-code-block").bgcolor == ""

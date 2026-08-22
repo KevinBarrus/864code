@@ -48,7 +48,7 @@ async def test_write_file_is_idempotent(tmp_path: Path) -> None:
     first = await manager.execute(call)
     second = await manager.execute(call)
 
-    assert first.content == "file written"
+    assert first.content.startswith("file written")
     assert second.content == "file content already matches the target"
     assert (tmp_path / "src/a.txt").read_text(encoding="utf-8") == "内容"
 
@@ -79,7 +79,7 @@ async def test_edit_file_requires_expected_old_content(tmp_path: Path) -> None:
         {"path": "a.txt", "old_content": "旧内容", "new_content": "新内容"},
     )
 
-    assert (await manager.execute(call)).content == "file edited"
+    assert (await manager.execute(call)).content.startswith("file edited")
     assert (await manager.execute(call)).content == "file content already matches the target"
 
     path.write_text("外部修改", encoding="utf-8")
@@ -107,6 +107,42 @@ async def test_edit_file_replaces_substring_preserving_surrounding_content(
 
     assert result.is_error is False
     assert path.read_text(encoding="utf-8") == "after\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_result_contains_diff(tmp_path: Path) -> None:
+    """测试编辑结果附带 - 删除行与 + 新增行。"""
+
+    path = tmp_path / "a.txt"
+    path.write_text("old\nkeep\n", encoding="utf-8")
+    manager = _manager(create_edit_file_tool(tmp_path))
+
+    result = await manager.execute(
+        _call(
+            "edit_file",
+            {"path": "a.txt", "old_content": "old", "new_content": "new"},
+        )
+    )
+
+    content = result.content
+    assert content.startswith("file edited")
+    assert "-old" in content
+    assert "+new" in content
+
+
+@pytest.mark.asyncio
+async def test_write_file_new_result_lists_added_lines(tmp_path: Path) -> None:
+    """测试新建文件结果附带全部新增行，超长截断。"""
+
+    manager = _manager(create_write_file_tool(tmp_path))
+
+    result = await manager.execute(
+        _call("write_file", {"path": "a.txt", "content": "1\n2\n3\n"})
+    )
+
+    content = result.content
+    assert content.startswith("file written")
+    assert "+1" in content and "+3" in content
 
 
 @pytest.mark.asyncio

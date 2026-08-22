@@ -177,13 +177,12 @@ async def run_chat(
             elif isinstance(event, ToolExecutionEvent):
                 index = tool_activity_indices.get(event.tool_call.call_id)
                 if index is not None:
-                    screen.set_entry_content(index, _tool_result_summary(event))
-                    style = (
-                        "class:tool-error"
-                        if event.result.is_error
-                        else "class:tool-success"
-                    )
-                    screen.set_entry_style(index, style)
+                    if event.result.is_error:
+                        screen.set_entry_content(index, _tool_result_summary(event))
+                        screen.set_entry_style(index, "class:tool-error")
+                    else:
+                        screen.set_entry_style(index, "class:tool-success")
+                        _update_tool_result(screen, index, event)
             elif isinstance(event, UsageEvent):
                 latest_usage = event
                 usage_totals.add(event, client_holder.settings.price)
@@ -395,6 +394,16 @@ def _tool_result_summary(event: ToolExecutionEvent) -> str:
     marker = "✗" if event.result.is_error else "✓"
     content = _single_line(event.result.content, 60)
     return f"{marker} {event.tool_call.name}  {content}"
+
+
+def _update_tool_result(screen, index: int, event: ToolExecutionEvent) -> None:
+    """按工具类型展示成功结果：写/编辑工具显示 diff 红绿，其他保持单行摘要。"""
+
+    if event.tool_call.name in ("write_file", "edit_file"):
+        summary, _, diff = event.result.content.partition("\n")
+        screen.set_entry_diff_result(index, summary, diff)
+    else:
+        screen.set_entry_content(index, _tool_result_summary(event))
 
 
 def _update_persistence_status(screen: ChatScreen, session: Session) -> None:

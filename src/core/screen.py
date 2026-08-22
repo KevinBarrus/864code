@@ -293,6 +293,25 @@ class SlashCommandCompleter(Completer):
         yield from prefix_matches
 
 
+def _render_tool_diff(summary: str, diff_text: str) -> StyleAndTextTuples:
+    """把工具结果摘要与 diff 文本渲染为红绿着色的片段。"""
+
+    fragments: StyleAndTextTuples = [("", summary)]
+    if not diff_text:
+        return fragments
+    fragments.append(("", "\n"))
+    for line in diff_text.split("\n"):
+        if line.startswith("+"):
+            fragments.append(("class:tool-diff-add", line))
+        elif line.startswith("-"):
+            fragments.append(("class:tool-diff-del", line))
+        else:
+            fragments.append(("", line))
+        fragments.append(("", "\n"))
+    fragments.pop()
+    return fragments
+
+
 @dataclass(frozen=True)
 class ConversationEntry:
     """对话区中的一条展示内容。"""
@@ -480,6 +499,15 @@ class ChatScreen:
             return
         self._conversation[index] = replace(entry, style=style)
         self._sync_conversation_view()
+        self.application.invalidate()
+
+    def set_entry_diff_result(self, index: int, summary: str, diff_text: str) -> None:
+        """设置工具结果条目：摘要行 + diff 红绿行。"""
+
+        entry = self._conversation[index]
+        entry.control.text = _render_tool_diff(summary, diff_text)
+        entry.control.reset()
+        self._conversation[index] = replace(entry, content=summary)
         self.application.invalidate()
 
     def _set_entry_content(self, index: int, content: str) -> None:
