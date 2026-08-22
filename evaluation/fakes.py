@@ -22,6 +22,7 @@ class FakeModelClient:
         self,
         messages: Sequence[Message],
         tools: Sequence[dict[str, object]] = (),
+        thinking_level: str | None = None,
     ):
         """记录请求并按顺序返回一组模型事件"""
 

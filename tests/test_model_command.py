@@ -23,7 +23,7 @@ class FakeClient:
     async def stream_chat(self, messages):
         yield ""
 
-    async def stream_response(self, messages, tools=()):
+    async def stream_response(self, messages, tools=(), thinking_level=None):
         return
         yield  # 使函数成为不产生事件的异步生成器
 

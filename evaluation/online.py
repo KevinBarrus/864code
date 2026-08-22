@@ -198,6 +198,7 @@ class TimedModelClient:
         self,
         messages: Sequence[Message],
         tools: Sequence[Mapping[str, object]] = (),
+        thinking_level: str | None = None,
     ) -> AsyncIterator[ModelEvent]:
         """记录一次真实流式请求并转发模型事件"""
 

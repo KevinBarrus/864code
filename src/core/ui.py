@@ -15,6 +15,7 @@ from .commands import (
     start_skill_command,
     stop_skill_command,
     model_command_slash,
+    thinking_command_slash,
 )
 from .balance import UNAVAILABLE_BALANCE, BalanceProvider
 from .config import Settings
@@ -47,6 +48,7 @@ def _default_command_registry() -> CommandRegistry:
     registry.register(start_skill_command)
     registry.register(stop_skill_command)
     registry.register(model_command_slash)
+    registry.register(thinking_command_slash)
     return registry
 
 
@@ -66,7 +68,6 @@ async def run_chat(
     screen: ChatScreen
     session_workspace = (workspace or Path.cwd()).resolve()
     current_balance = status.balance
-    current_thinking_level = "high"
 
     async def refresh_balance() -> None:
         """每轮对话后刷新余额，失败保留旧值。"""
@@ -231,7 +232,7 @@ async def run_chat(
         provider_name_provider=lambda: infer_provider(
             client_holder.settings.base_url
         ),
-        thinking_level_provider=lambda: current_thinking_level,
+        thinking_level_provider=lambda: agent_loop.thinking_level,
     )
     tool_manager = ToolManager(
         permission_manager=PermissionManager(screen.request_approval),

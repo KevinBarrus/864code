@@ -66,6 +66,7 @@ class OpenAICompatibleClient:
         self,
         messages: Sequence[Message],
         tools: Sequence[Mapping[str, object]] = (),
+        thinking_level: str | None = None,
     ) -> AsyncIterator[ModelEvent]:
         """发送消息并解析文本和工具调用事件。"""
 
@@ -77,6 +78,9 @@ class OpenAICompatibleClient:
         }
         if tools:
             request["tools"] = list(tools)
+        # 推理强度：off 不传 reasoning_effort，其余档位直接透传
+        if thinking_level and thinking_level != "off":
+            request["reasoning_effort"] = thinking_level
         if self._stream_usage:
             request["stream_options"] = {"include_usage": True}
 

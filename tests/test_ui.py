@@ -103,7 +103,7 @@ async def test_run_chat_retries_once_with_forced_context_compaction(
         def __init__(self) -> None:
             self.requests: list[list[Message]] = []
 
-        async def stream_response(self, messages, tools=()):
+        async def stream_response(self, messages, tools=(), thinking_level=None):
             self.requests.append(list(messages))
             if len(self.requests) == 1:
                 raise AgentError(
@@ -356,7 +356,7 @@ async def test_run_chat_refreshes_balance_after_turn(
         async def stream_chat(self, messages):
             yield "测试回复"
 
-        async def stream_response(self, messages, tools=()):
+        async def stream_response(self, messages, tools=(), thinking_level=None):
             yield ui.TextDelta("测试回复")
 
     client = FakeTurnClient()

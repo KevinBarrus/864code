@@ -300,7 +300,7 @@ class FakeSummaryClient:
             raise response
         yield response
 
-    async def stream_response(self, messages, tools=()):
+    async def stream_response(self, messages, tools=(), thinking_level=None):
         raise AssertionError("摘要测试不应调用 stream_response")
 
 

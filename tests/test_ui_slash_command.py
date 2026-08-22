@@ -15,7 +15,7 @@ class RecordingClient:
     def __init__(self) -> None:
         self.requests: list[list[object]] = []
 
-    async def stream_response(self, messages, tools=()):
+    async def stream_response(self, messages, tools=(), thinking_level=None):
         self.requests.append(list(messages))
         yield ui.TextDelta("完成")
 
@@ -94,7 +94,7 @@ async def test_run_chat_unknown_command_does_not_call_model(
     """测试未知命令给出提示且不触发模型请求。"""
 
     class StrictClient:
-        async def stream_response(self, messages, tools=()):
+        async def stream_response(self, messages, tools=(), thinking_level=None):
             raise AssertionError("未知命令不应触发模型请求")
 
         async def stream_chat(self, messages):

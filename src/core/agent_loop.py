@@ -64,13 +64,26 @@ class AgentLoop:
         client: ModelClient,
         tool_manager: ToolManager,
         max_tool_rounds: int = 10,
+        thinking_level: str = "high",
     ) -> None:
-        """创建 Agent Loop，并设置单轮工具调用上限。"""
+        """创建 Agent Loop，并设置单轮工具调用上限与默认推理强度。"""
 
         self._client = client
         self._tool_manager = tool_manager
         self._max_tool_rounds = max_tool_rounds
         self._error_policy = AgentErrorPolicy()
+        self._thinking_level = thinking_level
+
+    @property
+    def thinking_level(self) -> str:
+        """当前推理强度档位。"""
+
+        return self._thinking_level
+
+    def set_thinking_level(self, level: str) -> None:
+        """切换推理强度档位，后续请求生效。"""
+
+        self._thinking_level = level
 
     def swap_client(self, client: ModelClient) -> None:
         """热切换模型客户端，供 /model 命令在空闲间隙调用。"""
@@ -105,6 +118,7 @@ class AgentLoop:
                         async for event in self._stream_model_events(
                             request_messages,
                             tools=self._tool_manager.model_tools(),
+                            thinking_level=self._thinking_level,
                         ):
                             if isinstance(event, TextDelta):
                                 text_parts.append(event.content)
@@ -166,6 +180,7 @@ class AgentLoop:
         self,
         messages: Sequence[Message],
         tools: Sequence[dict[str, object]],
+        thinking_level: str | None = None,
     ) -> AsyncIterator[ModelEvent]:
         """在不重复展示部分输出的前提下重试模型请求。"""
 
@@ -173,7 +188,9 @@ class AgentLoop:
         while True:
             received_event = False
             try:
-                async for event in self._client.stream_response(messages, tools=tools):
+                async for event in self._client.stream_response(
+                    messages, tools=tools, thinking_level=thinking_level
+                ):
                     received_event = True
                     yield event
                 return

@@ -27,6 +27,7 @@ class FakeModelClient:
         self,
         messages: Sequence[Message],
         tools: Sequence[dict[str, object]] = (),
+        thinking_level: str | None = None,
     ) -> AsyncIterator[ModelEvent]:
         self.requests.append(list(messages))
         self.tools.append(list(tools))
@@ -124,6 +125,7 @@ async def test_agent_loop_returns_unknown_tool_result_to_model() -> None:
             self,
             messages: Sequence[Message],
             tools: Sequence[dict[str, object]] = (),
+            thinking_level: str | None = None,
         ) -> AsyncIterator[ModelEvent]:
             self.requests.append(list(messages))
             self.tools.append(list(tools))
@@ -155,6 +157,7 @@ async def test_agent_loop_retries_model_network_error_once() -> None:
             self,
             messages: Sequence[Message],
             tools: Sequence[dict[str, object]] = (),
+            thinking_level: str | None = None,
         ) -> AsyncIterator[ModelEvent]:
             self.calls += 1
             if self.calls == 1:
@@ -190,7 +193,7 @@ async def test_agent_loop_uses_exponential_backoff_and_retry_after(
         def __init__(self) -> None:
             self.calls = 0
 
-        async def stream_response(self, messages, tools=()):
+        async def stream_response(self, messages, tools=(), thinking_level=None):
             self.calls += 1
             if self.calls == 1:
                 raise AgentError("network", "model_request", "网络失败")
@@ -226,6 +229,7 @@ async def test_agent_loop_does_not_retry_after_partial_model_output() -> None:
             self,
             messages: Sequence[Message],
             tools: Sequence[dict[str, object]] = (),
+            thinking_level: str | None = None,
         ) -> AsyncIterator[ModelEvent]:
             self.calls += 1
             yield TextDelta("部分内容")
@@ -258,6 +262,7 @@ async def test_agent_loop_keeps_completed_tool_chain_when_cancelled(tmp_path) ->
             self,
             messages: Sequence[Message],
             tools: Sequence[dict[str, object]] = (),
+            thinking_level: str | None = None,
         ) -> AsyncIterator[ModelEvent]:
             self.requests.append(list(messages))
             if len(self.requests) == 1:
