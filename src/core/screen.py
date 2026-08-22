@@ -432,16 +432,23 @@ class ChatScreen:
     ) -> ConversationEntry:
         """创建保存独立文本控件的对话条目，助手消息渲染 Markdown。"""
 
-        if role == "assistant":
-            control_text: object = render_markdown(content)
-        else:
-            control_text = content
+        control_text = ChatScreen._control_text(role, content)
         return ConversationEntry(
             role,
             content,
             FormattedTextControl(control_text, focusable=False),
             style,
         )
+
+    @staticmethod
+    def _control_text(role: ConversationRole, content: str) -> object:
+        """按角色生成控件文本：用户消息上下各加一行留白，助手消息渲染 Markdown。"""
+
+        if role == "assistant":
+            return render_markdown(content)
+        if role == "user":
+            return f"\n{content}\n"
+        return content
 
     def append_to_entry(self, index: int, content: str) -> None:
         """向指定的对话条目追加流式文本。"""
@@ -470,10 +477,7 @@ class ChatScreen:
         """更新已有条目的内容和控件，不重建整个对话布局。"""
 
         entry = self._conversation[index]
-        if entry.role == "assistant":
-            entry.control.text = render_markdown(content)
-        else:
-            entry.control.text = content
+        entry.control.text = self._control_text(entry.role, content)
         entry.control.reset()
         self._conversation[index] = replace(entry, content=content)
 
@@ -980,11 +984,10 @@ class ChatScreen:
     def _sync_conversation_view(self) -> None:
         """将对话数据同步到带样式的可滚动视图。"""
 
-        children: list[Window] = []
+        children: list[Container] = []
         for index, entry in enumerate(self._conversation):
             if entry.role == "user":
-                # 用户消息上下各加一行留白，让灰色背景比文字更高
-                children.append(Window(height=1, style="class:conversation-user"))
+                # 用户消息文本自带上下留白行，单窗口整体灰色背景（n 行内容展示 n+2 行全灰）
                 children.append(
                     Window(
                         content=entry.control,
@@ -993,7 +996,6 @@ class ChatScreen:
                         dont_extend_height=True,
                     )
                 )
-                children.append(Window(height=1, style="class:conversation-user"))
             elif entry.role == "tool":
                 children.append(
                     Window(

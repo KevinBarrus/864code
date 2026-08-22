@@ -296,8 +296,8 @@ async def test_layout_keeps_empty_input_small_and_moves_status_to_bottom(
         screen.add_entry("assistant", "")
         conversation_sizes = root._divide_heights(WritePosition(0, 0, 100, 40))
 
-        # 用户消息（含上下留白）1+1+1 + 间隔 padding，assistant 1 行 + 间隔
-        assert conversation_sizes[2] == 7
+        # 用户消息（文本含上下留白）3 行 + 间隔 padding，assistant 1 行 + 间隔
+        assert conversation_sizes[2] == 5
         assert conversation_sizes[4:7] == [3, 0, 2]
 
 
@@ -374,6 +374,35 @@ def test_user_entry_uses_full_width_gray_style_without_prefix(
         == "343541"
     )
     assert screen._render_entry(0) == "用户输入"
+
+
+def test_user_entry_renders_n_plus_two_rows_all_gray(
+    tmp_path: Path,
+) -> None:
+    """测试用户消息 n 行内容展示为 n+2 行，单窗口整体灰色背景。"""
+
+    screen = _create_screen(tmp_path)
+    index = screen.add_entry("user", "你是谁")
+
+    children = screen._conversation_content.children
+    user_window = children[index]
+
+    # 内容 1 行 → 展示 3 行（上下各 1 行留白）
+    height = user_window.content.preferred_height(
+        100, 10, False, lambda text: len(text)
+    )
+    assert height == 3
+    assert user_window.style == "class:conversation-user"
+
+    # 多行内容同样前后各留 1 行（n+2）
+    screen.add_entry("user", "第一行\n第二行\n第三行")
+    multi_window = screen._conversation_content.children[-1]
+
+    multi_height = multi_window.content.preferred_height(
+        100, 10, False, lambda text: len(text)
+    )
+    assert multi_height == 5
+    assert multi_window.style == "class:conversation-user"
 
 
 def test_input_selection_can_be_copied_and_pasted(tmp_path: Path) -> None:
