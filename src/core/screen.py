@@ -682,14 +682,20 @@ class ChatScreen:
         self.application.invalidate()
 
     def _on_input_text_changed(self, buffer) -> None:
-        """删除字符后重新触发命令补全，插入场景由 complete_while_typing 处理。"""
+        """文本变化时维护命令补全：删字符后重新触发，不再以 / 开头时收起列表。
+
+        注意：prompt_toolkit 的 _text_changed 清空 complete_state 时不会触发
+        on_completions_changed，因此删除到非 / 前缀时要显式收起残留的补全列表。
+        """
 
         text = buffer.text
-        if (
-            text.startswith("/")
-            and len(text) < self._last_input_length
-            and buffer.complete_state is None
-        ):
+        if not text.startswith("/"):
+            # 命令补全不再适用：清除残留列表并恢复状态栏
+            if self._command_picker is not None:
+                self._command_picker = None
+                self._bottom_container.children = [self._status_window]
+                self.application.invalidate()
+        elif len(text) < self._last_input_length and buffer.complete_state is None:
             buffer.start_completion()
         self._last_input_length = len(text)
 

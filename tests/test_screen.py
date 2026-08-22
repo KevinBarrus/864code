@@ -670,6 +670,53 @@ def test_input_text_changed_skips_without_slash_prefix(
     assert started == []
 
 
+def test_input_text_changed_dismisses_picker_when_slash_removed(
+    tmp_path: Path,
+) -> None:
+    """测试删除到不以 / 开头时收起残留的补全列表并恢复状态栏。"""
+
+    screen = _create_screen(tmp_path)
+
+    # 先有补全列表显示
+    screen._on_completions_changed(_FakeBuffer(["model"]))
+    assert screen._command_picker is not None
+    assert screen._bottom_container.children == [screen._command_picker.window]
+
+    # 删除到空文本（不再以 / 开头）
+    screen._last_input_length = 1
+    screen.input_area.buffer.text = ""
+    screen._on_input_text_changed(screen.input_area.buffer)
+
+    assert screen._command_picker is None
+    assert screen._bottom_container.children == [screen._status_window]
+
+
+def test_input_text_changed_keeps_picker_while_slash_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """测试删除后仍以 / 开头时（例如 /mod -> /m）列表保留由补全状态维护。"""
+
+    screen = _create_screen(tmp_path)
+    started: list[bool] = []
+    monkeypatch.setattr(
+        screen.input_area.buffer,
+        "start_completion",
+        lambda: started.append(True),
+    )
+
+    screen._on_completions_changed(_FakeBuffer(["model"]))
+    assert screen._command_picker is not None
+
+    screen._last_input_length = 4
+    screen.input_area.buffer.text = "/m"
+    screen._on_input_text_changed(screen.input_area.buffer)
+
+    # 仍以 / 开头：不主动收起，交由补全状态维护
+    assert screen._command_picker is not None
+    assert started == [True]
+
+
 def test_status_model_name_uses_provider(tmp_path: Path) -> None:
     """测试状态栏模型名优先使用动态 provider 的值。"""
 
