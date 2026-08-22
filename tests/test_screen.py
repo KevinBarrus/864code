@@ -391,37 +391,71 @@ def test_input_container_has_border_lines_above_and_below(tmp_path: Path) -> Non
         assert "input-border" in style
 
 
-def test_chat_screen_uses_configured_input_spacing(tmp_path: Path) -> None:
-    """测试输入区域使用集中配置的边距和最大行数。"""
+def test_chat_screen_uses_configured_input_max_lines(tmp_path: Path) -> None:
+    """测试输入区域使用集中配置的最大行数。"""
 
     screen = ChatScreen(
         create_status_info("test-model", "暂不可查询", tmp_path),
         input_layout=InputLayoutConfig(
-            horizontal_padding=4,
             max_lines=6,
         ),
     )
 
     assert screen.input_area.window.height.max == 6
-    assert screen._input_layout.horizontal_padding == 4
 
 
-def test_input_line_prefix_has_no_prompt_marker(tmp_path: Path) -> None:
-    """测试输入行前缀只包含内边距，不使用 > 标记。"""
+def test_input_line_prefix_has_no_padding(tmp_path: Path) -> None:
+    """测试输入行前缀为空，文字紧贴最左。"""
 
     screen = ChatScreen(
         create_status_info("test-model", "暂不可查询", tmp_path),
-        input_layout=InputLayoutConfig(horizontal_padding=2),
     )
 
-    prefix = screen._get_input_line_prefix(0, 0)
-    text = "".join(content for _, content in prefix)
-    wrapped = screen._get_input_line_prefix(1, 1)
-    wrapped_text = "".join(content for _, content in wrapped)
+    assert screen._get_input_line_prefix(0, 0) == []
+    assert screen._get_input_line_prefix(1, 1) == []
 
-    assert text == "  "
-    assert ">" not in text
-    assert wrapped_text == "  "
+
+def test_input_top_border_plain_without_overflow(tmp_path: Path) -> None:
+    """测试输入未超行时上边界为纯横线。"""
+
+    screen = ChatScreen(
+        create_status_info("test-model", "暂不可查询", tmp_path),
+    )
+
+    assert screen._render_input_top_border() == "─" * 4096
+
+
+def test_input_top_border_shows_more_hint(tmp_path: Path, monkeypatch) -> None:
+    """测试输入超行时上边界左侧显示 ↑ n more 提示。"""
+
+    from types import SimpleNamespace
+
+    screen = ChatScreen(
+        create_status_info("test-model", "暂不可查询", tmp_path),
+    )
+    monkeypatch.setattr(
+        screen.input_area.window,
+        "render_info",
+        SimpleNamespace(
+            ui_content=SimpleNamespace(line_count=10),
+            window_height=8,
+        ),
+    )
+
+    border = screen._render_input_top_border()
+
+    assert border.startswith("─── ↑ 2 more ")
+    assert border.endswith("─" * 4096)
+
+
+def test_input_area_wraps_pasted_long_lines(tmp_path: Path) -> None:
+    """测试输入框对长行自动换行显示（粘贴大文本不挤单行）。"""
+
+    screen = _create_screen(tmp_path)
+
+    assert screen.input_area.wrap_lines is True
+    screen.input_area.buffer.text = "a" * 200
+    assert screen.input_area.buffer.text == "a" * 200
 
 
 def test_chat_screen_uses_blinking_cursor(tmp_path: Path) -> None:

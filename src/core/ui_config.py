@@ -7,5 +7,4 @@ from dataclasses import dataclass
 class InputLayoutConfig:
     """输入区域的尺寸配置。"""
 
-    horizontal_padding: int = 2
     max_lines: int = 8

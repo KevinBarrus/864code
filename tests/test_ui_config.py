@@ -6,5 +6,4 @@ def test_input_layout_config_has_readable_defaults() -> None:
 
     config = InputLayoutConfig()
 
-    assert config.horizontal_padding == 2
     assert config.max_lines == 8

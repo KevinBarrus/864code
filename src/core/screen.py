@@ -564,7 +564,14 @@ class ChatScreen:
         # 底部区域无背景，内容直接落在命令行窗口默认背景上（对齐 Pi）
         bottom_container = HSplit([self._status_window])
         self._bottom_container = bottom_container
-        # 输入区上下各一条水平线框住（对齐 Pi DynamicBorder），不使用灰色背景
+        # 输入区上下各一条水平线框住（对齐 Pi DynamicBorder），不使用灰色背景；
+        # 上边界在输入超行时左侧显示 ↑ n more 提示
+        top_border = Window(
+            content=FormattedTextControl(self._render_input_top_border),
+            height=1,
+            style="class:input-border",
+            width=Dimension(weight=1),
+        )
         border_line = Window(
             content=FormattedTextControl("─" * 4096),
             height=1,
@@ -573,7 +580,7 @@ class ChatScreen:
         )
         input_container = HSplit(
             [
-                border_line,
+                top_border,
                 self.input_area,
                 border_line,
             ],
@@ -698,9 +705,25 @@ class ChatScreen:
         return bool(to_plain_text(self._logo_provider.render()).strip())
 
     def _get_input_line_prefix(self, lineno: int, wrap_count: int):
-        """为输入文字提供可配置的左右内边距（不使用 > 前缀，对齐 Pi 输入框）。"""
+        """输入文字紧贴最左，不保留前缀空白（对齐 Pi 输入框）。"""
 
-        return [("", " " * self._input_layout.horizontal_padding)]
+        return []
+
+    def _render_input_top_border(self) -> str:
+        """渲染输入框上边界：超行时左侧显示 ↑ n more 提示。"""
+
+        hidden = self._hidden_input_lines()
+        if hidden <= 0:
+            return "─" * 4096
+        return f"─── ↑ {hidden} more " + "─" * 4096
+
+    def _hidden_input_lines(self) -> int:
+        """计算输入框内容被隐藏的行数（超出最大行数后顶部滚出的行）。"""
+
+        info = self.input_area.window.render_info
+        if info is None:
+            return 0
+        return max(0, info.ui_content.line_count - info.window_height)
 
     def _create_key_bindings(self) -> KeyBindings:
         """创建提交、换行和退出快捷键。"""
