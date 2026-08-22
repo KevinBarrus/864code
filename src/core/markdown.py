@@ -3,6 +3,9 @@
 import re
 
 from prompt_toolkit.formatted_text import StyleAndTextTuples
+from pygments.lexers import get_lexer_by_name
+from pygments.token import Token
+from pygments.util import ClassNotFound
 from wcwidth import wcswidth
 
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.*)$")
@@ -27,6 +30,8 @@ def render_markdown(text: str) -> StyleAndTextTuples:
 
     fragments: StyleAndTextTuples = []
     in_code_block = False
+    code_language = ""
+    code_lines: list[str] = []
     table_rows: list[list[str]] | None = None
     lines = text.split("\n")
     for line_index, line in enumerate(lines):
@@ -34,11 +39,15 @@ def render_markdown(text: str) -> StyleAndTextTuples:
         add_newline = not is_last
         if in_code_block:
             if line.strip().startswith(_CODE_BLOCK_DELIMITER):
+                fragments.extend(_render_code_block(code_language, code_lines))
+                code_lines = []
+                code_language = ""
                 in_code_block = False
             else:
-                fragments.append(("class:md-code-block", line))
+                code_lines.append(line)
         elif line.strip().startswith(_CODE_BLOCK_DELIMITER):
             in_code_block = True
+            code_language = line.strip()[len(_CODE_BLOCK_DELIMITER) :].strip()
         elif _TABLE_CELL_RE.match(line):
             # 表格行由整表渲染统一换行，不在行内单独插入
             add_newline = False
@@ -79,7 +88,74 @@ def render_markdown(text: str) -> StyleAndTextTuples:
             fragments.append(("", "\n"))
     if table_rows is not None:
         fragments.extend(_render_table(table_rows))
+    if in_code_block:
+        # 流式输出中途：未闭合代码块按已收集的行渲染
+        fragments.extend(_render_code_block(code_language, code_lines))
     return fragments
+
+
+# 代码语法高亮的 token 到样式类映射（顺序敏感：更具体的 token 先匹配）
+_TOKEN_STYLE_CLASSES = [
+    ("md-tok-comment", Token.Comment),
+    ("md-tok-string", Token.String),
+    ("md-tok-number", Token.Number),
+    ("md-tok-decorator", Token.Name.Decorator),
+    ("md-tok-function", Token.Name.Function),
+    ("md-tok-class", Token.Name.Class),
+    ("md-tok-builtin", Token.Name.Builtin),
+    ("md-tok-keyword", Token.Keyword),
+    ("md-tok-operator", Token.Operator),
+]
+
+
+# 语言级 token 覆盖：新增语言定制只需在这里加一行（默认为空，全部走 Pygments 自动识别）
+_LANGUAGE_TOKEN_OVERRIDES: dict[str, list[tuple[str, type]]] = {}
+
+
+def _render_code_block(language: str, lines: list[str]) -> StyleAndTextTuples:
+    """渲染代码块：首行语言名 + Pygments token 高亮，语言不支持时整块基础样式。"""
+
+    fragments: StyleAndTextTuples = []
+    if language:
+        fragments.append(("class:md-code-lang", f"{language}\n"))
+    code = "\n".join(lines)
+    tokens = _highlight_tokens(code, language)
+    if tokens is None:
+        for line_index, line in enumerate(lines):
+            fragments.append(("class:md-code-block", line))
+            if line_index < len(lines) - 1:
+                fragments.append(("", "\n"))
+        return fragments
+    for token_type, token_text in tokens:
+        style_class = _token_style(token_type, language)
+        fragments.append((style_class, token_text))
+    return fragments
+
+
+def _highlight_tokens(code: str, language: str):
+    """用 Pygments 对代码分词，语言不支持时返回 None。"""
+
+    if not language or not code:
+        return None
+    try:
+        lexer = get_lexer_by_name(language)
+    except ClassNotFound:
+        return None
+    return list(lexer.get_tokens(code))
+
+
+def _token_style(token_type, language: str) -> str:
+    """把 Pygments token 映射到样式类，语言覆盖优先。"""
+
+    overrides = _LANGUAGE_TOKEN_OVERRIDES.get(language)
+    if overrides:
+        for style_class, token_kind in overrides:
+            if token_type in token_kind:
+                return style_class
+    for style_class, token_kind in _TOKEN_STYLE_CLASSES:
+        if token_type in token_kind:
+            return style_class
+    return "class:md-code-block"
 
 
 def render_inline(text: str) -> StyleAndTextTuples:

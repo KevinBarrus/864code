@@ -39,12 +39,14 @@ def test_unordered_list_keeps_marker() -> None:
 
 
 def test_fenced_code_block_uses_code_style() -> None:
-    """测试围栏代码块使用代码块样式。"""
+    """测试围栏代码块显示语言名并按 token 高亮。"""
 
     fragments = render_markdown("```python\nprint(1)\n```")
 
-    assert ("class:md-code-block", "print(1)") in fragments
-    assert ("class:md-code-block", "```python") not in fragments
+    assert ("class:md-code-lang", "python\n") in fragments
+    assert ("md-tok-builtin", "print") in fragments
+    assert ("md-tok-number", "1") in fragments
+    assert not any(text == "```python" for _, text in fragments)
 
 
 def test_unclosed_code_block_stays_in_code_style() -> None:
@@ -52,7 +54,25 @@ def test_unclosed_code_block_stays_in_code_style() -> None:
 
     fragments = render_markdown("```python\nprint(1)")
 
-    assert ("class:md-code-block", "print(1)") in fragments
+    assert ("md-tok-builtin", "print") in fragments
+
+
+def test_code_block_highlights_javascript() -> None:
+    """测试 JavaScript 代码块同样按 token 高亮。"""
+
+    fragments = render_markdown("```javascript\nconst x = 1;\n```")
+
+    assert ("class:md-code-lang", "javascript\n") in fragments
+    assert ("md-tok-keyword", "const") in fragments
+
+
+def test_code_block_unknown_language_uses_base_style() -> None:
+    """测试不认识的代码语言使用基础代码样式。"""
+
+    fragments = render_markdown("```nosuchlang\nhello world\n```")
+
+    assert ("class:md-code-lang", "nosuchlang\n") in fragments
+    assert ("class:md-code-block", "hello world") in fragments
 
 
 def test_quote_prefix_and_style() -> None:
